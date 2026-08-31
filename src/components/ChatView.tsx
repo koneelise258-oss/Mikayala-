@@ -8,7 +8,7 @@ import {
   Globe, MessageSquare, Radio, Bluetooth, Wifi, ArrowDownToLine, AlertCircle, Loader2,
   Image as ImageIcon, Camera
 } from 'lucide-react';
-import { User, Message, ChatSettings, PollData, EventData, LocationData, CallType, CoupleCoupon, NetworkState } from '../types';
+import { User, Message, ChatSettings, PollData, EventData, LocationData, CallType, CoupleCoupon, NetworkState, UserProfile } from '../types';
 import { formatTime, formatDateDivider, formatDuration, renderFormattedText } from '../utils/formatters';
 import { soundEffects } from '../utils/audio';
 import { triggerHaptic } from '../utils/security';
@@ -46,6 +46,8 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 interface ChatViewProps {
   currentUser: User;
   partnerUser: User;
+  partnerProfile?: UserProfile | null;
+  partnerNickname?: string | null;
   messages: Message[];
   settings: ChatSettings;
   networkState?: NetworkState;
@@ -83,6 +85,8 @@ interface ChatViewProps {
 export const ChatView: React.FC<ChatViewProps> = ({
   currentUser,
   partnerUser,
+  partnerProfile,
+  partnerNickname,
   messages: parentMessages,
   settings,
   networkState,
@@ -892,7 +896,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
                     <h3 className="font-bold text-sm text-white truncate max-w-[130px] sm:max-w-[200px]">
-                      {partnerUser.name}
+                      {partnerNickname || partnerProfile?.display_name || partnerUser.name}
                     </h3>
                   </div>
                   <p className="text-[11px] truncate flex items-center gap-1.5 transition-colors">

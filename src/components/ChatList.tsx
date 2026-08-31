@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Message } from '../types';
+import { User, Message, UserProfile } from '../types';
 import { 
   Check, 
   CheckCheck, 
@@ -28,6 +28,8 @@ import { soundEffects } from '../utils/audio';
 interface ChatListProps {
   currentUser: User;
   partnerUser: User;
+  partnerProfile?: UserProfile | null;
+  partnerNickname?: string | null;
   messages: Message[];
   onSelectChat: () => void;
   onOpenNewChat: () => void;
@@ -47,6 +49,8 @@ interface ChatListProps {
 export const ChatList: React.FC<ChatListProps> = ({
   currentUser,
   partnerUser,
+  partnerProfile,
+  partnerNickname,
   messages,
   onSelectChat,
   onOpenNewChat,
@@ -67,8 +71,10 @@ export const ChatList: React.FC<ChatListProps> = ({
   const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
   const unreadMessagesCount = messages.filter(m => m.receiverId === currentUser.id && m.status !== 'read').length;
 
+  const partnerName = partnerNickname || partnerProfile?.display_name || partnerUser.name;
+
   const matchesSearch = searchQuery === '' || 
-    partnerUser.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    partnerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
     messages.some(m => m.content.toLowerCase().includes(searchQuery.toLowerCase()));
 
   const handleChatClick = () => {
@@ -272,8 +278,8 @@ export const ChatList: React.FC<ChatListProps> = ({
           <div className="relative shrink-0 mr-3.5">
             <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-[#00b894] overflow-hidden border-2 border-[#6c5ce7]/50 shadow-md group-hover:scale-105 transition-transform">
               <img
-                src={partnerUser.avatar}
-                alt={partnerUser.name}
+                src={partnerProfile?.avatar_url || partnerUser.avatar}
+                alt={partnerName}
                 className="w-full h-full object-cover"
               />
             </div>
@@ -287,7 +293,7 @@ export const ChatList: React.FC<ChatListProps> = ({
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-1.5 truncate">
                 <span className="font-bold text-sm sm:text-base text-[#f1f2f6] truncate">
-                  {partnerUser.name}
+                  {partnerName}
                 </span>
                 <span className="text-[10px] text-[#55efc4] bg-[#00b894]/20 border border-[#00b894]/30 px-1.5 py-0.2 rounded-full font-semibold shrink-0">
                   Duo

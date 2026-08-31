@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   User, 
+  UserProfile,
   Message, 
   CallRecord, 
   ChatSettings, 
@@ -43,6 +44,7 @@ import {
   saveStoredPairingState,
   clearPairingState
 } from './services/authService';
+import { profileService } from './services/profileService';
 import { 
   getMessages,
   obtenirMessages, 
@@ -113,6 +115,11 @@ export default function App() {
   const [settings, setSettings] = useState<ChatSettings>(getStoredSettings);
   const [themeConfig, setThemeConfig] = useState<AppThemeConfig>(getStoredThemeConfig);
 
+  // Profile & Nickname States
+  const [myProfile, setMyProfile] = useState<UserProfile | null>(null);
+  const [partnerProfile, setPartnerProfile] = useState<UserProfile | null>(null);
+  const [partnerNickname, setPartnerNickname] = useState<string | null>(null);
+
   // Couple Space & Pairing State
   const [pairingState, setPairingState] = useState<PairingState>(getStoredPairingState);
   const [isPairingModalOpen, setIsPairingModalOpen] = useState<boolean>(() => !getStoredPairingState().isPaired);
@@ -131,7 +138,69 @@ export default function App() {
     return () => window.removeEventListener('mikayala_app_update_available', handleUpdate);
   }, []);
 
-  // Initialize Anonymous Supabase Auth on launch & retrieve authentic user identity
+  // Stable function to load profiles and nicknames
+  const loadProfiles = useCallback(async (uid: string, partnerId?: string | null, coupleId?: string | null) => {
+    // My profile
+    const myRes = await profileService.getMyProfile();
+    if (myRes.success && myRes.data) {
+      setMyProfile(myRes.data);
+      
+      // Handle signed URL for my avatar
+      if (myRes.data.avatar_path) {
+        const url = await profileService.getSignedAvatarUrl(myRes.data.avatar_path, myRes.data.avatar_version);
+        if (url) {
+          setCurrentUser(prev => ({
+            ...prev,
+            name: myRes.data!.display_name,
+            bio: myRes.data!.bio || prev.bio,
+            avatar: url
+          }));
+        }
+      } else {
+        setCurrentUser(prev => ({
+          ...prev,
+          name: myRes.data!.display_name,
+          bio: myRes.data!.bio || prev.bio,
+          avatar: undefined // Reset if no path
+        }));
+      }
+    }
+
+    // Partner profile & nickname
+    if (partnerId) {
+      const pRes = await profileService.getPartnerProfile(partnerId);
+      if (pRes.success && pRes.data) {
+        setPartnerProfile(pRes.data);
+        
+        // Handle signed URL for partner avatar
+        if (pRes.data.avatar_path) {
+          const url = await profileService.getSignedAvatarUrl(pRes.data.avatar_path, pRes.data.avatar_version);
+          if (url) {
+            setPartnerUser(prev => ({
+              ...prev,
+              name: pRes.data!.display_name,
+              bio: pRes.data!.bio || prev.bio,
+              avatar: url
+            }));
+          }
+        } else {
+          setPartnerUser(prev => ({
+            ...prev,
+            name: pRes.data!.display_name,
+            bio: pRes.data!.bio || prev.bio,
+            avatar: undefined // Reset if no path
+          }));
+        }
+      }
+
+      if (coupleId) {
+        const nRes = await profileService.getPartnerNickname(partnerId, coupleId);
+        if (nRes.success) setPartnerNickname(nRes.data || null);
+      }
+    }
+  }, []);
+
+  // Initialize Anonymous Supabase Auth & Fetch Profiles
   useEffect(() => {
     const initAuth = async () => {
       if (!isSupabaseConfigured()) return;
@@ -143,48 +212,41 @@ export default function App() {
           uid = await initAnonymousAuth();
         }
         if (uid) {
+          const stored = getStoredPairingState();
           setCurrentUser(prev => {
             const updated = { ...prev, id: uid };
             saveStoredUserProfile(updated);
             return updated;
           });
           updateUserActivity(uid, true);
+          loadProfiles(uid, stored.partnerId, stored.coupleId);
         }
       } catch (err: any) {
         console.error('[App] Erreur initialisation identité auth:', err);
-        try {
-          const fallbackId = await initAnonymousAuth();
-          if (fallbackId) {
-            setCurrentUser(prev => {
-              const updated = { ...prev, id: fallbackId };
-              saveStoredUserProfile(updated);
-              return updated;
-            });
-            updateUserActivity(fallbackId, true);
-          }
-        } catch (e) {
-          console.error('[App] Échec critique réinitialisation auth:', e);
-        }
       }
     };
 
     initAuth();
     
+    // Auth Listener
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       clearSignedUrlCache();
       if (session?.user?.id) {
+        const stored = getStoredPairingState();
         setCurrentUser(prev => {
           const updated = { ...prev, id: session.user.id };
           saveStoredUserProfile(updated);
           return updated;
         });
         updateUserActivity(session.user.id);
+        loadProfiles(session.user.id, stored.partnerId, stored.coupleId);
       }
     });
 
     const handlePairingChanged = () => {
       const updated = getStoredPairingState();
       setPairingState(updated);
+      if (currentUser.id) loadProfiles(currentUser.id, updated.partnerId, updated.coupleId);
     };
 
     window.addEventListener('mikayala_pairing_changed', handlePairingChanged);
@@ -192,7 +254,7 @@ export default function App() {
       window.removeEventListener('mikayala_pairing_changed', handlePairingChanged);
       authListener?.subscription?.unsubscribe();
     };
-  }, []);
+  }, [currentUser.id, loadProfiles]);
 
   // Subscribe to Partner Presence, Typing and Activity globally
   useEffect(() => {
@@ -914,6 +976,8 @@ export default function App() {
               <ChatView
                 currentUser={currentUser}
                 partnerUser={partnerUser}
+                partnerProfile={partnerProfile}
+                partnerNickname={partnerNickname}
                 messages={messages}
                 settings={settings}
                 networkState={networkState}
@@ -953,7 +1017,10 @@ export default function App() {
             <div className="flex-1 flex flex-col h-full bg-[#130f26] relative overflow-hidden">
               <Header
                 currentUser={currentUser}
+                myProfile={myProfile}
                 partnerUser={partnerUser}
+                partnerProfile={partnerProfile}
+                partnerNickname={partnerNickname}
                 networkState={networkState}
                 onOpenNetworkModal={() => setIsNetworkModalOpen(true)}
                 onOpenSettings={() => setIsSettingsOpen(true)}
@@ -1010,6 +1077,8 @@ export default function App() {
                       <ChatList
                         currentUser={currentUser}
                         partnerUser={partnerUser}
+                        partnerProfile={partnerProfile}
+                        partnerNickname={partnerNickname}
                         messages={messages}
                         onSelectChat={() => setIsChatOpen(true)}
                         onOpenNewChat={() => setIsQRCodeOpen(true)}
@@ -1053,7 +1122,10 @@ export default function App() {
           <div className="w-[340px] lg:w-[390px] xl:w-[420px] shrink-0 border-r border-[#2d2254] flex flex-col h-full bg-[#130f26] relative z-20">
             <Header
               currentUser={currentUser}
+              myProfile={myProfile}
               partnerUser={partnerUser}
+              partnerProfile={partnerProfile}
+              partnerNickname={partnerNickname}
               networkState={networkState}
               onOpenNetworkModal={() => setIsNetworkModalOpen(true)}
               onOpenSettings={() => setIsSettingsOpen(true)}
@@ -1110,6 +1182,8 @@ export default function App() {
                     <ChatList
                       currentUser={currentUser}
                       partnerUser={partnerUser}
+                      partnerProfile={partnerProfile}
+                      partnerNickname={partnerNickname}
                       messages={messages}
                       onSelectChat={() => setIsChatOpen(true)}
                       onOpenNewChat={() => setIsQRCodeOpen(true)}
@@ -1488,6 +1562,14 @@ export default function App() {
           isOpen={isContactInfoOpen}
           onClose={() => setIsContactInfoOpen(false)}
           partnerUser={partnerUser}
+          partnerProfile={partnerProfile}
+          partnerNickname={partnerNickname}
+          coupleId={pairingState.coupleId || undefined}
+          onNicknameUpdated={async () => {
+            if (pairingState.partnerId && pairingState.coupleId) {
+              loadProfiles(currentUser.id, pairingState.partnerId, pairingState.coupleId);
+            }
+          }}
           messages={messages}
           settings={settings}
           onUpdateSettings={setSettings}
@@ -1537,6 +1619,12 @@ export default function App() {
           settings={settings}
           themeConfig={themeConfig}
           pairingState={pairingState}
+          myProfile={myProfile}
+          onProfileUpdated={async () => {
+            if (currentUser.id) {
+              loadProfiles(currentUser.id, pairingState.partnerId, pairingState.coupleId);
+            }
+          }}
           onOpenPairingModal={() => setIsPairingModalOpen(true)}
           onResetPairing={() => {
             clearPairingState();

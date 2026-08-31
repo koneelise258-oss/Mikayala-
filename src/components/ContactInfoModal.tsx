@@ -1,11 +1,17 @@
 import React, { useState } from 'react';
-import { X, Phone, Video, Search, Lock, Clock, ShieldCheck, Star, ChevronRight, Image, FileText, Link, Bell, Trash2 } from 'lucide-react';
-import { User, Message, ChatSettings, CallType } from '../types';
+import { X, Phone, Video, Search, Lock, Clock, ShieldCheck, Star, ChevronRight, Image, FileText, Link, Bell, Trash2, Edit3, Check, Loader2 } from 'lucide-react';
+import { User, Message, ChatSettings, CallType, UserProfile } from '../types';
+import { profileService } from '../services/profileService';
+import { triggerHaptic } from '../utils/security';
 
 interface ContactInfoModalProps {
   isOpen: boolean;
   onClose: () => void;
   partnerUser: User;
+  partnerProfile?: UserProfile | null;
+  partnerNickname?: string | null;
+  onNicknameUpdated?: () => void;
+  coupleId?: string;
   messages: Message[];
   settings: ChatSettings;
   onUpdateSettings: (settings: ChatSettings) => void;
@@ -18,6 +24,10 @@ export const ContactInfoModal: React.FC<ContactInfoModalProps> = ({
   isOpen,
   onClose,
   partnerUser,
+  partnerProfile,
+  partnerNickname,
+  onNicknameUpdated,
+  coupleId,
   messages,
   settings,
   onUpdateSettings,
@@ -31,7 +41,36 @@ export const ContactInfoModal: React.FC<ContactInfoModalProps> = ({
   const [showLockModal, setShowLockModal] = useState(false);
   const [pinInput, setPinInput] = useState('');
 
+  // Nickname states
+  const [isEditingNickname, setIsEditingNickname] = useState(false);
+  const [newNickname, setNewNickname] = useState(partnerNickname || '');
+  const [isUpdatingNickname, setIsUpdatingNickname] = useState(false);
+
   if (!isOpen) return null;
+
+  const handleUpdateNickname = async () => {
+    if (!coupleId || !partnerUser.id) return;
+    
+    setIsUpdatingNickname(true);
+    try {
+      let result;
+      if (newNickname.trim()) {
+        result = await profileService.setPartnerNickname(coupleId, partnerUser.id, newNickname.trim());
+      } else {
+        result = await profileService.removePartnerNickname(coupleId, partnerUser.id);
+      }
+
+      if (result.success) {
+        triggerHaptic(40);
+        if (onNicknameUpdated) onNicknameUpdated();
+        setIsEditingNickname(false);
+      }
+    } catch (err) {
+      console.error('Error updating nickname:', err);
+    } finally {
+      setIsUpdatingNickname(false);
+    }
+  };
 
   const mediaMessages = messages.filter(m => m.type === 'image' || m.type === 'video');
   const docMessages = messages.filter(m => m.type === 'document');
@@ -72,10 +111,46 @@ export const ContactInfoModal: React.FC<ContactInfoModalProps> = ({
       <div className="bg-[#111b21] p-6 flex flex-col items-center text-center border-b border-[#222e35]">
         <img
           src={partnerUser.avatar}
-          alt={partnerUser.name}
+          alt={partnerNickname || partnerProfile?.display_name || partnerUser.name}
           className="w-32 h-32 rounded-full object-cover border-2 border-[#374248] shadow-xl mb-3"
         />
-        <h3 className="text-xl font-bold text-[#e9edef]">{partnerUser.name}</h3>
+        
+        {isEditingNickname ? (
+          <div className="flex items-center gap-2 mb-1">
+            <input
+              type="text"
+              value={newNickname}
+              onChange={(e) => setNewNickname(e.target.value)}
+              placeholder="Surnom privé..."
+              autoFocus
+              className="bg-[#202c33] border border-[#00a884] rounded-lg px-3 py-1 text-sm text-[#e9edef] outline-none"
+            />
+            <button
+              onClick={handleUpdateNickname}
+              disabled={isUpdatingNickname}
+              className="p-1.5 bg-[#00a884] text-[#111b21] rounded-lg hover:bg-[#029070]"
+            >
+              {isUpdatingNickname ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 group">
+            <h3 className="text-xl font-bold text-[#e9edef]">{partnerNickname || partnerProfile?.display_name || partnerUser.name}</h3>
+            <button
+              onClick={() => {
+                setNewNickname(partnerNickname || '');
+                setIsEditingNickname(true);
+              }}
+              className="p-1 text-[#8696a0] hover:text-[#00a884] opacity-0 group-hover:opacity-100 transition-opacity"
+            >
+              <Edit3 size={14} />
+            </button>
+          </div>
+        )}
+
+        {partnerNickname && (
+          <p className="text-xs text-[#8696a0] mt-0.5">Vrai nom : {partnerProfile?.display_name || partnerUser.name}</p>
+        )}
         <p className="text-sm text-[#8696a0] mt-0.5">{partnerUser.phone}</p>
         <span className="text-xs text-[#00a884] font-medium mt-1">
           {partnerUser.isOnline ? 'En ligne' : `Vu à ${partnerUser.lastSeen}`}
@@ -118,7 +193,7 @@ export const ContactInfoModal: React.FC<ContactInfoModalProps> = ({
       {/* Actu / Bio */}
       <div className="bg-[#111b21] p-4 border-b border-[#222e35]">
         <h4 className="text-xs font-semibold uppercase tracking-wider text-[#8696a0] mb-1">Actu</h4>
-        <p className="text-sm text-[#e9edef]">{partnerUser.bio}</p>
+        <p className="text-sm text-[#e9edef]">{partnerProfile?.bio || partnerUser.bio || "Aucun statut"}</p>
       </div>
 
       {/* Media, Links & Docs Section */}

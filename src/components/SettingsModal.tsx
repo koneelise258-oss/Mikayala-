@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, 
   User as UserIcon, 
@@ -21,13 +21,16 @@ import {
   Heart,
   Unlink,
   AlertTriangle,
-  QrCode
+  QrCode,
+  Camera,
+  Loader2
 } from 'lucide-react';
-import { User, ChatSettings, AppThemeConfig, PairingState } from '../types';
+import { User, ChatSettings, AppThemeConfig, PairingState, UserProfile } from '../types';
 import { triggerHaptic } from '../utils/security';
 import { soundEffects } from '../utils/audio';
 import { ThemeCustomizer } from './ThemeCustomizer';
 import { clearPairingState, getStoredPairingState } from '../services/authService';
+import { profileService } from '../services/profileService';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -44,6 +47,8 @@ interface SettingsModalProps {
   onUpdateSettings: (settings: ChatSettings) => void;
   onThemeChange?: (theme: AppThemeConfig) => void;
   onClearAllData?: () => void;
+  myProfile?: UserProfile | null;
+  onProfileUpdated?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -60,32 +65,80 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onUpdatePartnerUser,
   onUpdateSettings,
   onThemeChange,
-  onClearAllData
+  onClearAllData,
+  myProfile,
+  onProfileUpdated
 }) => {
   const [activeSection, setActiveSection] = useState<'main' | 'couple' | 'appearance' | 'profile' | 'privacy' | 'supabase'>('main');
-  const [name, setName] = useState(currentUser.name);
-  const [bio, setBio] = useState(currentUser.bio);
+  const [name, setName] = useState(myProfile?.display_name || currentUser.name);
+  const [bio, setBio] = useState(myProfile?.bio || currentUser.bio);
   const [avatar, setAvatar] = useState(currentUser.avatar);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+
+  // Profile update states
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   // Supabase states
   const [supabaseUrl, setSupabaseUrl] = useState(settings.supabaseConfig?.url || '');
   const [supabaseKey, setSupabaseKey] = useState(settings.supabaseConfig?.anonKey || '');
 
   // PIN code change
-  const [pinCode, setPinCode] = useState(settings.pinCode || '1234');
+  const [pinCode, setPinCode] = useState(settings.securityPin || '1234');
+
+  useEffect(() => {
+    if (myProfile) {
+      setName(myProfile.display_name);
+      setBio(myProfile.bio || '');
+    }
+  }, [myProfile]);
 
   if (!isOpen) return null;
 
-  const handleSaveProfile = () => {
-    onUpdateCurrentUser({
-      ...currentUser,
-      name: name.trim() || currentUser.name,
-      bio: bio.trim() || currentUser.bio,
-      avatar: avatar.trim() || currentUser.avatar
-    });
-    triggerHaptic(40);
-    setActiveSection('main');
+  const handleUpdateProfile = async () => {
+    setIsUpdating(true);
+    setProfileError(null);
+    try {
+      const result = await profileService.updateProfile({
+        display_name: name.trim(),
+        bio: bio.trim()
+      });
+      if (result.success) {
+        triggerHaptic(40);
+        soundEffects.playReaction();
+        if (onProfileUpdated) onProfileUpdated();
+        setActiveSection('main');
+      } else {
+        setProfileError(result.error || 'Erreur lors de la mise à jour');
+      }
+    } catch (err) {
+      setProfileError('Une erreur est survenue');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadProgress(true);
+    setProfileError(null);
+    try {
+      const result = await profileService.uploadAvatar(file);
+      if (result.success) {
+        triggerHaptic(60);
+        soundEffects.playReaction();
+        if (onProfileUpdated) onProfileUpdated();
+      } else {
+        setProfileError(result.error || "Erreur lors de l'upload");
+      }
+    } catch (err: any) {
+      setProfileError(err.message || "Erreur lors de l'upload");
+    } finally {
+      setUploadProgress(false);
+    }
   };
 
   const handleSaveSupabase = () => {
@@ -165,24 +218,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3 text-sm">
           {activeSection === 'main' && (
             <>
-              {/* Profile Card */}
-              <div
-                onClick={() => setActiveSection('appearance')}
-                className="flex items-center gap-4 p-3.5 bg-[#130f26] rounded-2xl border border-[#2d2254] cursor-pointer hover:bg-[#20183e] transition-colors group"
+              {/* Profile Card / Button */}
+              <button
+                onClick={() => setActiveSection('profile')}
+                className="w-full flex items-center gap-4 p-3.5 bg-[#130f26] rounded-2xl border border-[#2d2254] cursor-pointer hover:bg-[#20183e] transition-all group relative overflow-hidden"
               >
-                <img
-                  src={currentUser.avatar}
-                  alt={currentUser.name}
-                  className="w-14 h-14 rounded-2xl object-cover border-2 border-[#00b894] shadow-md group-hover:scale-105 transition-transform"
-                />
-                <div className="flex-1 min-w-0">
+                <div className="relative">
+                  <img
+                    src={currentUser.avatar}
+                    alt={currentUser.name}
+                    className="w-14 h-14 rounded-2xl object-cover border-2 border-[#00b894] shadow-md group-hover:scale-105 transition-transform"
+                  />
+                  <div className="absolute -bottom-1 -right-1 bg-[#00b894] text-white p-1 rounded-lg shadow-lg border border-[#130f26]">
+                    <Camera size={10} />
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0 text-left">
                   <h4 className="font-bold text-base text-white truncate flex items-center gap-1.5">
-                    <span>{currentUser.name}</span>
+                    <span>{myProfile?.display_name || currentUser.name}</span>
                     <span className="text-xs font-normal text-[#a29bfe]">avec {partnerUser.name}</span>
                   </h4>
-                  <p className="text-xs text-[#a29bfe] truncate">{currentUser.bio}</p>
+                  <p className="text-xs text-[#a29bfe] truncate">{myProfile?.bio || currentUser.bio}</p>
                 </div>
-              </div>
+                <div className="p-2 rounded-xl bg-[#281e4b] text-[#a29bfe] group-hover:text-white transition-colors">
+                  <Sliders size={18} />
+                </div>
+              </button>
 
               {/* Menu items */}
               <div className="space-y-2 pt-2">
@@ -375,6 +436,104 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               onUpdateCurrentUser={onUpdateCurrentUser}
               onUpdatePartnerUser={onUpdatePartnerUser || (() => {})}
             />
+          )}
+
+          {/* Section: Mon Profil Personnel */}
+          {activeSection === 'profile' && (
+            <div className="space-y-5 animate-in slide-in-from-right-4 duration-300">
+              {/* Avatar Upload */}
+              <div className="flex flex-col items-center gap-4">
+                <div className="relative group">
+                  <div className={`w-28 h-28 rounded-[2rem] overflow-hidden border-4 border-[#2d2254] shadow-2xl relative ${uploadProgress ? 'opacity-50' : ''}`}>
+                    <img
+                      src={currentUser.avatar}
+                      alt={currentUser.name}
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                    />
+                    {uploadProgress && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                        <Loader2 size={32} className="text-[#55efc4] animate-spin" />
+                      </div>
+                    )}
+                  </div>
+                  <label className="absolute -bottom-2 -right-2 bg-[#6c5ce7] hover:bg-[#5849be] text-white p-2.5 rounded-2xl shadow-xl border-4 border-[#171230] cursor-pointer transition-all hover:scale-110 active:scale-95">
+                    <Camera size={20} />
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept="image/*"
+                      onChange={handleAvatarChange}
+                      disabled={uploadProgress}
+                    />
+                  </label>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-bold text-white">Photo de profil</p>
+                  <p className="text-[10px] text-[#a29bfe] uppercase tracking-widest mt-0.5">Bucket Privé Sécurisé</p>
+                </div>
+              </div>
+
+              {/* Profile Form */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-black text-[#a29bfe] uppercase tracking-[0.2em] mb-2 ml-1">
+                    Nom d'affichage
+                  </label>
+                  <div className="relative">
+                    <UserIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#a29bfe]" size={18} />
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Votre nom..."
+                      className="w-full bg-[#130f26] border border-[#2d2254] rounded-2xl pl-11 pr-4 py-3.5 text-sm text-white focus:border-[#6c5ce7] focus:ring-1 focus:ring-[#6c5ce7] outline-none transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-[#a29bfe] uppercase tracking-[0.2em] mb-2 ml-1">
+                    Bio / Statut
+                  </label>
+                  <textarea
+                    value={bio}
+                    onChange={(e) => setBio(e.target.value)}
+                    placeholder="Dites quelque chose de doux..."
+                    rows={3}
+                    className="w-full bg-[#130f26] border border-[#2d2254] rounded-2xl px-4 py-3.5 text-sm text-white focus:border-[#6c5ce7] focus:ring-1 focus:ring-[#6c5ce7] outline-none transition-all resize-none"
+                  />
+                </div>
+
+                {profileError && (
+                  <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center gap-2 text-red-400 text-xs">
+                    <AlertTriangle size={14} />
+                    <span>{profileError}</span>
+                  </div>
+                )}
+
+                <div className="pt-2">
+                  <button
+                    onClick={handleUpdateProfile}
+                    disabled={isUpdating || !name.trim()}
+                    className="w-full py-4 bg-[#6c5ce7] hover:bg-[#5849be] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-2xl shadow-lg shadow-[#6c5ce7]/20 transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
+                  >
+                    {isUpdating ? (
+                      <Loader2 size={20} className="animate-spin" />
+                    ) : (
+                      <Check size={20} />
+                    )}
+                    <span>Enregistrer mon profil</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-blue-500/5 border border-blue-500/10">
+                <p className="text-[11px] text-blue-300/80 leading-relaxed text-center">
+                  Ces informations sont stockées dans la table <code className="bg-blue-500/10 px-1 rounded text-blue-200">public.profiles</code>. 
+                  Votre partenaire pourra voir ces changements instantanément.
+                </p>
+              </div>
+            </div>
           )}
 
           {/* Privacy & Security */}

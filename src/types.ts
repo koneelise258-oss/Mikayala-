@@ -187,6 +187,29 @@ export interface User {
   isOnline: boolean;
   lastSeen: string;
   customStatus?: string;
+  avatarPath?: string;
+  avatarVersion?: number;
+}
+
+export interface UserProfile {
+  user_id: string;
+  display_name: string;
+  bio: string | null;
+  avatar_path: string | null;
+  avatar_version: number;
+  avatar_url?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PartnerNickname {
+  id: string;
+  owner_user_id: string;
+  partner_user_id: string;
+  couple_id: string;
+  nickname: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export type CallType = 'audio' | 'video';

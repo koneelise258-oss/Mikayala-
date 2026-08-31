@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { CoupleSpace, PairingState } from '../types';
+import { CoupleSpace, PairingState, UserProfile, PartnerNickname } from '../types';
 
 const PAIRING_STORAGE_KEY = 'mikayala_couple_pairing_state';
 
