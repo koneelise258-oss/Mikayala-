@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   User, 
   Message, 
@@ -50,7 +50,14 @@ import {
   envoyerMessageTexte,
   clearSignedUrlCache
 } from './services/messageService';
-import { updateUserActivity } from './services/presenceService';
+import { 
+  formatLastSeen,
+  updateUserActivity,
+  setupCouplePresence,
+  setupCoupleTyping,
+  fetchPartnerLastSeen,
+  subscribeToPartnerActivity
+} from './services/presenceService';
 import { 
   getStoredThemeConfig, 
   saveThemeConfig, 
@@ -110,6 +117,12 @@ export default function App() {
   const [pairingState, setPairingState] = useState<PairingState>(getStoredPairingState);
   const [isPairingModalOpen, setIsPairingModalOpen] = useState<boolean>(() => !getStoredPairingState().isPaired);
   const [hasNewVersion, setHasNewVersion] = useState<boolean>(false);
+
+  // Global Partner Presence & Activity states
+  const [isPartnerOnline, setIsPartnerOnline] = useState<boolean>(false);
+  const [isPartnerTyping, setIsPartnerTyping] = useState<boolean>(false);
+  const [partnerLastSeen, setPartnerLastSeen] = useState<string | null>(null);
+  const typingHandleRef = useRef<{ sendTypingStatus: (isTyping: boolean) => void; cleanup: () => void } | null>(null);
 
   // Écoute de disponibilité d'une nouvelle version PWA
   useEffect(() => {
@@ -180,6 +193,59 @@ export default function App() {
       authListener?.subscription?.unsubscribe();
     };
   }, []);
+
+  // Subscribe to Partner Presence, Typing and Activity globally
+  useEffect(() => {
+    let isMounted = true;
+    const coupleId = pairingState?.coupleId;
+    const currentUid = currentUser.id;
+    let cleanupPresence = () => {};
+    let cleanupTyping = () => {};
+    let cleanupActivity = () => {};
+
+    if (!isSupabaseConfigured() || !coupleId || !currentUid || !pairingState.isPaired) {
+      setIsPartnerOnline(false);
+      setIsPartnerTyping(false);
+      return;
+    }
+
+    const initPresence = async () => {
+      const stored = getStoredPairingState();
+      let partnerUid = pairingState?.partnerId || stored.partnerId || null;
+      
+      // 1. Presence
+      cleanupPresence = setupCouplePresence(coupleId, currentUid, partnerUid, (online) => {
+        if (isMounted) setIsPartnerOnline(online);
+      });
+
+      // 2. Typing
+      const typing = setupCoupleTyping(coupleId, currentUid, partnerUid, (typing) => {
+        if (isMounted) setIsPartnerTyping(typing);
+      });
+      typingHandleRef.current = typing;
+      cleanupTyping = typing.cleanup;
+
+      // 3. Activity (Last Seen)
+      if (partnerUid) {
+        fetchPartnerLastSeen(partnerUid).then(ls => {
+          if (isMounted && ls) setPartnerLastSeen(ls);
+        });
+        cleanupActivity = subscribeToPartnerActivity(partnerUid, (ls) => {
+          if (isMounted) setPartnerLastSeen(ls);
+        });
+      }
+    };
+
+    initPresence();
+
+    return () => {
+      isMounted = false;
+      cleanupPresence();
+      cleanupTyping();
+      cleanupActivity();
+      typingHandleRef.current = null;
+    };
+  }, [pairingState.isPaired, pairingState.coupleId, currentUser.id]);
 
   // Periodic and event-driven user activity tracker for last seen ("Vu à...")
   useEffect(() => {
@@ -874,6 +940,10 @@ export default function App() {
                 onOpenScratchCard={() => setIsScratchCardOpen(true)}
                 onClaimCoupon={handleClaimCoupon}
                 onRedeemCoupon={handleRedeemCoupon}
+                isPartnerOnline={isPartnerOnline}
+                isPartnerTyping={isPartnerTyping}
+                partnerLastSeen={partnerLastSeen}
+                sendTypingStatus={(typing) => typingHandleRef.current?.sendTypingStatus(typing)}
               />
             </div>
           ) : (
@@ -899,6 +969,9 @@ export default function App() {
                 onSearchChange={setSearchQuery}
                 isOnline={isOnline}
                 pendingSyncCount={pendingSyncCount}
+                isPartnerOnline={isPartnerOnline}
+                isPartnerTyping={isPartnerTyping}
+                partnerLastSeen={partnerLastSeen}
               />
 
               {activeBottomTab === 'games' ? (
@@ -996,6 +1069,9 @@ export default function App() {
               onSearchChange={setSearchQuery}
               isOnline={isOnline}
               pendingSyncCount={pendingSyncCount}
+              isPartnerOnline={isPartnerOnline}
+              isPartnerTyping={isPartnerTyping}
+              partnerLastSeen={partnerLastSeen}
             />
 
             {activeBottomTab === 'games' ? (
@@ -1100,6 +1176,10 @@ export default function App() {
               onOpenScratchCard={() => setIsScratchCardOpen(true)}
               onClaimCoupon={handleClaimCoupon}
               onRedeemCoupon={handleRedeemCoupon}
+              isPartnerOnline={isPartnerOnline}
+              isPartnerTyping={isPartnerTyping}
+              partnerLastSeen={partnerLastSeen}
+              sendTypingStatus={(typing) => typingHandleRef.current?.sendTypingStatus(typing)}
             />
           </div>
         </div>

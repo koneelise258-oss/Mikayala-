@@ -1,17 +1,19 @@
 {
+  "name": "Mikayala",
   "short_name": "Mikayala",
-  "name": "Mikayala - Couple Intime & Sécurisé",
-  "description": "Application PWA de couple intime, ultra-sécurisée avec biométrie, coffre-fort et communication privée.",
+  "description": "Application de couple intime et privée",
   "icons": [
     {
       "src": "/icon-192.png",
       "type": "image/png",
-      "sizes": "192x192"
+      "sizes": "192x192",
+      "purpose": "any"
     },
     {
       "src": "/icon-512.png",
       "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "512x512",
+      "purpose": "any"
     },
     {
       "src": "/icon-maskable.png",
@@ -21,9 +23,9 @@
     }
   ],
   "start_url": "/",
-  "background_color": "#130f26",
+  "background_color": "#0f0c1d",
   "theme_color": "#130f26",
   "display": "standalone",
-  "orientation": "portrait-primary",
+  "orientation": "portrait",
   "scope": "/"
 }

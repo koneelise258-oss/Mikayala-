@@ -74,6 +74,10 @@ interface ChatViewProps {
   onOpenScratchCard?: () => void;
   onClaimCoupon?: (couponId: string) => void;
   onRedeemCoupon?: (couponId: string) => void;
+  isPartnerOnline?: boolean;
+  isPartnerTyping?: boolean;
+  partnerLastSeen?: string | null;
+  sendTypingStatus?: (isTyping: boolean) => void;
 }
 
 export const ChatView: React.FC<ChatViewProps> = ({
@@ -106,7 +110,11 @@ export const ChatView: React.FC<ChatViewProps> = ({
   onOpenDigitalTouch,
   onOpenScratchCard,
   onClaimCoupon,
-  onRedeemCoupon
+  onRedeemCoupon,
+  isPartnerOnline = false,
+  isPartnerTyping = false,
+  partnerLastSeen = null,
+  sendTypingStatus = (_isTyping: boolean) => {}
 }) => {
   const [inputText, setInputText] = useState('');
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -146,12 +154,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [isDirectCameraOpen, setIsDirectCameraOpen] = useState<boolean>(false);
   const [comingSoonToast, setComingSoonToast] = useState<string | null>(null);
 
-  // Real-time presence & typing statuses
-  const [isPartnerOnline, setIsPartnerOnline] = useState<boolean>(Boolean(partnerUser.isOnline));
-  const [isPartnerTyping, setIsPartnerTyping] = useState<boolean>(false);
-  const [partnerLastSeen, setPartnerLastSeen] = useState<string | null>(null);
-
-  const typingHandleRef = useRef<{ sendTypingStatus: (isTyping: boolean) => void; cleanup: () => void } | null>(null);
   const typingTimeoutRef = useRef<number | null>(null);
 
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -262,8 +264,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
     initAuth();
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      // Vider le cache mémoire des URLs signées pour garantir que le nouvel utilisateur charge ses propres permissions
-      clearSignedUrlCache();
       if (session?.user?.id) {
         setCurrentAuthUserId(session.user.id);
       } else {
@@ -272,9 +272,31 @@ export const ChatView: React.FC<ChatViewProps> = ({
       }
     });
 
+    // When visibility changes or window blurs, automatically cancel typing status
+    const handleWindowBlurOrHide = () => {
+      // Send false if document is hidden OR window loses focus
+      if (typeof document !== 'undefined' && (document.visibilityState !== 'visible' || !document.hasFocus())) {
+        if (typingTimeoutRef.current) {
+          window.clearTimeout(typingTimeoutRef.current);
+          typingTimeoutRef.current = null;
+        }
+        sendTypingStatus(false);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleWindowBlurOrHide);
+    window.addEventListener('blur', handleWindowBlurOrHide);
+
     return () => {
       window.removeEventListener('mikayala_pairing_changed', handlePairingUpdate);
       authListener?.subscription?.unsubscribe();
+      document.removeEventListener('visibilitychange', handleWindowBlurOrHide);
+      window.removeEventListener('blur', handleWindowBlurOrHide);
+      if (typingTimeoutRef.current) {
+        window.clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+      sendTypingStatus(false);
     };
   }, []);
 
@@ -367,96 +389,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
     };
   }, [pairingState?.coupleId, currentAuthUserId, isChatActive, isPhotoPreviewOpen, isDirectCameraOpen]);
 
-  // Supabase Realtime Presence & Typing Broadcast for Couple
-  useEffect(() => {
-    let isMounted = true;
-    let cleanupPresence = () => {};
-    let cleanupActivity = () => {};
-    let typingHandle: { sendTypingStatus: (isTyping: boolean) => void; cleanup: () => void } | null = null;
-
-    const initializePresenceAndActivity = async () => {
-      const stored = getStoredPairingState();
-      const coupleId = pairingState?.coupleId || stored.coupleId;
-      const currentUid = currentAuthUserId || currentUser.id;
-
-      if (!coupleId || !currentUid) return;
-
-      // Ensure we have the authoritative partnerId
-      let partnerUid = pairingState?.partnerId || stored.partnerId || null;
-      if (!partnerUid) {
-        const couple = await fetchActiveCoupleFromSupabase(currentUid);
-        if (!isMounted) return;
-        if (couple) {
-          partnerUid = couple.user1Id === currentUid ? (couple.user2Id || null) : couple.user1Id;
-        }
-      }
-
-      // 1. Setup Presence channel: presence:couple:${coupleId}
-      cleanupPresence = setupCouplePresence(coupleId, currentUid, partnerUid, (isOnline) => {
-        if (isMounted) setIsPartnerOnline(isOnline);
-      });
-
-      // 2. Setup Typing Broadcast channel: typing:couple:${coupleId}
-      typingHandle = setupCoupleTyping(coupleId, currentUid, partnerUid, (isTyping) => {
-        if (isMounted) setIsPartnerTyping(isTyping);
-      });
-      typingHandleRef.current = typingHandle;
-
-      // 3. Fetch initial partner last seen from public.user_activity & listen to updates
-      if (partnerUid) {
-        fetchPartnerLastSeen(partnerUid).then((lastSeen) => {
-          if (isMounted && lastSeen) setPartnerLastSeen(lastSeen);
-        });
-
-        cleanupActivity = subscribeToPartnerActivity(partnerUid, (lastSeen) => {
-          if (isMounted) setPartnerLastSeen(lastSeen);
-        });
-      }
-    };
-
-    initializePresenceAndActivity();
-
-    // When visibility changes or window blurs, automatically cancel typing status
-    const handleWindowBlurOrHide = () => {
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
-        if (typingTimeoutRef.current) {
-          window.clearTimeout(typingTimeoutRef.current);
-          typingTimeoutRef.current = null;
-        }
-        typingHandleRef.current?.sendTypingStatus(false);
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleWindowBlurOrHide);
-    window.addEventListener('blur', handleWindowBlurOrHide);
-
-    return () => {
-      isMounted = false;
-      document.removeEventListener('visibilitychange', handleWindowBlurOrHide);
-      window.removeEventListener('blur', handleWindowBlurOrHide);
-      if (typingTimeoutRef.current) {
-        window.clearTimeout(typingTimeoutRef.current);
-        typingTimeoutRef.current = null;
-      }
-      if (typingHandleRef.current) {
-        typingHandleRef.current.sendTypingStatus(false);
-        typingHandleRef.current.cleanup();
-        typingHandleRef.current = null;
-      }
-      cleanupPresence();
-      cleanupActivity();
-    };
-  }, [pairingState?.coupleId, pairingState?.partnerId, currentAuthUserId, currentUser.id]);
-
-  // Periodic clock ticker to refresh relative "Vu à..." time dynamically every 30s without reloading
-  const [, setClockTicker] = useState<number>(0);
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setClockTicker((prev) => prev + 1);
-    }, 30000);
-    return () => clearInterval(timer);
-  }, []);
-
   // Mark partner messages as read ONLY when the discussion is genuinely active, visible, and focused
   useEffect(() => {
     const coupleId = getStoredPairingState().coupleId || pairingState?.coupleId;
@@ -503,12 +435,12 @@ export const ChatView: React.FC<ChatViewProps> = ({
     setInputText(val);
 
     if (val.trim().length > 0) {
-      typingHandleRef.current?.sendTypingStatus(true);
+      sendTypingStatus(true);
       if (typingTimeoutRef.current) {
         window.clearTimeout(typingTimeoutRef.current);
       }
       typingTimeoutRef.current = window.setTimeout(() => {
-        typingHandleRef.current?.sendTypingStatus(false);
+        sendTypingStatus(false);
         typingTimeoutRef.current = null;
       }, 2000);
     } else {
@@ -516,7 +448,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
         window.clearTimeout(typingTimeoutRef.current);
         typingTimeoutRef.current = null;
       }
-      typingHandleRef.current?.sendTypingStatus(false);
+      sendTypingStatus(false);
     }
   };
 
@@ -605,7 +537,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
       window.clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = null;
     }
-    typingHandleRef.current?.sendTypingStatus(false);
+    sendTypingStatus(false);
 
     if (editingMessage) {
       onUpdateMessage(editingMessage.id, {

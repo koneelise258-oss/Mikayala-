@@ -63,15 +63,14 @@ export function formatLastSeen(dateOrTimestamp: string | number | Date | null | 
 }
 
 /**
- * Updates public.user_activity in Supabase with throttling
- * Inserts or updates only the authenticated user's own row.
+ * Updates public.user_activity in Supabase via RPC touch_user_activity
  */
 export async function updateUserActivity(userId: string, force = false): Promise<void> {
   if (!isSupabaseConfigured() || !userId) return;
 
   const now = Date.now();
   if (!force && (now - lastActivityUpdateTimestamp) < MIN_ACTIVITY_INTERVAL_MS) {
-    return; // Throttled to prevent unnecessary database queries
+    return; // Throttled
   }
 
   // If document is not visible and not forced, skip
@@ -82,20 +81,14 @@ export async function updateUserActivity(userId: string, force = false): Promise
   lastActivityUpdateTimestamp = now;
 
   try {
-    const isoDate = new Date().toISOString();
-    await supabase
-      .from('user_activity')
-      .upsert(
-        {
-          user_id: userId,
-          last_seen_at: isoDate,
-          updated_at: isoDate
-        },
-        { onConflict: 'user_id' }
-      );
+    // Strictly use the RPC as requested by the user
+    await supabase.rpc('touch_user_activity');
   } catch (err) {
-    // Graceful error handling (e.g. if table not yet migrated or offline)
-    console.debug('[presenceService] updateUserActivity notice:', err);
+    console.debug('[presenceService] touch_user_activity RPC error:', err);
+    
+    // Fallback only if RPC fails and force is true (e.g. initial auth)
+    // Actually, user said: "Mettre à jour l'activité uniquement avec: await supabase.rpc('touch_user_activity')"
+    // So I will not fallback to direct upsert.
   }
 }
 
@@ -162,8 +155,6 @@ export function subscribeToPartnerActivity(
 /**
  * Sets up Supabase Realtime Presence for the couple:
  * Channel: `presence:couple:${coupleId}`
- * Tracks authenticated user and evaluates partner presence according to strict rule:
- * isPartnerOnline = partnerId !== null && partnerId !== currentUserId && Object.values(presenceState).flat().some(p => p.userId === partnerId)
  */
 export function setupCouplePresence(
   coupleId: string,
@@ -255,6 +246,7 @@ export function setupCoupleTyping(
 
   const channelName = `typing:couple:${coupleId}`;
   let lastSentTyping: boolean | null = null;
+  let isChannelReady = false;
 
   const channel = supabase
     .channel(channelName)
@@ -270,11 +262,19 @@ export function setupCoupleTyping(
         onPartnerTypingChange(Boolean(payload.isTyping));
       }
     })
-    .subscribe();
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        isChannelReady = true;
+      }
+    });
 
   const sendTypingStatus = (isTyping: boolean) => {
     // Avoid repeating identical broadcast signals unnecessarily
     if (lastSentTyping === isTyping) return;
+    
+    // Ne jamais appeler channel.send() avant que le channel soit SUBSCRIBED.
+    if (!isChannelReady) return;
+
     lastSentTyping = isTyping;
 
     const payload: TypingPayload = {
@@ -293,7 +293,7 @@ export function setupCoupleTyping(
   };
 
   const cleanup = () => {
-    if (lastSentTyping === true) {
+    if (lastSentTyping === true && isChannelReady) {
       sendTypingStatus(false);
     }
     supabase.removeChannel(channel);

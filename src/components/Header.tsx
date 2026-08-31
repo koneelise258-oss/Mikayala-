@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { User, NetworkState } from '../types';
 import { triggerHaptic } from '../utils/security';
+import { formatLastSeen } from '../services/presenceService';
 
 interface HeaderProps {
   currentUser: User;
@@ -35,6 +36,9 @@ interface HeaderProps {
   onSearchChange: (q: string) => void;
   isOnline: boolean;
   pendingSyncCount: number;
+  isPartnerOnline?: boolean;
+  isPartnerTyping?: boolean;
+  partnerLastSeen?: string | null;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -53,7 +57,10 @@ export const Header: React.FC<HeaderProps> = ({
   searchQuery,
   onSearchChange,
   isOnline,
-  pendingSyncCount: _pendingSyncCount
+  pendingSyncCount: _pendingSyncCount,
+  isPartnerOnline = false,
+  isPartnerTyping = false,
+  partnerLastSeen = null
 }) => {
   const [showMenu, setShowMenu] = useState(false);
   const [titleTapCount, setTitleTapCount] = useState(0);
@@ -170,6 +177,27 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Right: Camera, Search & 3-dots Menu */}
           <div className="flex items-center space-x-0.5 sm:space-x-1 text-[#a29bfe] shrink-0">
+            {/* Partner Status Pill (Requested display) */}
+            {partnerUser.id && (
+              <div 
+                className="hidden sm:flex items-center gap-1.5 bg-[#130f26] border border-[#2d2254] text-[10px] px-2 py-1 rounded-xl text-[#a29bfe] select-none mr-1"
+                title={isPartnerOnline ? 'Partenaire en ligne' : 'Partenaire hors ligne'}
+              >
+                {isPartnerTyping ? (
+                  <span className="text-[#55efc4] font-bold animate-pulse">En train d'écrire…</span>
+                ) : isPartnerOnline ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#00b894] animate-pulse" />
+                    <span className="text-[#00b894] font-bold">En ligne</span>
+                  </div>
+                ) : partnerLastSeen ? (
+                  <span className="text-[#a29bfe]/80">{formatLastSeen(partnerLastSeen)}</span>
+                ) : (
+                  <span className="text-[#a29bfe]/60">Hors ligne</span>
+                )}
+              </div>
+            )}
+
             {/* Authenticated Identity Pill */}
             <div 
               title={`Connecté en tant que : ${currentUser.name}`}
