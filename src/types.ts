@@ -192,7 +192,7 @@ export interface User {
 }
 
 export interface UserProfile {
-  user_id: string;
+  id: string;
   display_name: string;
   bio: string | null;
   avatar_path: string | null;

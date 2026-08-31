@@ -24,7 +24,7 @@ export const profileService = {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('id', user.id)
       .maybeSingle();
       
     if (error) {
@@ -41,7 +41,7 @@ export const profileService = {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
-      .eq('user_id', partnerId)
+      .eq('id', partnerId)
       .maybeSingle();
       
     if (error) {
@@ -63,7 +63,7 @@ export const profileService = {
         ...updates,
         updated_at: new Date().toISOString()
       })
-      .eq('user_id', user.id);
+      .eq('id', user.id);
       
     if (error) {
       console.error('[profileService] Error updating profile:', error);
@@ -91,7 +91,7 @@ export const profileService = {
     const { data: profile } = await supabase
       .from('profiles')
       .select('avatar_path')
-      .eq('user_id', user.id)
+      .eq('id', user.id)
       .maybeSingle();
     const oldPath = profile?.avatar_path;
 
@@ -122,7 +122,7 @@ export const profileService = {
           avatar_version: Math.floor(Date.now() / 1000),
           updated_at: new Date().toISOString()
         })
-        .eq('user_id', user.id);
+        .eq('id', user.id);
         
       if (updateError) throw updateError;
 
