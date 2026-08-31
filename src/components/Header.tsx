@@ -77,6 +77,8 @@ export const Header: React.FC<HeaderProps> = ({
   }, []);
 
   const handleTitleTap = () => {
+    /* 
+    // Deactivated for now
     const next = titleTapCount + 1;
     setTitleTapCount(next);
     triggerHaptic(20);
@@ -87,6 +89,7 @@ export const Header: React.FC<HeaderProps> = ({
     } else {
       setTimeout(() => setTitleTapCount(0), 1000);
     }
+    */
   };
 
   const getNetworkBadge = () => {
@@ -281,7 +284,8 @@ export const Header: React.FC<HeaderProps> = ({
                     </div>
                   </button>
 
-                  {/* 3. 🫣 Activer le Mode Camouflage (Calculatrice) */}
+                  {/* 3. 🫣 Activer le Mode Camouflage (Calculatrice) - Deactivated for now */}
+                  {/*
                   <button
                     onClick={() => {
                       onOpenCamouflage();
@@ -297,6 +301,7 @@ export const Header: React.FC<HeaderProps> = ({
                       <span className="text-[10px] text-[#a29bfe]/70">Fausse calculatrice secrète</span>
                     </div>
                   </button>
+                  */}
 
                   <div className="h-px bg-[#2d2254] my-1" />
 

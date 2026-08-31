@@ -423,7 +423,8 @@ export default function App() {
   useEffect(() => { saveCoupons(coupons); }, [coupons]);
   useEffect(() => { saveQuizzes(quizzes); }, [quizzes]);
 
-  // Shake Gesture Detection for Camouflage Mode
+  // Shake Gesture Detection for Camouflage Mode (Deactivated for now)
+  /*
   useEffect(() => {
     let lastX: number | null = null;
     let lastY: number | null = null;
@@ -461,6 +462,7 @@ export default function App() {
     window.addEventListener('devicemotion', handleMotion);
     return () => window.removeEventListener('devicemotion', handleMotion);
   }, []);
+  */
 
   // Online / Offline Listeners
   useEffect(() => {
