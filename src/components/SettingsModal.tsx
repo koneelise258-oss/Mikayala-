@@ -79,6 +79,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isUpdating, setIsUpdating] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
+  const [tempAvatarFile, setTempAvatarFile] = useState<File | null>(null);
+  const [tempAvatarPreview, setTempAvatarPreview] = useState<string | null>(null);
 
   // Supabase states
   const [supabaseUrl, setSupabaseUrl] = useState(settings.supabaseConfig?.url || '');
@@ -96,49 +99,90 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   if (!isOpen) return null;
 
+  const handleCancelProfile = () => {
+    if (myProfile) {
+      setName(myProfile.display_name);
+      setBio(myProfile.bio || '');
+    }
+    setTempAvatarFile(null);
+    if (tempAvatarPreview) {
+      URL.revokeObjectURL(tempAvatarPreview);
+      setTempAvatarPreview(null);
+    }
+    setProfileError(null);
+    setProfileSuccess(null);
+    setActiveSection('main');
+  };
+
   const handleUpdateProfile = async () => {
     setIsUpdating(true);
     setProfileError(null);
+    setProfileSuccess(null);
     try {
+      // 1. Update text profile info
       const result = await profileService.updateProfile({
         display_name: name.trim(),
         bio: bio.trim()
       });
-      if (result.success) {
-        triggerHaptic(40);
-        soundEffects.playReaction();
-        if (onProfileUpdated) onProfileUpdated();
-        setActiveSection('main');
-      } else {
-        setProfileError(result.error || 'Erreur lors de la mise à jour');
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Erreur lors de la mise à jour du profil');
       }
-    } catch (err) {
-      setProfileError('Une erreur est survenue');
+
+      // 2. Handle avatar upload if a new file was selected
+      if (tempAvatarFile) {
+        setUploadProgress(true);
+        const uploadResult = await profileService.uploadAvatar(tempAvatarFile);
+        if (!uploadResult.success) {
+          throw new Error(uploadResult.error || "Erreur lors de l'upload de l'avatar");
+        }
+        setTempAvatarFile(null);
+        if (tempAvatarPreview) {
+          URL.revokeObjectURL(tempAvatarPreview);
+          setTempAvatarPreview(null);
+        }
+      }
+
+      triggerHaptic(40);
+      soundEffects.playReaction();
+      setProfileSuccess('Profil mis à jour avec succès');
+      if (onProfileUpdated) onProfileUpdated();
+      
+      // Keep in section for a moment to show success, then return
+      setTimeout(() => {
+        if (activeSection === 'profile') {
+          setActiveSection('main');
+          setProfileSuccess(null);
+        }
+      }, 1500);
+
+    } catch (err: any) {
+      setProfileError(err.message || 'Une erreur est survenue');
     } finally {
       setIsUpdating(false);
+      setUploadProgress(false);
     }
   };
 
-  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarSelection = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setUploadProgress(true);
-    setProfileError(null);
-    try {
-      const result = await profileService.uploadAvatar(file);
-      if (result.success) {
-        triggerHaptic(60);
-        soundEffects.playReaction();
-        if (onProfileUpdated) onProfileUpdated();
-      } else {
-        setProfileError(result.error || "Erreur lors de l'upload");
-      }
-    } catch (err: any) {
-      setProfileError(err.message || "Erreur lors de l'upload");
-    } finally {
-      setUploadProgress(false);
+    // Validation: type and size
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      setProfileError('Format non supporté (JPG, PNG, WebP uniquement)');
+      return;
     }
+    if (file.size > 5 * 1024 * 1024) {
+      setProfileError('Image trop volumineuse (max 5 Mo)');
+      return;
+    }
+
+    setProfileError(null);
+    setTempAvatarFile(file);
+    if (tempAvatarPreview) URL.revokeObjectURL(tempAvatarPreview);
+    setTempAvatarPreview(URL.createObjectURL(file));
   };
 
   const handleSaveSupabase = () => {
@@ -446,7 +490,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="relative group">
                   <div className={`w-28 h-28 rounded-[2rem] overflow-hidden border-4 border-[#2d2254] shadow-2xl relative ${uploadProgress ? 'opacity-50' : ''}`}>
                     <img
-                      src={currentUser.avatar}
+                      src={tempAvatarPreview || currentUser.avatar}
                       alt={currentUser.name}
                       className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                     />
@@ -461,9 +505,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <input
                       type="file"
                       className="hidden"
-                      accept="image/*"
-                      onChange={handleAvatarChange}
-                      disabled={uploadProgress}
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={handleAvatarSelection}
+                      disabled={uploadProgress || isUpdating}
                     />
                   </label>
                 </div>
@@ -511,18 +555,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 )}
 
-                <div className="pt-2">
+                {profileSuccess && (
+                  <div className="p-3 rounded-xl bg-[#00b894]/10 border border-[#00b894]/30 flex items-center gap-2 text-[#55efc4] text-xs">
+                    <Check size={14} />
+                    <span>{profileSuccess}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <button
+                    onClick={handleCancelProfile}
+                    className="py-4 bg-[#130f26] hover:bg-[#1f1742] text-[#a29bfe] font-bold rounded-2xl border border-[#2d2254] transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
+                  >
+                    <span>Annuler</span>
+                  </button>
                   <button
                     onClick={handleUpdateProfile}
-                    disabled={isUpdating || !name.trim()}
-                    className="w-full py-4 bg-[#6c5ce7] hover:bg-[#5849be] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-2xl shadow-lg shadow-[#6c5ce7]/20 transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
+                    disabled={isUpdating || uploadProgress || !name.trim()}
+                    className="py-4 bg-[#6c5ce7] hover:bg-[#5849be] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-2xl shadow-lg shadow-[#6c5ce7]/20 transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
                   >
                     {isUpdating ? (
                       <Loader2 size={20} className="animate-spin" />
                     ) : (
                       <Check size={20} />
                     )}
-                    <span>Enregistrer mon profil</span>
+                    <span>Enregistrer</span>
                   </button>
                 </div>
               </div>
@@ -530,7 +587,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="p-4 rounded-2xl bg-blue-500/5 border border-blue-500/10">
                 <p className="text-[11px] text-blue-300/80 leading-relaxed text-center">
                   Ces informations sont stockées dans la table <code className="bg-blue-500/10 px-1 rounded text-blue-200">public.profiles</code>. 
-                  Votre partenaire pourra voir ces changements instantanément.
+                  Votre partenaire pourra voir ces changements.
                 </p>
               </div>
             </div>

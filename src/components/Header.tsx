@@ -190,34 +190,61 @@ export const Header: React.FC<HeaderProps> = ({
             {partnerUser.id && (
               <div 
                 onClick={onOpenSettings} // Or a specific partner profile modal
-                className="flex items-center gap-2 bg-[#130f26] border border-[#2d2254] text-[10px] px-2 py-1 rounded-xl text-[#a29bfe] select-none cursor-pointer hover:bg-[#1e173e] transition-colors"
+                className="flex items-center gap-2 bg-[#130f26] border border-[#2d2254] text-[10px] px-1.5 py-0.8 rounded-xl text-[#a29bfe] select-none cursor-pointer hover:bg-[#1e173e] transition-colors"
                 title={isPartnerOnline ? 'Partenaire en ligne' : 'Partenaire hors ligne'}
               >
-                <div className="relative">
+                <div className="relative shrink-0">
+                  {partnerUser.avatar ? (
+                    <img 
+                      src={partnerUser.avatar} 
+                      className="w-5 h-5 rounded-lg object-cover border border-[#2d2254]"
+                      alt=""
+                    />
+                  ) : (
+                    <div className="w-5 h-5 rounded-lg bg-[#281e4b] flex items-center justify-center border border-[#2d2254]">
+                      <Settings size={10} className="text-[#a29bfe]/60" />
+                    </div>
+                  )}
                   <span className={`w-1.5 h-1.5 rounded-full absolute -top-0.5 -right-0.5 border border-[#130f26] ${isPartnerOnline ? 'bg-[#00b894] animate-pulse' : 'bg-[#a29bfe]/40'}`} />
-                  <span className="font-bold text-[#f1f2f6] truncate max-w-[80px] sm:max-w-[120px]">
-                    {partnerNickname || partnerProfile?.display_name || partnerUser.name}
-                  </span>
                 </div>
                 
-                {isPartnerTyping ? (
-                  <span className="text-[#55efc4] font-medium italic animate-pulse">écrit…</span>
-                ) : isPartnerOnline ? (
-                  <span className="text-[#00b894] font-medium hidden sm:inline">En ligne</span>
-                ) : partnerLastSeen ? (
-                  <span className="text-[#a29bfe]/80 hidden sm:inline">{formatLastSeen(partnerLastSeen)}</span>
-                ) : (
-                  <span className="text-[#a29bfe]/60 hidden sm:inline">Off</span>
-                )}
+                <div className="flex flex-col min-w-0">
+                  <span className="font-bold text-[#f1f2f6] truncate max-w-[60px] sm:max-w-[100px]">
+                    {partnerNickname || partnerProfile?.display_name || partnerUser.name}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {isPartnerTyping ? (
+                      <span className="text-[#55efc4] font-medium italic animate-pulse">écrit…</span>
+                    ) : isPartnerOnline ? (
+                      <span className="text-[#00b894] font-medium">En ligne</span>
+                    ) : partnerLastSeen ? (
+                      <span className="text-[#a29bfe]/80">{formatLastSeen(partnerLastSeen)}</span>
+                    ) : (
+                      <span className="text-[#a29bfe]/60">Off</span>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 
             {/* Authenticated Identity Pill */}
             <div 
               title={`Connecté en tant que : ${myProfile?.display_name || currentUser.name}`}
-              className="flex items-center gap-1 bg-[#130f26] border border-[#2d2254] text-[10px] px-1.5 sm:px-2 py-1 rounded-xl text-[#a29bfe] select-none"
+              className="flex items-center gap-1.5 bg-[#130f26] border border-[#2d2254] text-[10px] px-1.5 sm:px-2 py-0.8 rounded-xl text-[#a29bfe] select-none"
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-[#00b894] shrink-0" />
+              <div className="shrink-0">
+                {currentUser.avatar ? (
+                  <img 
+                    src={currentUser.avatar} 
+                    className="w-4 h-4 rounded-md object-cover border border-[#2d2254]"
+                    alt=""
+                  />
+                ) : (
+                  <div className="w-4 h-4 rounded-md bg-[#281e4b] flex items-center justify-center border border-[#2d2254]">
+                    <Settings size={8} className="text-[#a29bfe]/60" />
+                  </div>
+                )}
+              </div>
               <span className="font-semibold text-[#f1f2f6] truncate max-w-[45px] sm:max-w-[70px]">
                 {(myProfile?.display_name || currentUser.name).split(' ')[0]}
               </span>

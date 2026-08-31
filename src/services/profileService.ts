@@ -95,21 +95,51 @@ export const profileService = {
       .maybeSingle();
     const oldPath = profile?.avatar_path;
 
-    // Generate new path: {user_id}/{uuid}.webp
+    // Helper to compress to WebP if environment allows
+    const compressToWebP = async (sourceFile: File): Promise<{ blob: Blob; ext: string }> => {
+      try {
+        const img = new Image();
+        const url = URL.createObjectURL(sourceFile);
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+          img.src = url;
+        });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Canvas context failed');
+        
+        ctx.drawImage(img, 0, 0);
+        
+        // Try to export as webp
+        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/webp', 0.8));
+        URL.revokeObjectURL(url);
+        
+        if (blob) {
+          return { blob, ext: 'webp' };
+        }
+        throw new Error('WebP compression failed');
+      } catch (err) {
+        console.warn('[profileService] WebP compression failed, keeping original format:', err);
+        return { blob: sourceFile, ext: sourceFile.name.split('.').pop() || 'jpg' };
+      }
+    };
+
+    const { blob, ext } = await compressToWebP(file);
     const uuid = crypto.randomUUID();
-    const fileName = `${uuid}.webp`; // Ideally we compress to webp, but browsers don't do it easily without canvas.
-    // For now, we use the extension if we can't compress, or assume webp if we could.
-    // But the requirement says {user_id}/{uuid}.webp
-    const filePath = `${user.id}/${fileName}`;
+    const filePath = `${user.id}/${uuid}.${ext}`;
 
     try {
       // Upload to 'avatars' bucket
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, file, {
+        .upload(filePath, blob, {
           cacheControl: '3600',
           upsert: false,
-          contentType: 'image/webp' // Force webp content type for the storage
+          contentType: `image/${ext}`
         });
         
       if (uploadError) throw uploadError;
@@ -126,7 +156,7 @@ export const profileService = {
         
       if (updateError) throw updateError;
 
-      // Clean up old avatar after success
+      // Clean up old avatar only after complete success
       if (oldPath && oldPath !== filePath) {
         await supabase.storage.from('avatars').remove([oldPath]);
       }
@@ -191,10 +221,14 @@ export const profileService = {
   },
 
   // 7. Set partner nickname
-  async setPartnerNickname(coupleId: string, partnerId: string, nickname: string): Promise<{ success: boolean; error?: string }> {
+  async setPartnerNickname(coupleId: string, partnerId: string, nickname: string): Promise<{ success: boolean; data?: string; error?: string }> {
     if (!isSupabaseConfigured()) return { success: false, error: 'Supabase non configuré' };
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { success: false, error: 'Non authentifié' };
+
+    const trimmedNickname = nickname.trim();
+    if (!trimmedNickname) return { success: false, error: 'Le surnom ne peut pas être vide' };
+    if (trimmedNickname.length > 50) return { success: false, error: 'Le surnom est trop long (max 50 caractères)' };
 
     const { error } = await supabase
       .from('partner_nicknames')
@@ -202,7 +236,7 @@ export const profileService = {
         owner_user_id: user.id,
         partner_user_id: partnerId,
         couple_id: coupleId,
-        nickname: nickname.trim(),
+        nickname: trimmedNickname,
         updated_at: new Date().toISOString()
       }, {
         onConflict: 'owner_user_id,partner_user_id,couple_id'
@@ -212,7 +246,7 @@ export const profileService = {
       console.error('[profileService] Error setting nickname:', error);
       return { success: false, error: error.message };
     }
-    return { success: true };
+    return { success: true, data: trimmedNickname };
   },
 
   // 8. Remove partner nickname

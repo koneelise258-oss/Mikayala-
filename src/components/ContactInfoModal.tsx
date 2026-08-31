@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Phone, Video, Search, Lock, Clock, ShieldCheck, Star, ChevronRight, Image, FileText, Link, Bell, Trash2, Edit3, Check, Loader2 } from 'lucide-react';
+import { X, Phone, Video, Search, Lock, Clock, ShieldCheck, Star, ChevronRight, Image, FileText, Link, Bell, Trash2, Edit3, Check, Loader2, User as UserIcon } from 'lucide-react';
 import { User, Message, ChatSettings, CallType, UserProfile } from '../types';
 import { profileService } from '../services/profileService';
 import { triggerHaptic } from '../utils/security';
@@ -42,31 +42,64 @@ export const ContactInfoModal: React.FC<ContactInfoModalProps> = ({
   const [pinInput, setPinInput] = useState('');
 
   // Nickname states
-  const [isEditingNickname, setIsEditingNickname] = useState(false);
   const [newNickname, setNewNickname] = useState(partnerNickname || '');
   const [isUpdatingNickname, setIsUpdatingNickname] = useState(false);
+  const [nicknameError, setNicknameError] = useState<string | null>(null);
+  const [nicknameSuccess, setNicknameSuccess] = useState(false);
 
   if (!isOpen) return null;
 
   const handleUpdateNickname = async () => {
     if (!coupleId || !partnerUser.id) return;
+    const trimmed = newNickname.trim();
+    if (!trimmed) {
+      setNicknameError('Le surnom ne peut pas être vide');
+      return;
+    }
+    if (trimmed.length > 50) {
+      setNicknameError('Le surnom est trop long (max 50 caractères)');
+      return;
+    }
     
     setIsUpdatingNickname(true);
+    setNicknameError(null);
+    setNicknameSuccess(false);
     try {
-      let result;
-      if (newNickname.trim()) {
-        result = await profileService.setPartnerNickname(coupleId, partnerUser.id, newNickname.trim());
-      } else {
-        result = await profileService.removePartnerNickname(coupleId, partnerUser.id);
-      }
-
+      const result = await profileService.setPartnerNickname(coupleId, partnerUser.id, trimmed);
       if (result.success) {
         triggerHaptic(40);
+        setNicknameSuccess(true);
         if (onNicknameUpdated) onNicknameUpdated();
-        setIsEditingNickname(false);
+        setTimeout(() => setNicknameSuccess(false), 3000);
+      } else {
+        setNicknameError(result.error || 'Erreur lors de la sauvegarde');
       }
-    } catch (err) {
-      console.error('Error updating nickname:', err);
+    } catch (err: any) {
+      setNicknameError(err.message || 'Erreur lors de la sauvegarde');
+    } finally {
+      setIsUpdatingNickname(false);
+    }
+  };
+
+  const handleRemoveNickname = async () => {
+    if (!coupleId || !partnerUser.id) return;
+    
+    setIsUpdatingNickname(true);
+    setNicknameError(null);
+    setNicknameSuccess(false);
+    try {
+      const result = await profileService.removePartnerNickname(coupleId, partnerUser.id);
+      if (result.success) {
+        triggerHaptic(40);
+        setNewNickname('');
+        setNicknameSuccess(true);
+        if (onNicknameUpdated) onNicknameUpdated();
+        setTimeout(() => setNicknameSuccess(false), 3000);
+      } else {
+        setNicknameError(result.error || 'Erreur lors de la suppression');
+      }
+    } catch (err: any) {
+      setNicknameError(err.message || 'Erreur lors de la suppression');
     } finally {
       setIsUpdatingNickname(false);
     }
@@ -109,52 +142,84 @@ export const ContactInfoModal: React.FC<ContactInfoModalProps> = ({
 
       {/* Main Profile Info Header */}
       <div className="bg-[#111b21] p-6 flex flex-col items-center text-center border-b border-[#222e35]">
-        <img
-          src={partnerUser.avatar}
-          alt={partnerNickname || partnerProfile?.display_name || partnerUser.name}
-          className="w-32 h-32 rounded-full object-cover border-2 border-[#374248] shadow-xl mb-3"
-        />
-        
-        {isEditingNickname ? (
-          <div className="flex items-center gap-2 mb-1">
-            <input
-              type="text"
-              value={newNickname}
-              onChange={(e) => setNewNickname(e.target.value)}
-              placeholder="Surnom privé..."
-              autoFocus
-              className="bg-[#202c33] border border-[#00a884] rounded-lg px-3 py-1 text-sm text-[#e9edef] outline-none"
-            />
-            <button
-              onClick={handleUpdateNickname}
-              disabled={isUpdatingNickname}
-              className="p-1.5 bg-[#00a884] text-[#111b21] rounded-lg hover:bg-[#029070]"
-            >
-              {isUpdatingNickname ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-            </button>
-          </div>
+        {partnerUser.avatar ? (
+          <img
+            src={partnerUser.avatar}
+            alt={partnerNickname || partnerProfile?.display_name || partnerUser.name}
+            className="w-32 h-32 rounded-full object-cover border-2 border-[#374248] shadow-xl mb-3"
+          />
         ) : (
-          <div className="flex items-center gap-2 group">
-            <h3 className="text-xl font-bold text-[#e9edef]">{partnerNickname || partnerProfile?.display_name || partnerUser.name}</h3>
-            <button
-              onClick={() => {
-                setNewNickname(partnerNickname || '');
-                setIsEditingNickname(true);
-              }}
-              className="p-1 text-[#8696a0] hover:text-[#00a884] opacity-0 group-hover:opacity-100 transition-opacity"
-            >
-              <Edit3 size={14} />
-            </button>
+          <div className="w-32 h-32 rounded-full bg-[#202c33] border-2 border-[#374248] shadow-xl mb-3 flex items-center justify-center text-[#8696a0]">
+            <UserIcon size={64} />
           </div>
         )}
+        
+        <h3 className="text-xl font-bold text-[#e9edef] mb-1">
+          {partnerNickname || partnerProfile?.display_name || partnerUser.name}
+        </h3>
 
-        {partnerNickname && (
-          <p className="text-xs text-[#8696a0] mt-0.5">Vrai nom : {partnerProfile?.display_name || partnerUser.name}</p>
-        )}
-        <p className="text-sm text-[#8696a0] mt-0.5">{partnerUser.phone}</p>
+        <p className="text-sm text-[#8696a0]">{partnerUser.phone}</p>
         <span className="text-xs text-[#00a884] font-medium mt-1">
           {partnerUser.isOnline ? 'En ligne' : `Vu à ${partnerUser.lastSeen}`}
         </span>
+
+        {/* Private Nickname Section */}
+        <div className="w-full mt-6 px-4 py-4 bg-[#202c33] rounded-2xl border border-[#374248] text-left">
+          <h4 className="text-[10px] font-bold uppercase tracking-widest text-[#8696a0] mb-3">
+            Nom que je donne à mon partenaire
+          </h4>
+          
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <div className="flex-1 relative">
+                <input
+                  type="text"
+                  value={newNickname}
+                  onChange={(e) => {
+                    setNewNickname(e.target.value);
+                    if (nicknameError) setNicknameError(null);
+                  }}
+                  placeholder="Surnom privé..."
+                  className="w-full bg-[#111b21] border border-[#374248] rounded-xl px-4 py-2.5 text-sm text-[#e9edef] outline-none focus:border-[#00a884] transition-colors"
+                />
+                {nicknameSuccess && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[#00a884] animate-pulse">
+                    <Check size={18} />
+                  </div>
+                )}
+              </div>
+              
+              <button
+                onClick={handleUpdateNickname}
+                disabled={isUpdatingNickname || !newNickname.trim()}
+                className="p-2.5 bg-[#00a884] text-[#111b21] rounded-xl hover:bg-[#029070] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Enregistrer le surnom"
+              >
+                {isUpdatingNickname ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}
+              </button>
+
+              {partnerNickname && (
+                <button
+                  onClick={handleRemoveNickname}
+                  disabled={isUpdatingNickname}
+                  className="p-2.5 bg-[#ea4335]/10 text-[#ea4335] rounded-xl hover:bg-[#ea4335]/20 transition-colors border border-[#ea4335]/20"
+                  title="Effacer le surnom"
+                >
+                  <Trash2 size={18} />
+                </button>
+              )}
+            </div>
+
+            {nicknameError && (
+              <p className="text-[11px] text-[#ea4335] px-1">{nicknameError}</p>
+            )}
+
+            <div className="mt-2 flex items-center gap-1.5 text-[11px] text-[#8696a0]">
+              <Edit3 size={10} />
+              <span>Vrai nom : {partnerProfile?.display_name || partnerUser.name}</span>
+            </div>
+          </div>
+        </div>
 
         {/* Action Buttons Row */}
         <div className="flex items-center gap-6 mt-5">
