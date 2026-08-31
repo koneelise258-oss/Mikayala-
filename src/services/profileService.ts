@@ -78,7 +78,9 @@ export const profileService = {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { success: false, error: 'Non authentifié' };
 
-    // Validation: type and size
+    // 1. Choisir le fichier (déjà fait via l'input)
+    
+    // 2. Vérifier type et taille
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!allowedTypes.includes(file.type)) {
       return { success: false, error: 'Format non supporté (JPG, PNG, WebP uniquement)' };
@@ -87,7 +89,7 @@ export const profileService = {
       return { success: false, error: 'Image trop volumineuse (max 5 Mo)' };
     }
 
-    // Get current profile for cleanup later
+    // Sauvegarder l'ancien chemin pour suppression ultérieure
     const { data: profile } = await supabase
       .from('profiles')
       .select('avatar_path')
@@ -95,70 +97,103 @@ export const profileService = {
       .maybeSingle();
     const oldPath = profile?.avatar_path;
 
-    // Helper to compress to WebP if environment allows
-    const compressToWebP = async (sourceFile: File): Promise<{ blob: Blob; ext: string }> => {
+    // 3. Compresser si possible (conversion WebP)
+    const compressToWebP = async (sourceFile: File): Promise<{ blob: Blob | File; ext: string }> => {
+      // Si c'est déjà un webp, on ne convertit pas (mais on pourrait re-compresser si besoin)
+      if (sourceFile.type === 'image/webp') {
+        return { blob: sourceFile, ext: 'webp' };
+      }
+
       try {
         const img = new Image();
         const url = URL.createObjectURL(sourceFile);
         await new Promise((resolve, reject) => {
           img.onload = resolve;
-          img.onerror = reject;
+          img.onerror = () => reject(new Error('Erreur de chargement de l\'image'));
           img.src = url;
         });
 
         const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
+        // Limiter la taille pour un avatar (ex: 512x512)
+        const maxDim = 512;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error('Canvas context failed');
         
-        ctx.drawImage(img, 0, 0);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, width, height);
         
-        // Try to export as webp
-        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/webp', 0.8));
+        // Tenter l'export en WebP
+        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/webp', 0.85));
         URL.revokeObjectURL(url);
         
         if (blob) {
+          console.log(`[profileService] Compression WebP réussie: ${(blob.size / 1024).toFixed(1)}KB`);
           return { blob, ext: 'webp' };
         }
-        throw new Error('WebP compression failed');
+        throw new Error('Export WebP échoué');
       } catch (err) {
-        console.warn('[profileService] WebP compression failed, keeping original format:', err);
-        return { blob: sourceFile, ext: sourceFile.name.split('.').pop() || 'jpg' };
+        console.warn('[profileService] Échec conversion WebP, conservation du format original:', err);
+        const originalExt = sourceFile.name.split('.').pop()?.toLowerCase() || (sourceFile.type === 'image/png' ? 'png' : 'jpg');
+        return { blob: sourceFile, ext: originalExt };
       }
     };
 
     const { blob, ext } = await compressToWebP(file);
+    
+    // 4. Créer un UUID
     const uuid = crypto.randomUUID();
+    
+    // 5. Chemin interne : {user_id}/{uuid}.{extension}
     const filePath = `${user.id}/${uuid}.${ext}`;
 
     try {
-      // Upload to 'avatars' bucket
+      // 6. Uploader le nouvel avatar
       const { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(filePath, blob, {
           cacheControl: '3600',
           upsert: false,
-          contentType: `image/${ext}`
+          contentType: ext === 'webp' ? 'image/webp' : (ext === 'png' ? 'image/png' : 'image/jpeg')
         });
         
       if (uploadError) throw uploadError;
 
-      // Update profile
+      // 7. Mettre à jour seulement ma ligne profiles
       const { error: updateError } = await supabase
         .from('profiles')
         .update({
-          avatar_path: filePath,
-          avatar_version: Math.floor(Date.now() / 1000),
+          avatar_path: filePath, // 8. avatar_path
+          avatar_version: Math.floor(Date.now() / 1000), // 9. Augmenter avatar_version
           updated_at: new Date().toISOString()
         })
-        .eq('id', user.id);
+        .eq('id', user.id); // eq('id', currentUser.id)
         
       if (updateError) throw updateError;
 
-      // Clean up old avatar only after complete success
+      // 10. L'URL signée et l'interface seront mises à jour par App.tsx via loadProfiles
+
+      // 11. Supprimer l'ancien avatar seulement après succès complet
       if (oldPath && oldPath !== filePath) {
-        await supabase.storage.from('avatars').remove([oldPath]);
+        try {
+          await supabase.storage.from('avatars').remove([oldPath]);
+        } catch (cleanupErr) {
+          console.warn('[profileService] Échec suppression ancien avatar (non bloquant):', cleanupErr);
+        }
       }
 
       return { success: true, path: filePath };

@@ -492,12 +492,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {/* Avatar Upload */}
               <div className="flex flex-col items-center gap-4">
                 <div className="relative group">
-                  <div className={`w-28 h-28 rounded-[2rem] overflow-hidden border-4 border-[#2d2254] shadow-2xl relative ${uploadProgress ? 'opacity-50' : ''}`}>
-                    <img
-                      src={tempAvatarPreview || currentUser.avatar}
-                      alt={currentUser.name}
-                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                    />
+                  <div className={`w-28 h-28 rounded-[2rem] overflow-hidden border-4 border-[#2d2254] shadow-2xl relative bg-[#130f26] flex items-center justify-center ${uploadProgress ? 'opacity-50' : ''}`}>
+                    {tempAvatarPreview || currentUser.avatar ? (
+                      <img
+                        src={tempAvatarPreview || currentUser.avatar}
+                        alt={currentUser.name}
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                      />
+                    ) : (
+                      <UserIcon size={48} className="text-[#a29bfe]/40" />
+                    )}
                     {uploadProgress && (
                       <div className="absolute inset-0 flex items-center justify-center bg-black/40">
                         <Loader2 size={32} className="text-[#55efc4] animate-spin" />

@@ -13,7 +13,8 @@ import {
   Radio,
   Bluetooth,
   Calculator,
-  ChevronDown
+  ChevronDown,
+  User as UserIcon
 } from 'lucide-react';
 import { User, NetworkState, UserProfile } from '../types';
 import { triggerHaptic } from '../utils/security';
@@ -202,7 +203,7 @@ export const Header: React.FC<HeaderProps> = ({
                     />
                   ) : (
                     <div className="w-5 h-5 rounded-lg bg-[#281e4b] flex items-center justify-center border border-[#2d2254]">
-                      <Settings size={10} className="text-[#a29bfe]/60" />
+                      <UserIcon size={10} className="text-[#a29bfe]/60" />
                     </div>
                   )}
                   <span className={`w-1.5 h-1.5 rounded-full absolute -top-0.5 -right-0.5 border border-[#130f26] ${isPartnerOnline ? 'bg-[#00b894] animate-pulse' : 'bg-[#a29bfe]/40'}`} />
@@ -241,7 +242,7 @@ export const Header: React.FC<HeaderProps> = ({
                   />
                 ) : (
                   <div className="w-4 h-4 rounded-md bg-[#281e4b] flex items-center justify-center border border-[#2d2254]">
-                    <Settings size={8} className="text-[#a29bfe]/60" />
+                    <UserIcon size={8} className="text-[#a29bfe]/60" />
                   </div>
                 )}
               </div>

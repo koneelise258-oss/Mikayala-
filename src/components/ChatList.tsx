@@ -16,10 +16,11 @@ import {
   Ticket,
   HelpCircle,
   Fingerprint,
-  Gift,
+   Gift,
   Flame,
   BarChart2,
-  MapPin
+  MapPin,
+  User as UserIcon
 } from 'lucide-react';
 import { formatTime } from '../utils/formatters';
 import { triggerHaptic } from '../utils/security';
@@ -276,12 +277,16 @@ export const ChatList: React.FC<ChatListProps> = ({
         >
           {/* Avatar with Emerald Online Ring */}
           <div className="relative shrink-0 mr-3.5">
-            <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-[#00b894] overflow-hidden border-2 border-[#6c5ce7]/50 shadow-md group-hover:scale-105 transition-transform">
-              <img
-                src={partnerProfile?.avatar_url || partnerUser.avatar}
-                alt={partnerName}
-                className="w-full h-full object-cover"
-              />
+            <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-[#1e173e] overflow-hidden border-2 border-[#6c5ce7]/50 shadow-md group-hover:scale-105 transition-transform flex items-center justify-center">
+              {partnerProfile?.avatar_url || partnerUser.avatar ? (
+                <img
+                  src={partnerProfile?.avatar_url || partnerUser.avatar}
+                  alt={partnerName}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <UserIcon size={24} className="text-[#a29bfe]/40" />
+              )}
             </div>
             {partnerUser.isOnline && (
               <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-[#00b894] border-2 border-[#171230] rounded-full shadow-sm animate-pulse" />
