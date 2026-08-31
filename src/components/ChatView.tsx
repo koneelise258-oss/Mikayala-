@@ -80,6 +80,15 @@ interface ChatViewProps {
   isPartnerTyping?: boolean;
   partnerLastSeen?: string | null;
   sendTypingStatus?: (isTyping: boolean) => void;
+  // Centralized navigation states
+  isPhotoEditorOpen: boolean;
+  setIsPhotoEditorOpen: (val: boolean) => void;
+  isDirectCameraOpen: boolean;
+  setIsDirectCameraOpen: (val: boolean) => void;
+  isPhotoPreviewOpen: boolean;
+  setIsPhotoPreviewOpen: (val: boolean) => void;
+  selectedPhotoFile: File | null;
+  setSelectedPhotoFile: (file: File | null) => void;
 }
 
 export const ChatView: React.FC<ChatViewProps> = ({
@@ -118,7 +127,16 @@ export const ChatView: React.FC<ChatViewProps> = ({
   isPartnerOnline = false,
   isPartnerTyping = false,
   partnerLastSeen = null,
-  sendTypingStatus = (_isTyping: boolean) => {}
+  sendTypingStatus = (_isTyping: boolean) => {},
+  // New centralized props
+  isPhotoEditorOpen,
+  setIsPhotoEditorOpen,
+  isDirectCameraOpen,
+  setIsDirectCameraOpen,
+  isPhotoPreviewOpen,
+  setIsPhotoPreviewOpen,
+  selectedPhotoFile,
+  setSelectedPhotoFile
 }) => {
   const [inputText, setInputText] = useState('');
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -149,13 +167,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [recordTimer, setRecordTimer] = useState(0);
   const [inputMode, setInputMode] = useState<'voice' | 'video_note'>('voice');
 
-  // Photo states & refs (Phase 1 & Phase 2A Editor)
-  const [selectedPhotoFile, setSelectedPhotoFile] = useState<File | null>(null);
-  const [isPhotoEditorOpen, setIsPhotoEditorOpen] = useState<boolean>(false);
-  const [isPhotoPreviewOpen, setIsPhotoPreviewOpen] = useState<boolean>(false);
+  // Photo states removed (moved to App.tsx)
   const [isOptimizingPhoto, setIsOptimizingPhoto] = useState<boolean>(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
-  const [isDirectCameraOpen, setIsDirectCameraOpen] = useState<boolean>(false);
   const [comingSoonToast, setComingSoonToast] = useState<string | null>(null);
 
   const typingTimeoutRef = useRef<number | null>(null);
@@ -2130,14 +2144,13 @@ export const ChatView: React.FC<ChatViewProps> = ({
       {/* Direct Camera Modal (Live capture -> Photo Editor -> Photo Preview) */}
       <DirectCameraModal
         isOpen={isDirectCameraOpen}
-        onClose={() => setIsDirectCameraOpen(false)}
+        onClose={() => window.history.back()}
         onCapturePhoto={(file: File) => {
-          setIsDirectCameraOpen(false);
           setSelectedPhotoFile(file);
           setIsPhotoEditorOpen(true);
         }}
         onOpenGalleryFallback={() => {
-          setIsDirectCameraOpen(false);
+          window.history.back();
           galleryInputRef.current?.click();
         }}
       />
@@ -2155,13 +2168,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
         isOpen={isPhotoEditorOpen}
         file={selectedPhotoFile}
         onClose={() => {
-          setIsPhotoEditorOpen(false);
-          setSelectedPhotoFile(null);
-          setPhotoError(null);
+          window.history.back();
         }}
         onComplete={(editedFile: File) => {
           setSelectedPhotoFile(editedFile);
-          setIsPhotoEditorOpen(false);
           setIsPhotoPreviewOpen(true);
         }}
       />
@@ -2170,7 +2180,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
       <PhotoPreviewModal
         isOpen={isPhotoPreviewOpen}
         file={selectedPhotoFile}
-        onClose={handleClosePhotoPreview}
+        onClose={() => window.history.back()}
         onSend={handleSendPhotoMessage}
         isSending={isOptimizingPhoto}
         errorMessage={photoError}

@@ -401,6 +401,18 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('discussions');
   const [isChatOpen, setIsChatOpen] = useState(false);
 
+  // Centralized Navigation states moved from children for History management
+  const [activeSettingsSection, setActiveSettingsSection] = useState<'main' | 'couple' | 'appearance' | 'profile' | 'privacy' | 'supabase'>('main');
+  const [isPhotoEditorOpen, setIsPhotoEditorOpen] = useState<boolean>(false);
+  const [isDirectCameraOpen, setIsDirectCameraOpen] = useState<boolean>(false);
+  const [isPhotoPreviewOpen, setIsPhotoPreviewOpen] = useState<boolean>(false);
+  const [selectedPhotoFile, setSelectedPhotoFile] = useState<File | null>(null);
+
+  // Root Double-Back Toast state
+  const [backToast, setBackToast] = useState<string | null>(null);
+  const lastBackTimeRef = useRef<number>(0);
+  const isPopStateRef = useRef<boolean>(false);
+
   // Biometrics & Security Locks
   const [isAppAuthenticated, setIsAppAuthenticated] = useState<boolean>(!settings.isBiometricEnabled);
   const [isVaultAuthenticated, setIsVaultAuthenticated] = useState<boolean>(false);
@@ -438,6 +450,131 @@ export default function App() {
   const [isScratchCardOpen, setIsScratchCardOpen] = useState(false);
   const [isLoveTimerOpen, setIsLoveTimerOpen] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+
+  // History Management Logic
+  useEffect(() => {
+    // 1. Initial State Initialization
+    if (window.history.state?.view !== 'root') {
+      window.history.replaceState({ view: 'root' }, '');
+    }
+
+    const handlePopState = (event: PopStateEvent) => {
+      isPopStateRef.current = true;
+      
+      // Closing Priority Order
+      // a. PhotoPreview / PhotoEditor
+      if (isPhotoPreviewOpen) {
+        setIsPhotoPreviewOpen(false);
+        isPopStateRef.current = false;
+        return;
+      }
+      if (isPhotoEditorOpen) {
+        setIsPhotoEditorOpen(false);
+        isPopStateRef.current = false;
+        return;
+      }
+      // b. MediaLightbox
+      if (activeMediaLightbox) {
+        setActiveMediaLightbox(null);
+        isPopStateRef.current = false;
+        return;
+      }
+      // c. Camera Capture / Direct Camera
+      if (isCameraOpen) {
+        setIsCameraOpen(false);
+        isPopStateRef.current = false;
+        return;
+      }
+      if (isDirectCameraOpen) {
+        setIsDirectCameraOpen(false);
+        isPopStateRef.current = false;
+        return;
+      }
+      // d & e. QR Scan / QR Code
+      if (isQRCodeOpen) {
+        setIsQRCodeOpen(false);
+        isPopStateRef.current = false;
+        return;
+      }
+      // f. PairingModal
+      if (isPairingModalOpen && pairingState.isPaired) {
+        setIsPairingModalOpen(false);
+        isPopStateRef.current = false;
+        return;
+      }
+      // g. ContactInfoModal
+      if (isContactInfoOpen) {
+        setIsContactInfoOpen(false);
+        isPopStateRef.current = false;
+        return;
+      }
+      // h & i. Mon Profil / Settings
+      if (isSettingsOpen) {
+        if (activeSettingsSection !== 'main') {
+          setActiveSettingsSection('main');
+        } else {
+          setIsSettingsOpen(false);
+        }
+        isPopStateRef.current = false;
+        return;
+      }
+      // Other Modals (Vault, Wishlist, etc.)
+      if (isVaultOpen) { setIsVaultOpen(false); isPopStateRef.current = false; return; }
+      if (isWishlistOpen) { setIsWishlistOpen(false); isPopStateRef.current = false; return; }
+      if (isGamesOpen) { setIsGamesOpen(false); isPopStateRef.current = false; return; }
+      if (isCycleCareOpen) { setIsCycleCareOpen(false); isPopStateRef.current = false; return; }
+      if (isHeartbeatOpen) { setIsHeartbeatOpen(false); isPopStateRef.current = false; return; }
+      if (isCouponsOpen) { setIsCouponsOpen(false); isPopStateRef.current = false; return; }
+      if (isBlindQuizOpen) { setIsBlindQuizOpen(false); isPopStateRef.current = false; return; }
+      if (isDigitalTouchOpen) { setIsDigitalTouchOpen(false); isPopStateRef.current = false; return; }
+      if (isScratchCardOpen) { setIsScratchCardOpen(false); isPopStateRef.current = false; return; }
+      if (isLoveTimerOpen) { setIsLoveTimerOpen(false); isPopStateRef.current = false; return; }
+      if (isCalendarOpen) { setIsCalendarOpen(false); isPopStateRef.current = false; return; }
+      
+      // j. Conversation
+      if (isChatOpen) {
+        setIsChatOpen(false);
+        isPopStateRef.current = false;
+        return;
+      }
+      // k. Secondary Tab
+      if (activeBottomTab !== 'chat') {
+        setActiveBottomTab('chat');
+        isPopStateRef.current = false;
+        return;
+      }
+
+      // l. Racine (Double-back exit logic)
+      const now = Date.now();
+      if (now - lastBackTimeRef.current < 2000) {
+        // Let it exit - the browser will go back to the state before 'root'
+      } else {
+        lastBackTimeRef.current = now;
+        setBackToast("Appuyez encore pour quitter");
+        setTimeout(() => setBackToast(null), 2000);
+        // Push root state back to intercept next back button
+        window.history.pushState({ view: 'root' }, '');
+      }
+      isPopStateRef.current = false;
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [
+    isPhotoPreviewOpen, isPhotoEditorOpen, activeMediaLightbox, isCameraOpen, isDirectCameraOpen,
+    isQRCodeOpen, isPairingModalOpen, pairingState.isPaired, isContactInfoOpen,
+    isSettingsOpen, activeSettingsSection, isChatOpen, activeBottomTab,
+    isVaultOpen, isWishlistOpen, isGamesOpen, isCycleCareOpen, isHeartbeatOpen,
+    isCouponsOpen, isBlindQuizOpen, isDigitalTouchOpen, isScratchCardOpen,
+    isLoveTimerOpen, isCalendarOpen
+  ]);
+
+  // Helper to push history state when opening a view
+  const openView = useCallback((viewName: string) => {
+    if (!isPopStateRef.current) {
+      window.history.pushState({ view: viewName }, '');
+    }
+  }, []);
 
   // Overlay state: discussion masked by modals, sub-features, or camouflage
   const isAnyOverlayOpen = Boolean(
@@ -573,11 +710,16 @@ export default function App() {
   const handleBottomNavSelect = (tab: BottomNavTab) => {
     if (tab === 'vault') {
       handleOpenVault();
+      openView('vault');
       return;
     }
     if (tab === 'settings') {
       setIsSettingsOpen(true);
+      openView('settings');
       return;
+    }
+    if (tab !== 'chat' && activeBottomTab === 'chat') {
+      openView(tab);
     }
     setActiveBottomTab(tab);
     if (tab === 'chat') {
@@ -955,9 +1097,12 @@ export default function App() {
   };
 
   const handleCloseVault = () => {
-    setIsVaultOpen(false);
-    setIsVaultAuthenticated(false);
-    setShowBiometricForVault(false);
+    if (isVaultOpen) window.history.back();
+    else {
+      setIsVaultOpen(false);
+      setIsVaultAuthenticated(false);
+      setShowBiometricForVault(false);
+    }
   };
 
   // Starred messages
@@ -1150,23 +1295,23 @@ export default function App() {
 
             {activeBottomTab === 'games' ? (
               <div className="flex-1 overflow-y-auto relative p-3">
-                <CoupleHubView
-                  currentUser={currentUser}
-                  partnerUser={partnerUser}
-                  onOpenCoupons={() => setIsCouponsOpen(true)}
-                  onOpenBlindQuiz={() => setIsBlindQuizOpen(true)}
-                  onOpenLoveTimer={() => setIsLoveTimerOpen(true)}
-                  onOpenWishlist={() => setIsWishlistOpen(true)}
-                  onOpenGames={() => setIsGamesOpen(true)}
-                  onOpenCalendar={() => setIsCalendarOpen(true)}
-                  onOpenDigitalTouch={() => setIsDigitalTouchOpen(true)}
-                  onOpenHeartbeat={() => setIsHeartbeatOpen(true)}
-                  onOpenCycleCare={() => setIsCycleCareOpen(true)}
-                  onOpenScratchCard={() => setIsScratchCardOpen(true)}
-                  coupons={coupons as any}
-                  quizzes={quizzes as any}
-                  wishlistItems={wishlistItems}
-                />
+                  <CoupleHubView
+                    currentUser={currentUser}
+                    partnerUser={partnerUser}
+                    onOpenCoupons={() => { setIsCouponsOpen(true); openView('coupons'); }}
+                    onOpenBlindQuiz={() => { setIsBlindQuizOpen(true); openView('quiz'); }}
+                    onOpenLoveTimer={() => { setIsLoveTimerOpen(true); openView('timer'); }}
+                    onOpenWishlist={() => { setIsWishlistOpen(true); openView('wishlist'); }}
+                    onOpenGames={() => { setIsGamesOpen(true); openView('games'); }}
+                    onOpenCalendar={() => { setIsCalendarOpen(true); openView('calendar'); }}
+                    onOpenDigitalTouch={() => { setIsDigitalTouchOpen(true); openView('touch'); }}
+                    onOpenHeartbeat={() => { setIsHeartbeatOpen(true); openView('heartbeat'); }}
+                    onOpenCycleCare={() => { setIsCycleCareOpen(true); openView('cycle'); }}
+                    onOpenScratchCard={() => { setIsScratchCardOpen(true); openView('scratch'); }}
+                    coupons={coupons as any}
+                    quizzes={quizzes as any}
+                    wishlistItems={wishlistItems}
+                  />
               </div>
             ) : (
               <>
@@ -1185,17 +1330,17 @@ export default function App() {
                       partnerProfile={partnerProfile}
                       partnerNickname={partnerNickname}
                       messages={messages}
-                      onSelectChat={() => setIsChatOpen(true)}
-                      onOpenNewChat={() => setIsQRCodeOpen(true)}
+                      onSelectChat={() => { setIsChatOpen(true); openView('chat'); }}
+                      onOpenNewChat={() => { setIsQRCodeOpen(true); openView('qr'); }}
                       onOpenVault={handleOpenVault}
-                      onOpenWishlist={() => setIsWishlistOpen(true)}
-                      onOpenGames={() => setIsGamesOpen(true)}
-                      onOpenLoveTimer={() => setIsLoveTimerOpen(true)}
-                      onOpenCalendar={() => setIsCalendarOpen(true)}
-                      onOpenCoupons={() => setIsCouponsOpen(true)}
-                      onOpenQuiz={() => setIsBlindQuizOpen(true)}
-                      onOpenDigitalTouch={() => setIsDigitalTouchOpen(true)}
-                      onOpenScratchCard={() => setIsScratchCardOpen(true)}
+                      onOpenWishlist={() => { setIsWishlistOpen(true); openView('wishlist'); }}
+                      onOpenGames={() => { setIsGamesOpen(true); openView('games'); }}
+                      onOpenLoveTimer={() => { setIsLoveTimerOpen(true); openView('timer'); }}
+                      onOpenCalendar={() => { setIsCalendarOpen(true); openView('calendar'); }}
+                      onOpenCoupons={() => { setIsCouponsOpen(true); openView('coupons'); }}
+                      onOpenQuiz={() => { setIsBlindQuizOpen(true); openView('quiz'); }}
+                      onOpenDigitalTouch={() => { setIsDigitalTouchOpen(true); openView('touch'); }}
+                      onOpenScratchCard={() => { setIsScratchCardOpen(true); openView('scratch'); }}
                       searchQuery={searchQuery}
                       hideChatPreview={settings.hideChatPreview}
                     />
@@ -1228,34 +1373,43 @@ export default function App() {
               settings={settings}
               networkState={networkState}
               isChatActive={isDesktopChatActive}
-              onOpenNetworkModal={() => setIsNetworkModalOpen(true)}
-              onOpenSmsImport={() => setIsSmsImportModalOpen(true)}
-              onBack={() => setIsChatOpen(false)}
+              onOpenNetworkModal={() => { setIsNetworkModalOpen(true); openView('network'); }}
+              onOpenSmsImport={() => { setIsSmsImportModalOpen(true); openView('sms-import'); }}
+              onBack={() => window.history.back()}
               onSendMessage={handleSendMessage}
               onUpdateMessage={handleUpdateMessage}
               onDeleteMessage={handleDeleteMessage}
               onStartCall={handleStartCall}
-              onOpenContactInfo={() => setIsContactInfoOpen(true)}
-              onOpenCamera={() => setIsCameraOpen(true)}
-              onOpenMediaLightbox={(msg) => setActiveMediaLightbox(msg)}
-              onOpenPollModal={() => setIsPollModalOpen(true)}
-              onOpenEventModal={() => setIsEventModalOpen(true)}
-              onOpenLocationModal={() => setIsLocationModalOpen(true)}
+              onOpenContactInfo={() => { setIsContactInfoOpen(true); openView('contact-info'); }}
+              onOpenCamera={() => { setIsCameraOpen(true); openView('camera'); }}
+              onOpenMediaLightbox={(msg) => { setActiveMediaLightbox(msg); openView('lightbox'); }}
+              onOpenPollModal={() => { setIsPollModalOpen(true); openView('poll'); }}
+              onOpenEventModal={() => { setIsEventModalOpen(true); openView('event'); }}
+              onOpenLocationModal={() => { setIsLocationModalOpen(true); openView('location'); }}
               onOpenVault={handleOpenVault}
-              onOpenWishlist={() => setIsWishlistOpen(true)}
-              onOpenGames={() => setIsGamesOpen(true)}
-              onOpenCycleCare={() => setIsCycleCareOpen(true)}
-              onOpenHeartbeat={() => setIsHeartbeatOpen(true)}
-              onOpenCoupons={() => setIsCouponsOpen(true)}
-              onOpenBlindQuiz={() => setIsBlindQuizOpen(true)}
-              onOpenDigitalTouch={() => setIsDigitalTouchOpen(true)}
-              onOpenScratchCard={() => setIsScratchCardOpen(true)}
+              onOpenWishlist={() => { setIsWishlistOpen(true); openView('wishlist'); }}
+              onOpenGames={() => { setIsGamesOpen(true); openView('games-modal'); }}
+              onOpenCycleCare={() => { setIsCycleCareOpen(true); openView('cycle'); }}
+              onOpenHeartbeat={() => { setIsHeartbeatOpen(true); openView('heartbeat'); }}
+              onOpenCoupons={() => { setIsCouponsOpen(true); openView('coupons'); }}
+              onOpenBlindQuiz={() => { setIsBlindQuizOpen(true); openView('quiz'); }}
+              onOpenDigitalTouch={() => { setIsDigitalTouchOpen(true); openView('touch'); }}
+              onOpenScratchCard={() => { setIsScratchCardOpen(true); openView('scratch'); }}
               onClaimCoupon={handleClaimCoupon}
               onRedeemCoupon={handleRedeemCoupon}
               isPartnerOnline={isPartnerOnline}
               isPartnerTyping={isPartnerTyping}
               partnerLastSeen={partnerLastSeen}
               sendTypingStatus={(typing) => typingHandleRef.current?.sendTypingStatus(typing)}
+              // New centralized states for ChatView
+              isPhotoEditorOpen={isPhotoEditorOpen}
+              setIsPhotoEditorOpen={(val) => { setIsPhotoEditorOpen(val); if(val) openView('photo-editor'); }}
+              isDirectCameraOpen={isDirectCameraOpen}
+              setIsDirectCameraOpen={(val) => { setIsDirectCameraOpen(val); if(val) openView('direct-camera'); }}
+              isPhotoPreviewOpen={isPhotoPreviewOpen}
+              setIsPhotoPreviewOpen={(val) => { setIsPhotoPreviewOpen(val); if(val) openView('photo-preview'); }}
+              selectedPhotoFile={selectedPhotoFile}
+              setSelectedPhotoFile={setSelectedPhotoFile}
             />
           </div>
         </div>
@@ -1510,7 +1664,7 @@ export default function App() {
       {isLoveTimerOpen && (
         <LoveTimerModal
           isOpen={isLoveTimerOpen}
-          onClose={() => setIsLoveTimerOpen(false)}
+          onClose={() => window.history.back()}
           currentUser={currentUser}
           partnerUser={partnerUser}
           onShareToChat={(text) => {
@@ -1527,7 +1681,7 @@ export default function App() {
       {isCalendarOpen && (
         <CoupleCalendarModal
           isOpen={isCalendarOpen}
-          onClose={() => setIsCalendarOpen(false)}
+          onClose={() => window.history.back()}
           currentUser={currentUser}
           partnerUser={partnerUser}
           onShareToChat={(text) => {
@@ -1560,7 +1714,7 @@ export default function App() {
       {isContactInfoOpen && (
         <ContactInfoModal
           isOpen={isContactInfoOpen}
-          onClose={() => setIsContactInfoOpen(false)}
+          onClose={() => window.history.back()}
           partnerUser={partnerUser}
           partnerProfile={partnerProfile}
           partnerNickname={partnerNickname}
@@ -1576,9 +1730,9 @@ export default function App() {
           onStartCall={handleStartCall}
           onClearChat={() => {
             setMessages([]);
-            setIsContactInfoOpen(false);
+            window.history.back();
           }}
-          onViewMedia={(msg) => setActiveMediaLightbox(msg)}
+          onViewMedia={(msg) => { setActiveMediaLightbox(msg); openView('lightbox'); }}
         />
       )}
 
@@ -1586,7 +1740,7 @@ export default function App() {
       {isQRCodeOpen && (
         <QRCodeModal
           isOpen={isQRCodeOpen}
-          onClose={() => setIsQRCodeOpen(false)}
+          onClose={() => window.history.back()}
           currentUser={currentUser}
         />
       )}
@@ -1595,7 +1749,7 @@ export default function App() {
       {isCameraOpen && (
         <CameraCaptureModal
           isOpen={isCameraOpen}
-          onClose={() => setIsCameraOpen(false)}
+          onClose={() => window.history.back()}
           onCapture={(mediaUrl, type, isHD, isViewOnce, caption) => {
             handleSendMessage({
               type,
@@ -1613,7 +1767,14 @@ export default function App() {
       {isSettingsOpen && (
         <SettingsModal
           isOpen={isSettingsOpen}
-          onClose={() => setIsSettingsOpen(false)}
+          onClose={() => window.history.back()}
+          activeSection={activeSettingsSection}
+          onSetActiveSection={(section) => {
+            if (section !== activeSettingsSection) {
+              setActiveSettingsSection(section);
+              if (section !== 'main') openView(`settings-${section}`);
+            }
+          }}
           currentUser={currentUser}
           partnerUser={partnerUser}
           settings={settings}
@@ -1625,13 +1786,14 @@ export default function App() {
               loadProfiles(currentUser.id, pairingState.partnerId, pairingState.coupleId);
             }
           }}
-          onOpenPairingModal={() => setIsPairingModalOpen(true)}
+          onOpenPairingModal={() => { setIsPairingModalOpen(true); openView('pairing'); }}
           onResetPairing={() => {
             clearPairingState();
             setPairingState({ isPaired: false });
-            setIsSettingsOpen(false);
+            window.history.back();
             setIsChatOpen(false);
             setIsPairingModalOpen(true);
+            openView('pairing');
             triggerHaptic([50, 100]);
           }}
           onThemeChange={(newTheme) => {
@@ -1660,7 +1822,7 @@ export default function App() {
                 <Star size={20} className="fill-[#ffeaa7]" />
                 <h3 className="font-bold text-base text-white">Messages & Mots doux favoris ({starredMessages.length})</h3>
               </div>
-              <button onClick={() => setIsStarredOpen(false)} className="p-1 text-[#a29bfe] hover:text-white rounded-full">
+              <button onClick={() => window.history.back()} className="p-1 text-[#a29bfe] hover:text-white rounded-full">
                 <X size={20} />
               </button>
             </div>
@@ -1690,7 +1852,7 @@ export default function App() {
       {activeMediaLightbox && (
         <MediaLightbox
           message={activeMediaLightbox}
-          onClose={() => setActiveMediaLightbox(null)}
+          onClose={() => window.history.back()}
           onMarkAsViewed={(msgId) => {
             handleUpdateMessage(msgId, { isViewed: true });
           }}
@@ -1744,6 +1906,13 @@ export default function App() {
             soundEffects.playSent();
           }}
         />
+      )}
+
+      {/* Root Exit Toast */}
+      {backToast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] bg-[#130f26]/90 border border-[#2d2254] px-4 py-2 rounded-2xl text-xs text-white shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-bottom-2">
+          {backToast}
+        </div>
       )}
 
       {/* New Version Available Banner */}

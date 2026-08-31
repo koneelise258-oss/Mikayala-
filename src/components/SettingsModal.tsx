@@ -49,6 +49,9 @@ interface SettingsModalProps {
   onClearAllData?: () => void;
   myProfile?: UserProfile | null;
   onProfileUpdated?: () => void;
+  // Centralized section management
+  activeSection: 'main' | 'couple' | 'appearance' | 'profile' | 'privacy' | 'supabase';
+  onSetActiveSection: (section: 'main' | 'couple' | 'appearance' | 'profile' | 'privacy' | 'supabase') => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -67,9 +70,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onThemeChange,
   onClearAllData,
   myProfile,
-  onProfileUpdated
+  onProfileUpdated,
+  activeSection,
+  onSetActiveSection
 }) => {
-  const [activeSection, setActiveSection] = useState<'main' | 'couple' | 'appearance' | 'profile' | 'privacy' | 'supabase'>('main');
   const [name, setName] = useState(myProfile?.display_name || currentUser.name);
   const [bio, setBio] = useState(myProfile?.bio || currentUser.bio);
   const [avatar, setAvatar] = useState(currentUser.avatar);
@@ -111,7 +115,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
     setProfileError(null);
     setProfileSuccess(null);
-    setActiveSection('main');
+    onSetActiveSection('main');
   };
 
   const handleUpdateProfile = async () => {
@@ -151,7 +155,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       // Keep in section for a moment to show success, then return
       setTimeout(() => {
         if (activeSection === 'profile') {
-          setActiveSection('main');
+          onSetActiveSection('main');
           setProfileSuccess(null);
         }
       }, 1500);
@@ -196,7 +200,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     });
     triggerHaptic(50);
     soundEffects.playReaction();
-    setActiveSection('main');
+    onSetActiveSection('main');
   };
 
   const handleConfirmResetPairing = () => {
@@ -227,7 +231,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <button
                 onClick={() => {
                   setShowResetConfirm(false);
-                  setActiveSection('main');
+                  window.history.back();
                 }}
                 className="text-xs text-[#a29bfe] hover:text-white px-2 py-1 rounded-lg bg-[#281e4b] mr-1 cursor-pointer font-medium"
               >
@@ -247,7 +251,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             onClick={() => {
               if (activeSection !== 'main') {
                 setShowResetConfirm(false);
-                setActiveSection('main');
+                onSetActiveSection('main');
               } else {
                 onClose();
               }
@@ -264,7 +268,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <>
               {/* Profile Card / Button */}
               <button
-                onClick={() => setActiveSection('profile')}
+                onClick={() => onSetActiveSection('profile')}
                 className="w-full flex items-center gap-4 p-3.5 bg-[#130f26] rounded-2xl border border-[#2d2254] cursor-pointer hover:bg-[#20183e] transition-all group relative overflow-hidden"
               >
                 <div className="relative">
@@ -293,7 +297,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="space-y-2 pt-2">
                 {/* 1. ESPACE COUPLE & JUMELAGE */}
                 <button
-                  onClick={() => setActiveSection('couple')}
+                  onClick={() => onSetActiveSection('couple')}
                   className="w-full p-3.5 rounded-2xl bg-[#130f26] hover:bg-[#20183e] border border-[#fd79a8]/40 flex items-center gap-3.5 text-left transition-colors cursor-pointer group"
                 >
                   <div className="p-2.5 rounded-xl bg-[#fd79a8]/15 text-[#fd79a8] group-hover:scale-105 transition-transform">
@@ -316,7 +320,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 {/* 2. MOTEUR DE PERSONNALISATION ET DESIGN SYSTEM */}
                 <button
-                  onClick={() => setActiveSection('appearance')}
+                  onClick={() => onSetActiveSection('appearance')}
                   className="w-full p-3.5 rounded-2xl bg-gradient-to-r from-[#1b1435] to-[#251846] hover:from-[#231846] hover:to-[#2e1e57] border border-[#6c5ce7]/40 flex items-center gap-3.5 text-left transition-all cursor-pointer shadow-md group"
                 >
                   <div className="p-2.5 rounded-xl bg-[#6c5ce7]/25 text-[#a29bfe] group-hover:text-[#55efc4] transition-colors">
@@ -337,7 +341,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 {/* 3. Biométrie & Sécurité */}
                 <button
-                  onClick={() => setActiveSection('privacy')}
+                  onClick={() => onSetActiveSection('privacy')}
                   className="w-full p-3.5 rounded-2xl bg-[#130f26] hover:bg-[#20183e] border border-[#2d2254] flex items-center gap-3.5 text-left transition-colors cursor-pointer"
                 >
                   <div className="p-2.5 rounded-xl bg-[#00b894]/15 text-[#00b894]">
@@ -351,7 +355,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 {/* 4. Supabase Cloud */}
                 <button
-                  onClick={() => setActiveSection('supabase')}
+                  onClick={() => onSetActiveSection('supabase')}
                   className="w-full p-3.5 rounded-2xl bg-[#130f26] hover:bg-[#20183e] border border-[#2d2254] flex items-center gap-3.5 text-left transition-colors cursor-pointer"
                 >
                   <div className="p-2.5 rounded-xl bg-[#0984e3]/15 text-[#0984e3]">
