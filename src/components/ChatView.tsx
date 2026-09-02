@@ -341,7 +341,11 @@ export const ChatView: React.FC<ChatViewProps> = ({
     // Initial fetch from public.messages using select('*').eq('couple_id', coupleId).order('created_at', { ascending: true })
     getMessages(coupleId)
       .then(fetched => {
-        setRealMessages(fetched);
+        if (Array.isArray(fetched) && fetched.length > 0) {
+          setRealMessages(fetched);
+        } else {
+          setRealMessages(prev => prev.length > 0 ? prev : fetched);
+        }
         setChatError(null);
         // À l'ouverture de la discussion sur chaque téléphone, marquer comme livrés (✓✓ gris)
         marquerMessagesCommeLivrés(coupleId);
@@ -351,8 +355,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
         }
       })
       .catch((err: any) => {
-        console.error('[ChatView] Erreur chargement messages Supabase:', err);
-        setChatError(err.message || 'Impossible de récupérer les messages depuis la base de données.');
+        console.warn('[ChatView] Problème chargement messages Supabase:', err?.message || err);
       })
       .finally(() => {
         setIsLoadingMessages(false);

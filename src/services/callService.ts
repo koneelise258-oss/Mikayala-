@@ -12,6 +12,13 @@ class CallService {
 
   public isSignalingReady: boolean = false;
   private outgoingSignalQueue: SignalingPayload[] = [];
+  private iceCandidatesQueue: RTCIceCandidateInit[] = [];
+
+  // Perfect Negotiation flags & state
+  private isCallActive: boolean = false;
+  private makingOffer: boolean = false;
+  private isSettingRemoteDescription: boolean = false;
+  private ignoreOffer: boolean = false;
 
   private coupleId: string | null = null;
   private currentUserId: string | null = null;
@@ -73,76 +80,28 @@ class CallService {
     this.onRemoteStreamCallback = callback;
   }
 
-  private async handleIncomingSignal(payload: SignalingPayload) {
-    if (this.onCallEventCallback) {
-      this.onCallEventCallback(payload);
-    }
-
-    try {
-      switch (payload.type) {
-        case 'offer':
-          if (payload.sdp) {
-            if (!this.peerConnection) {
-              console.warn('[CallService] Received offer but peerConnection is null. Creating one.');
-              // This case might happen if signaling is faster than UI, but usually request handles it.
-              // We'll try to recover if possible, but without local stream it's limited.
-            }
-            await this.peerConnection?.setRemoteDescription(new RTCSessionDescription(payload.sdp));
-            const answer = await this.peerConnection?.createAnswer();
-            if (answer) {
-              await this.peerConnection?.setLocalDescription(answer);
-              this.sendSignal({
-                type: 'answer',
-                senderId: this.currentUserId!,
-                receiverId: this.partnerId!,
-                coupleId: this.coupleId!,
-                sdp: answer
-              });
-            }
-          }
-          break;
-        case 'answer':
-          if (payload.sdp) {
-            await this.peerConnection?.setRemoteDescription(new RTCSessionDescription(payload.sdp));
-          }
-          break;
-        case 'candidate':
-          if (payload.candidate && this.peerConnection) {
-            try {
-              await this.peerConnection.addIceCandidate(new RTCIceCandidate(payload.candidate));
-            } catch (e) {
-              console.warn('[CallService] Error adding ICE candidate:', e);
-            }
-          }
-          break;
-        case 'hangup':
-          this.cleanup();
-          break;
-      }
-    } catch (err) {
-      console.error('[CallService] Signal handling error:', err);
-    }
+  public getIsCallActive(): boolean {
+    return this.isCallActive;
   }
 
-  public async startCall(type: CallType): Promise<MediaStream> {
-    this.cleanup();
-    
-    this.localStream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: type === 'video'
-    });
+  private isPolitePeer(): boolean {
+    if (!this.currentUserId || !this.partnerId) return true;
+    return this.currentUserId < this.partnerId;
+  }
+
+  private createPeerConnection() {
+    this.cleanupPeerConnection();
 
     this.peerConnection = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
     });
 
-    this.localStream.getTracks().forEach(track => {
-      this.peerConnection?.addTrack(track, this.localStream!);
-    });
-
     this.peerConnection.ontrack = (event) => {
-      if (this.onRemoteStreamCallback && event.streams[0]) {
-        this.onRemoteStreamCallback(event.streams[0]);
+      const remoteStream = event.streams[0];
+      const remoteAudioTracks = remoteStream ? remoteStream.getAudioTracks() : [];
+      console.log('[WebRTC ontrack] Received remote track:', event.track.kind, 'Remote audio tracks count:', remoteAudioTracks.length);
+      if (this.onRemoteStreamCallback && remoteStream) {
+        this.onRemoteStreamCallback(remoteStream);
       }
     };
 
@@ -158,7 +117,148 @@ class CallService {
       }
     };
 
-    // Send initial request to wake up the partner
+    this.peerConnection.onconnectionstatechange = () => {
+      const state = this.peerConnection?.connectionState;
+      console.log('[WebRTC connectionState]:', state);
+      if (state === 'failed') {
+        console.error('[WebRTC connectionState] Connection FAILED (terminal failure). Ending call.');
+        if (this.onCallEventCallback) {
+          this.onCallEventCallback({
+            type: 'hangup',
+            senderId: this.partnerId || '',
+            receiverId: this.currentUserId || '',
+            coupleId: this.coupleId || ''
+          });
+        }
+        this.cleanup();
+      } else if (state === 'disconnected') {
+        console.warn('[WebRTC connectionState] Disconnected (temporary/transient state, waiting for potential recovery...)');
+      }
+    };
+
+    this.peerConnection.oniceconnectionstatechange = () => {
+      console.log('[WebRTC iceConnectionState]:', this.peerConnection?.iceConnectionState);
+    };
+
+    this.peerConnection.onsignalingstatechange = () => {
+      console.log('[WebRTC signalingState]:', this.peerConnection?.signalingState);
+    };
+  }
+
+  private async processIceCandidatesQueue() {
+    if (!this.peerConnection || !this.peerConnection.remoteDescription) return;
+    if (this.iceCandidatesQueue.length > 0) {
+      console.log(`[WebRTC] Draining ${this.iceCandidatesQueue.length} queued ICE candidate(s)...`);
+      while (this.iceCandidatesQueue.length > 0) {
+        const candidate = this.iceCandidatesQueue.shift();
+        if (candidate) {
+          try {
+            await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+          } catch (e) {
+            console.warn('[WebRTC] Error adding drained ICE candidate:', e);
+          }
+        }
+      }
+    }
+  }
+
+  private async handleIncomingSignal(payload: SignalingPayload) {
+    if (this.onCallEventCallback) {
+      this.onCallEventCallback(payload);
+    }
+
+    try {
+      switch (payload.type) {
+        case 'offer':
+          if (payload.sdp) {
+            const isPolite = this.isPolitePeer();
+            const offerCollision = this.makingOffer || (this.peerConnection && this.peerConnection.signalingState !== 'stable');
+            this.ignoreOffer = !isPolite && offerCollision;
+
+            if (this.ignoreOffer) {
+              console.log('[WebRTC Perfect Negotiation] Glare detected! Impolite peer ignoring incoming offer.');
+              return;
+            }
+
+            if (!this.peerConnection) {
+              console.warn('[WebRTC] Received offer without peerConnection. Initializing peerConnection.');
+              this.createPeerConnection();
+            }
+
+            this.isSettingRemoteDescription = true;
+            await this.peerConnection!.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+            this.isSettingRemoteDescription = false;
+            await this.processIceCandidatesQueue();
+
+            const answer = await this.peerConnection!.createAnswer();
+            await this.peerConnection!.setLocalDescription(answer);
+
+            this.sendSignal({
+              type: 'answer',
+              senderId: this.currentUserId!,
+              receiverId: this.partnerId!,
+              coupleId: this.coupleId!,
+              sdp: answer
+            });
+          }
+          break;
+
+        case 'answer':
+          if (payload.sdp && this.peerConnection) {
+            this.isSettingRemoteDescription = true;
+            await this.peerConnection.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+            this.isSettingRemoteDescription = false;
+            await this.processIceCandidatesQueue();
+          }
+          break;
+
+        case 'candidate':
+          if (payload.candidate) {
+            if (this.peerConnection && this.peerConnection.remoteDescription && !this.isSettingRemoteDescription) {
+              try {
+                await this.peerConnection.addIceCandidate(new RTCIceCandidate(payload.candidate));
+              } catch (e) {
+                if (!this.ignoreOffer) {
+                  console.warn('[WebRTC] Error adding ICE candidate:', e);
+                }
+              }
+            } else {
+              console.log('[WebRTC] Queuing ICE candidate until remote description is set');
+              this.iceCandidatesQueue.push(payload.candidate);
+            }
+          }
+          break;
+
+        case 'hangup':
+          console.log('[CallService] Received hangup signal. Cleaning up.');
+          this.cleanup();
+          break;
+      }
+    } catch (err) {
+      console.error('[CallService] Signal handling error:', err);
+    }
+  }
+
+  public async startCall(type: CallType): Promise<MediaStream> {
+    console.log('[CallService startCall] Starting call session of type:', type);
+    this.cleanup();
+    this.isCallActive = true;
+
+    this.localStream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: type === 'video'
+    });
+
+    const audioTracks = this.localStream.getAudioTracks();
+    console.log('[CallService startCall] Local audio tracks count:', audioTracks.length);
+
+    this.createPeerConnection();
+
+    this.localStream.getTracks().forEach(track => {
+      console.log('[CallService startCall] Adding track:', track.kind, track.label);
+      this.peerConnection?.addTrack(track, this.localStream!);
+    });
+
     this.sendSignal({
       type: 'request',
       senderId: this.currentUserId!,
@@ -171,54 +271,54 @@ class CallService {
   }
 
   public async acceptCall(type: CallType): Promise<MediaStream> {
-    this.localStream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: type === 'video'
-    });
+    console.log('[CallService acceptCall] Accepting call of type:', type);
+    if (!this.localStream) {
+      this.localStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: type === 'video'
+      });
+    }
 
-    this.peerConnection = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-    });
+    const audioTracks = this.localStream.getAudioTracks();
+    console.log('[CallService acceptCall] Local audio tracks count:', audioTracks.length);
+
+    if (!this.peerConnection) {
+      this.createPeerConnection();
+    }
 
     this.localStream.getTracks().forEach(track => {
+      console.log('[CallService acceptCall] Adding track:', track.kind, track.label);
       this.peerConnection?.addTrack(track, this.localStream!);
     });
 
-    this.peerConnection.ontrack = (event) => {
-      if (this.onRemoteStreamCallback && event.streams[0]) {
-        this.onRemoteStreamCallback(event.streams[0]);
-      }
-    };
-
-    this.peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        this.sendSignal({
-          type: 'candidate',
-          senderId: this.currentUserId!,
-          receiverId: this.partnerId!,
-          coupleId: this.coupleId!,
-          candidate: event.candidate
-        });
-      }
-    };
-
+    this.isCallActive = true;
     return this.localStream;
   }
 
   public async createOffer() {
     if (!this.peerConnection) return;
-    const offer = await this.peerConnection.createOffer();
-    await this.peerConnection.setLocalDescription(offer);
-    this.sendSignal({
-      type: 'offer',
-      senderId: this.currentUserId!,
-      receiverId: this.partnerId!,
-      coupleId: this.coupleId!,
-      sdp: offer
-    });
+    try {
+      this.makingOffer = true;
+      const offer = await this.peerConnection.createOffer();
+      if (this.peerConnection.signalingState !== 'stable') return;
+      await this.peerConnection.setLocalDescription(offer);
+
+      this.sendSignal({
+        type: 'offer',
+        senderId: this.currentUserId!,
+        receiverId: this.partnerId!,
+        coupleId: this.coupleId!,
+        sdp: offer
+      });
+    } catch (err) {
+      console.error('[CallService createOffer error]', err);
+    } finally {
+      this.makingOffer = false;
+    }
   }
 
   public hangup() {
+    console.log('[CallService hangup] Sending hangup signal & cleaning up.');
     this.sendSignal({
       type: 'hangup',
       senderId: this.currentUserId!,
@@ -271,15 +371,43 @@ class CallService {
     }
   }
 
-  private cleanup() {
-    if (this.localStream) {
-      this.localStream.getTracks().forEach(track => track.stop());
-      this.localStream = null;
-    }
+  private cleanupPeerConnection() {
     if (this.peerConnection) {
-      this.peerConnection.close();
+      console.log('[CallService] Detaching listeners and closing RTCPeerConnection.');
+      this.peerConnection.ontrack = null;
+      this.peerConnection.onicecandidate = null;
+      this.peerConnection.onconnectionstatechange = null;
+      this.peerConnection.oniceconnectionstatechange = null;
+      this.peerConnection.onsignalingstatechange = null;
+      try {
+        this.peerConnection.close();
+      } catch (e) {
+        console.warn('[CallService] Error closing peerConnection:', e);
+      }
       this.peerConnection = null;
     }
+  }
+
+  public cleanup() {
+    console.log('[CallService cleanup] Cleaning up media tracks, RTCPeerConnection, and queues.');
+    this.isCallActive = false;
+    this.makingOffer = false;
+    this.isSettingRemoteDescription = false;
+    this.ignoreOffer = false;
+    this.iceCandidatesQueue = [];
+
+    if (this.localStream) {
+      this.localStream.getTracks().forEach(track => {
+        try {
+          track.stop();
+        } catch (e) {
+          console.warn('[CallService] Error stopping track:', e);
+        }
+      });
+      this.localStream = null;
+    }
+
+    this.cleanupPeerConnection();
   }
 
   public getLocalStream() {
@@ -289,3 +417,4 @@ class CallService {
 
 export const callService = new CallService();
 export default callService;
+

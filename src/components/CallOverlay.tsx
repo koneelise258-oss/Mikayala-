@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, User as UserIcon } from 'lucide-react';
+import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, User as UserIcon, Volume2 } from 'lucide-react';
 import { User, CallType } from '../types';
 import { formatDuration } from '../utils/formatters';
 
@@ -29,9 +29,11 @@ export const CallOverlay: React.FC<CallOverlayProps> = ({
 }) => {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const [duration, setDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
+  const [audioBlocked, setAudioBlocked] = useState(false);
 
   useEffect(() => {
     if (localVideoRef.current && localStream) {
@@ -44,6 +46,45 @@ export const CallOverlay: React.FC<CallOverlayProps> = ({
       remoteVideoRef.current.srcObject = remoteStream;
     }
   }, [remoteStream, isOpen]);
+
+  useEffect(() => {
+    const audioEl = remoteAudioRef.current;
+    if (audioEl && remoteStream) {
+      const audioTracks = remoteStream.getAudioTracks();
+      console.log('[CallOverlay] Remote stream audio tracks:', audioTracks.length, audioTracks);
+      audioEl.srcObject = remoteStream;
+      audioEl.play()
+        .then(() => {
+          console.log('[CallOverlay] Remote audio playing successfully');
+          setAudioBlocked(false);
+        })
+        .catch((err) => {
+          console.warn('[CallOverlay] Remote audio play blocked by browser policy or failed:', err);
+          setAudioBlocked(true);
+        });
+    } else if (audioEl) {
+      audioEl.srcObject = null;
+    }
+
+    return () => {
+      if (audioEl) {
+        audioEl.srcObject = null;
+      }
+    };
+  }, [remoteStream, isOpen]);
+
+  const handleEnableAudio = () => {
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.play()
+        .then(() => {
+          console.log('[CallOverlay] Manual audio enable succeeded');
+          setAudioBlocked(false);
+        })
+        .catch((err) => {
+          console.error('[CallOverlay] Manual audio enable failed:', err);
+        });
+    }
+  };
 
   useEffect(() => {
     let interval: number;
@@ -84,6 +125,20 @@ export const CallOverlay: React.FC<CallOverlayProps> = ({
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[200] bg-[#0a0714] flex flex-col items-center justify-center overflow-hidden"
     >
+      {/* Audio Element for Remote Stream */}
+      <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
+
+      {/* Unmute / Enable Audio Prompt if autoplay is blocked */}
+      {audioBlocked && (
+        <button
+          onClick={handleEnableAudio}
+          className="absolute top-6 left-1/2 -translate-x-1/2 z-30 px-5 py-2.5 bg-[#6c5ce7] hover:bg-[#5b4bc4] text-white font-semibold rounded-full shadow-lg flex items-center gap-2 animate-bounce"
+        >
+          <Volume2 size={20} />
+          Activer le son
+        </button>
+      )}
+
       {/* Background/Remote Video */}
       <div className="absolute inset-0 bg-[#130f26]">
         {type === 'video' && remoteStream ? (

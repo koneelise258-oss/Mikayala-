@@ -473,10 +473,20 @@ export default function App() {
   // Call States
   const [isCallOpen, setIsCallOpen] = useState(false);
   const [callType, setCallType] = useState<CallType>('audio');
-  const [callStatus, setCallStatus] = useState<'connecting' | 'ringing' | 'ongoing' | 'incoming'>('connecting');
+  const [callStatus, setCallStatus] = useState<'idle' | 'connecting' | 'ringing' | 'ongoing' | 'incoming'>('idle');
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const stopRingRef = useRef<(() => void) | null>(null);
+
+  const callStatusRef = useRef(callStatus);
+  useEffect(() => {
+    callStatusRef.current = callStatus;
+  }, [callStatus]);
+
+  const isCallOpenRef = useRef(isCallOpen);
+  useEffect(() => {
+    isCallOpenRef.current = isCallOpen;
+  }, [isCallOpen]);
 
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
@@ -506,10 +516,14 @@ export default function App() {
     }
   }, [pairingState?.coupleId, currentUser.id, partnerUser.id]);
 
-  // Handle call service events - updated when status or UI state changes
+  // Handle call service events
   useEffect(() => {
     callService.setOnCallEvent((payload) => {
       if (payload.type === 'request') {
+        if (callStatusRef.current !== 'idle' || isCallOpenRef.current || callService.getIsCallActive()) {
+          console.log('[App] Ignored incoming call request: busy in status', callStatusRef.current);
+          return;
+        }
         setCallType(payload.callType || 'audio');
         setCallStatus('incoming');
         setIsCallOpen(true);
@@ -518,7 +532,7 @@ export default function App() {
       } else if (payload.type === 'hangup') {
         handleHangup();
       } else if (payload.type === 'offer') {
-        if (callStatus === 'ringing') {
+        if (callStatusRef.current === 'ringing' || callStatusRef.current === 'connecting') {
           setCallStatus('ongoing');
           if (stopRingRef.current) {
             stopRingRef.current();
@@ -536,9 +550,13 @@ export default function App() {
         stopRingRef.current = null;
       }
     });
-  }, [callStatus]); // Resubscribe callbacks when status changes if needed, but safer with appStateRef if we needed more complex logic
+  }, []);
 
   const handleStartCall = async (type: CallType) => {
+    if (callStatusRef.current !== 'idle' || isCallOpenRef.current) {
+      console.warn('[App] Start call blocked: call already in progress with status', callStatusRef.current);
+      return;
+    }
     setCallType(type);
     setCallStatus('connecting');
     setIsCallOpen(true);
@@ -551,7 +569,7 @@ export default function App() {
       stopRingRef.current = soundEffects.playRingTone();
     } catch (err: any) {
       console.error('[App] Call start error:', err);
-      setIsCallOpen(false);
+      handleHangup();
     }
   };
 
@@ -579,6 +597,7 @@ export default function App() {
   const handleHangup = () => {
     callService.hangup();
     setIsCallOpen(false);
+    setCallStatus('idle');
     setLocalStream(null);
     setRemoteStream(null);
     if (stopRingRef.current) {

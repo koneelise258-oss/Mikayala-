@@ -281,6 +281,31 @@ export function clearSignedUrlCache(): void {
 }
 
 /**
+Helper functions for caching messages locally in offline mode
+*/
+function saveMessagesToCache(coupleId: string, messages: Message[]): void {
+  try {
+    if (!coupleId || !Array.isArray(messages)) return;
+    localStorage.setItem(`mikayala_cached_messages_${coupleId}`, JSON.stringify(messages));
+  } catch (_) {}
+}
+
+function getCachedMessagesFallback(coupleId: string): Message[] {
+  try {
+    if (!coupleId) return [];
+    const cachedStr = localStorage.getItem(`mikayala_cached_messages_${coupleId}`);
+    if (cachedStr) {
+      const cached = JSON.parse(cachedStr);
+      if (Array.isArray(cached)) {
+        console.log('[messageService] Messages chargés depuis le cache local:', cached.length);
+        return cached;
+      }
+    }
+  } catch (_) {}
+  return [];
+}
+
+/**
  * Obtient ou génère une URL signée temporaire pour un fichier stocké dans messages-media
  * Cache en mémoire avec renouvellement automatique avant expiration (3600s)
  */
@@ -296,7 +321,7 @@ export async function obtenirSignedUrl(storagePath: string): Promise<string | nu
   }
 
   if (!isSupabaseConfigured()) {
-    console.error('[Storage] Supabase non configuré pour obtenirSignedUrl');
+    console.warn('[Storage] Supabase non configuré pour obtenirSignedUrl');
     return null;
   }
 
@@ -324,11 +349,16 @@ export async function obtenirSignedUrl(storagePath: string): Promise<string | nu
     });
 
     if (error || !data?.signedUrl) {
-      console.error('[Storage] Impossible de charger ce média (échec createSignedUrl):', {
-        storagePath,
-        code: (error as any)?.statusCode || (error as any)?.code || (error as any)?.name || 'STORAGE_ERROR',
-        message: error?.message || 'Signed URL generation failed'
-      });
+      const isFetchErr = error?.message?.includes('Failed to fetch') || (error as any)?.name === 'TypeError' || String(error?.message).includes('fetch');
+      if (isFetchErr) {
+        console.warn('[Storage] Réseau indisponible pour createSignedUrl:', storagePath);
+      } else {
+        console.error('[Storage] Impossible de charger ce média (échec createSignedUrl):', {
+          storagePath,
+          code: (error as any)?.statusCode || (error as any)?.code || (error as any)?.name || 'STORAGE_ERROR',
+          message: error?.message || 'Signed URL generation failed'
+        });
+      }
       return null;
     }
 
@@ -339,11 +369,16 @@ export async function obtenirSignedUrl(storagePath: string): Promise<string | nu
 
     return data.signedUrl;
   } catch (err: any) {
-    console.error('[Storage] Exception createSignedUrl:', {
-      storagePath,
-      code: err?.code || err?.name || 'STORAGE_EXCEPTION',
-      message: err?.message || String(err)
-    });
+    const isFetchErr = err?.message?.includes('Failed to fetch') || err?.name === 'TypeError' || String(err).includes('fetch');
+    if (isFetchErr) {
+      console.warn('[Storage] Réseau indisponible (exception createSignedUrl):', storagePath);
+    } else {
+      console.error('[Storage] Exception createSignedUrl:', {
+        storagePath,
+        code: err?.code || err?.name || 'STORAGE_EXCEPTION',
+        message: err?.message || String(err)
+      });
+    }
     return null;
   }
 }
@@ -539,7 +574,7 @@ export async function envoyerMessageTexte(coupleId: string, contenu: string): Pr
 export async function getMessages(coupleId: string): Promise<Message[]> {
   const targetCoupleId = coupleId || getStoredPairingState().coupleId;
   if (!targetCoupleId || !isSupabaseConfigured()) {
-    return [];
+    return getCachedMessagesFallback(targetCoupleId || '');
   }
 
   try {
@@ -550,17 +585,28 @@ export async function getMessages(coupleId: string): Promise<Message[]> {
       .order('created_at', { ascending: true });
 
     if (error) {
-      console.error('[messageService] Erreur récupération messages:', error.message);
-      throw new Error(`Erreur lors de la récupération des messages : ${error.message}`);
+      const isFetchErr = error.message?.includes('Failed to fetch') || error.message?.includes('fetch');
+      if (isFetchErr) {
+        console.warn('[messageService] Mode hors-ligne ou réseau indisponible pour getMessages:', error.message);
+      } else {
+        console.error('[messageService] Erreur récupération messages:', error.message);
+      }
+      return getCachedMessagesFallback(targetCoupleId);
     }
 
     const rows = data || [];
     const mapped = rows.map(mapDbRecordToMessage).sort((a, b) => a.timestamp - b.timestamp);
     console.log('[Chat] nombre de messages chargés:', mapped.length);
+    saveMessagesToCache(targetCoupleId, mapped);
     return mapped;
   } catch (err: any) {
-    console.error('[messageService] Exception dans getMessages:', err);
-    throw err;
+    const isFetchErr = err?.message?.includes('Failed to fetch') || err?.name === 'TypeError' || String(err).includes('fetch');
+    if (isFetchErr) {
+      console.warn('[messageService] Mode hors-ligne ou réseau indisponible pour getMessages:', err?.message || String(err));
+    } else {
+      console.error('[messageService] Exception dans getMessages:', err);
+    }
+    return getCachedMessagesFallback(targetCoupleId);
   }
 }
 
