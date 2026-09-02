@@ -500,8 +500,9 @@ export default function App() {
   // Call Signaling Logic - Setup channel once IDs are available
   useEffect(() => {
     const coupleId = pairingState?.coupleId;
-    if (coupleId && currentUser.id && partnerUser.id) {
-      callService.setup(coupleId, currentUser.id, partnerUser.id);
+    const partnerId = partnerUser.id || pairingState?.partnerId;
+    if (coupleId && currentUser.id && partnerId) {
+      callService.setup(coupleId, currentUser.id, partnerId);
     }
   }, [pairingState?.coupleId, currentUser.id, partnerUser.id]);
 

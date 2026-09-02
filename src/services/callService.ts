@@ -10,6 +10,9 @@ class CallService {
   private onRemoteStreamCallback: ((stream: MediaStream) => void) | null = null;
   private onCallEventCallback: CallEventCallback | null = null;
 
+  public isSignalingReady: boolean = false;
+  private outgoingSignalQueue: SignalingPayload[] = [];
+
   private coupleId: string | null = null;
   private currentUserId: string | null = null;
   private partnerId: string | null = null;
@@ -18,17 +21,22 @@ class CallService {
     this.coupleId = coupleId;
     this.currentUserId = currentUserId;
     this.partnerId = partnerId;
+    this.isSignalingReady = false;
+    this.outgoingSignalQueue = [];
 
-    console.log('[CallService setup]', { coupleId, currentUserId, partnerId, isSupabaseConfigured: isSupabaseConfigured() });
+    const topic = `signaling:${coupleId}`;
+    console.log('[CallService setup]', { coupleId, currentUserId, partnerId, topic, isSupabaseConfigured: isSupabaseConfigured() });
 
     if (!isSupabaseConfigured()) return;
 
     if (this.signalingChannel) {
+      console.log('[CallService setup] Closing previous channel:', topic);
       supabase.removeChannel(this.signalingChannel);
+      this.signalingChannel = null;
     }
 
     this.signalingChannel = supabase
-      .channel(`signaling:${coupleId}`)
+      .channel(topic)
       .on('broadcast', { event: 'signal' }, (response) => {
         const payload = response.payload as SignalingPayload;
         console.log('[Call signal received]', {
@@ -46,9 +54,13 @@ class CallService {
         }
       })
       .subscribe((status) => {
-        console.log('[Call signaling status]', status, `topic: signaling:${coupleId}`);
+        console.log('[Call signaling status]', status, `topic: ${topic}`, { coupleId, currentUserId, partnerId });
         if (status === 'SUBSCRIBED') {
-          console.log('[Call signaling ready]', `topic: signaling:${coupleId}`);
+          this.isSignalingReady = true;
+          console.log('[Call signaling ready]', `topic: ${topic}`, { coupleId, currentUserId, partnerId });
+          this.flushOutgoingSignalQueue();
+        } else {
+          this.isSignalingReady = false;
         }
       });
   }
@@ -216,7 +228,7 @@ class CallService {
     this.cleanup();
   }
 
-  private sendSignal(payload: SignalingPayload) {
+  private sendSignalDirect(payload: SignalingPayload) {
     console.log('[Call signal sent]', payload);
     if (this.signalingChannel) {
       this.signalingChannel.send({
@@ -230,6 +242,32 @@ class CallService {
       });
     } else {
       console.warn('[Call signal sent] Failed: signalingChannel is null');
+    }
+  }
+
+  private sendSignal(payload: SignalingPayload) {
+    if (this.isSignalingReady && this.signalingChannel) {
+      this.sendSignalDirect(payload);
+    } else {
+      console.log('[Call signal queued - not SUBSCRIBED yet]', {
+        payload,
+        isSignalingReady: this.isSignalingReady,
+        hasChannel: !!this.signalingChannel
+      });
+      this.outgoingSignalQueue.push(payload);
+    }
+  }
+
+  private flushOutgoingSignalQueue() {
+    if (!this.isSignalingReady || !this.signalingChannel) return;
+    if (this.outgoingSignalQueue.length > 0) {
+      console.log(`[CallService] Flushing ${this.outgoingSignalQueue.length} queued signal(s)...`);
+      while (this.outgoingSignalQueue.length > 0) {
+        const payload = this.outgoingSignalQueue.shift();
+        if (payload) {
+          this.sendSignalDirect(payload);
+        }
+      }
     }
   }
 
