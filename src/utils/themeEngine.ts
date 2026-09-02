@@ -66,7 +66,7 @@ export const DEFAULT_THEME_CONFIG: AppThemeConfig = {
   colors: DEFAULT_COLORS,
   wallpaper: DEFAULT_WALLPAPER,
   typography: DEFAULT_TYPOGRAPHY,
-  appIcon: 'mikayla_heart'
+  appIcon: 'purple'
 };
 
 // ==========================================
@@ -363,76 +363,81 @@ export const generateDynamicFavicon = (iconPreset: AppIconPreset, partnerInitial
   if (typeof document === 'undefined') return '';
 
   try {
-    const canvas = document.createElement('canvas');
-    canvas.width = 64;
-    canvas.height = 64;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return '';
+    const butterflyIcons = ['purple', 'neon', 'pink', 'blue', 'gold'];
+    let iconUrl = '';
 
-    // Clear background
-    ctx.clearRect(0, 0, 64, 64);
-
-    if (iconPreset === 'monogram') {
-      // Monogram Initials of Couple
-      ctx.fillStyle = '#171230';
-      ctx.beginPath();
-      ctx.roundRect(4, 4, 56, 56, 14);
-      ctx.fill();
-      ctx.strokeStyle = '#fd79a8';
-      ctx.lineWidth = 3;
-      ctx.stroke();
-
-      ctx.fillStyle = '#55efc4';
-      ctx.font = 'bold 18px "Caveat", "Playfair Display", serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(partnerInitials || 'M & K', 32, 33);
-    } else if (iconPreset === 'neon_minimal') {
-      // Neon glowing 'M' on pure dark
-      ctx.fillStyle = '#0a0714';
-      ctx.beginPath();
-      ctx.roundRect(4, 4, 56, 56, 14);
-      ctx.fill();
-
-      ctx.strokeStyle = '#a855f7';
-      ctx.shadowColor = '#c084fc';
-      ctx.shadowBlur = 10;
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(18, 44);
-      ctx.lineTo(18, 20);
-      ctx.lineTo(32, 34);
-      ctx.lineTo(46, 20);
-      ctx.lineTo(46, 44);
-      ctx.stroke();
+    if (butterflyIcons.includes(iconPreset)) {
+      // Use the actual PNG files for official butterfly icons
+      iconUrl = APP_ICON_PATHS[iconPreset as keyof typeof APP_ICON_PATHS];
     } else {
-      // Default: Mikayla Intime Butterfly with Dark Violet & Emerald
-      ctx.fillStyle = '#130f26';
-      ctx.beginPath();
-      ctx.roundRect(4, 4, 56, 56, 14);
-      ctx.fill();
+      // Fallback to canvas drawing for custom presets
+      const canvas = document.createElement('canvas');
+      canvas.width = 64;
+      canvas.height = 64;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return '';
 
-      // For the dynamic one, we'll keep the heart as a fallback or if "butterfly" isn't available as canvas drawing
-      // Emerald Heart
-      ctx.fillStyle = '#00b894';
-      ctx.beginPath();
-      ctx.moveTo(32, 48);
-      ctx.bezierCurveTo(20, 36, 12, 28, 12, 21);
-      ctx.bezierCurveTo(12, 14, 18, 11, 24, 11);
-      ctx.bezierCurveTo(28, 11, 31, 14, 32, 16);
-      ctx.bezierCurveTo(33, 14, 36, 11, 40, 11);
-      ctx.bezierCurveTo(46, 11, 52, 14, 52, 21);
-      ctx.bezierCurveTo(52, 28, 44, 36, 32, 48);
-      ctx.fill();
+      // Clear background
+      ctx.clearRect(0, 0, 64, 64);
 
-      // Violet inner sparkle
-      ctx.fillStyle = '#fd79a8';
-      ctx.beginPath();
-      ctx.arc(38, 20, 3, 0, Math.PI * 2);
-      ctx.fill();
+      if (iconPreset === 'monogram') {
+        // Monogram Initials of Couple
+        ctx.fillStyle = '#171230';
+        ctx.beginPath();
+        ctx.roundRect(4, 4, 56, 56, 14);
+        ctx.fill();
+        ctx.strokeStyle = '#fd79a8';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        ctx.fillStyle = '#55efc4';
+        ctx.font = 'bold 18px "Caveat", "Playfair Display", serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(partnerInitials || 'M & K', 32, 33);
+      } else if (iconPreset === 'neon_minimal') {
+        // Neon glowing 'M' on pure dark
+        ctx.fillStyle = '#0a0714';
+        ctx.beginPath();
+        ctx.roundRect(4, 4, 56, 56, 14);
+        ctx.fill();
+
+        ctx.strokeStyle = '#a855f7';
+        ctx.shadowColor = '#c084fc';
+        ctx.shadowBlur = 10;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(18, 44);
+        ctx.lineTo(18, 20);
+        ctx.lineTo(32, 34);
+        ctx.lineTo(46, 20);
+        ctx.lineTo(46, 44);
+        ctx.stroke();
+      } else {
+        // Default Fallback: Emerald Heart
+        ctx.fillStyle = '#130f26';
+        ctx.beginPath();
+        ctx.roundRect(4, 4, 56, 56, 14);
+        ctx.fill();
+
+        ctx.fillStyle = '#00b894';
+        ctx.beginPath();
+        ctx.moveTo(32, 48);
+        ctx.bezierCurveTo(20, 36, 12, 28, 12, 21);
+        ctx.bezierCurveTo(12, 14, 18, 11, 24, 11);
+        ctx.bezierCurveTo(28, 11, 31, 14, 32, 16);
+        ctx.bezierCurveTo(33, 14, 36, 11, 40, 11);
+        ctx.bezierCurveTo(46, 11, 52, 14, 52, 21);
+        ctx.bezierCurveTo(52, 28, 44, 36, 32, 48);
+        ctx.fill();
+
+        ctx.fillStyle = '#fd79a8';
+        ctx.beginPath();
+        ctx.arc(38, 20, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      iconUrl = canvas.toDataURL('image/png');
     }
-
-    const dataUrl = canvas.toDataURL('image/png');
 
     // Update Favicon in DOM
     let link = document.querySelector("link[rel*='icon']") as HTMLLinkElement | null;
@@ -442,10 +447,80 @@ export const generateDynamicFavicon = (iconPreset: AppIconPreset, partnerInitial
       document.getElementsByTagName('head')[0].appendChild(link);
     }
     link.type = 'image/png';
-    link.href = dataUrl;
+    link.href = iconUrl;
 
-    return dataUrl;
+    // Update Apple Touch Icon
+    let appleLink = document.querySelector("link[rel='apple-touch-icon']") as HTMLLinkElement | null;
+    if (appleLink) {
+      appleLink.href = iconUrl;
+    }
+
+    // Attempt to update manifest dynamically (Experimental/Best Effort)
+    updateDynamicManifest(iconPreset);
+
+    return iconUrl;
   } catch {
     return '';
+  }
+};
+
+// ==========================================
+// DYNAMIC MANIFEST UPDATE
+// ==========================================
+export const updateDynamicManifest = (iconPreset: AppIconPreset) => {
+  if (typeof document === 'undefined') return;
+
+  try {
+    const butterflyIcons = ['purple', 'neon', 'pink', 'blue', 'gold'];
+    if (!butterflyIcons.includes(iconPreset)) return;
+
+    // We can't easily change the installed PWA icon, but we can try to update the manifest link
+    // to point to a dynamically generated JSON that uses the selected icon as the primary one.
+    // Some browsers might detect this and update the home screen shortcut.
+    
+    const manifestLink = document.querySelector('link[rel="manifest"]') as HTMLLinkElement | null;
+    if (!manifestLink) return;
+
+    // The current icon image path
+    const iconPath = APP_ICON_PATHS[iconPreset as keyof typeof APP_ICON_PATHS];
+    
+    // Create a minimal manifest blob
+    const manifestData = {
+      name: 'Mikayla',
+      short_name: 'Mikayla',
+      description: 'Application de couple intime et privée Mikayla',
+      start_url: '/',
+      display: 'standalone',
+      background_color: '#0f0c1d',
+      theme_color: '#130f26',
+      icons: [
+        {
+          src: iconPath,
+          sizes: '1024x1024',
+          type: 'image/png',
+          purpose: 'any'
+        },
+        {
+          src: iconPath.replace('.png', '-192.png'),
+          sizes: '192x192',
+          type: 'image/png',
+          purpose: 'any'
+        },
+        {
+          src: iconPath.replace('.png', '-512.png'),
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'any'
+        }
+      ]
+    };
+
+    const stringManifest = JSON.stringify(manifestData);
+    const blob = new Blob([stringManifest], { type: 'application/json' });
+    const manifestUrl = URL.createObjectURL(blob);
+    
+    manifestLink.href = manifestUrl;
+  } catch (err) {
+    console.error('Error updating dynamic manifest:', err);
   }
 };

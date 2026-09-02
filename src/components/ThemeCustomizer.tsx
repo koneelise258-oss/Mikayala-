@@ -963,16 +963,6 @@ export const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
               {[
                 { 
-                  id: 'mikayla_heart', 
-                  name: 'Cœur Mikayla (Défaut)', 
-                  desc: 'Logo intime violet & émeraude', 
-                  renderIcon: () => (
-                    <div className="w-10 h-10 rounded-xl bg-[#130f26] border border-[#2d2254] flex items-center justify-center shadow-md">
-                      <Heart size={20} className="text-[#00b894] fill-[#00b894]" />
-                    </div>
-                  )
-                },
-                { 
                   id: 'purple', 
                   name: 'Mikayla Papillon', 
                   desc: 'Papillon violet cristallin officiel', 

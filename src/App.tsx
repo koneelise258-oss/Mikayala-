@@ -376,7 +376,7 @@ export default function App() {
   useEffect(() => {
     applyThemeToDOM(themeConfig);
     const monogram = `${currentUser.name[0] || 'M'} & ${partnerUser.name[0] || 'P'}`;
-    generateDynamicFavicon(themeConfig.appIcon || 'mikayala_heart', monogram);
+    generateDynamicFavicon(themeConfig.appIcon || 'purple', monogram);
   }, [themeConfig, currentUser.name, partnerUser.name]);
 
   // Intimate Modules States
