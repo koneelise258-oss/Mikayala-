@@ -1,5 +1,6 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
+import { registerSW } from 'virtual:pwa-register';
 import App from './App.tsx';
 import './index.css';
 
@@ -20,27 +21,15 @@ if (typeof crypto !== 'undefined' && !crypto.randomUUID) {
 }
 
 // Register Service Worker for PWA with update detection
-if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker
-      .register('/sw.js')
-      .then((registration) => {
-        registration.addEventListener('updatefound', () => {
-          const newWorker = registration.installing;
-          if (newWorker) {
-            newWorker.addEventListener('statechange', () => {
-              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                window.dispatchEvent(new CustomEvent('mikayala_app_update_available'));
-              }
-            });
-          }
-        });
-      })
-      .catch((err) => {
-        console.log('SW registration error:', err);
-      });
-  });
-}
+const updateSW = registerSW({
+  onNeedRefresh() {
+    // Dispatch custom event for app update
+    window.dispatchEvent(new CustomEvent('mikayala_app_update_available'));
+  },
+  onOfflineReady() {
+    console.log('App is ready for offline use');
+  },
+});
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
