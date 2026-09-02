@@ -19,7 +19,10 @@ export default defineConfig(() => {
         devOptions: {
           enabled: true,
         },
-        includeAssets: ['favicon.ico', 'icons/icon-purple.png'],
+        includeAssets: [
+          'favicon.ico', 
+          'icons/icon-*.png'
+        ],
         manifest: {
           name: 'Mikayla',
           short_name: 'Mikayla',
