@@ -19,6 +19,8 @@ class CallService {
     this.currentUserId = currentUserId;
     this.partnerId = partnerId;
 
+    console.log('[CallService setup]', { coupleId, currentUserId, partnerId, isSupabaseConfigured: isSupabaseConfigured() });
+
     if (!isSupabaseConfigured()) return;
 
     if (this.signalingChannel) {
@@ -29,11 +31,26 @@ class CallService {
       .channel(`signaling:${coupleId}`)
       .on('broadcast', { event: 'signal' }, (response) => {
         const payload = response.payload as SignalingPayload;
+        console.log('[Call signal received]', {
+          payload,
+          currentUserId: this.currentUserId,
+          isForMe: payload.receiverId === this.currentUserId
+        });
         if (payload.receiverId === this.currentUserId) {
           this.handleIncomingSignal(payload);
+        } else {
+          console.log('[Call signal received] Ignored: receiverId mismatch', {
+            receiverId: payload.receiverId,
+            currentUserId: this.currentUserId
+          });
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log('[Call signaling status]', status, `topic: signaling:${coupleId}`);
+        if (status === 'SUBSCRIBED') {
+          console.log('[Call signaling ready]', `topic: signaling:${coupleId}`);
+        }
+      });
   }
 
   public setOnCallEvent(callback: CallEventCallback) {
@@ -200,12 +217,19 @@ class CallService {
   }
 
   private sendSignal(payload: SignalingPayload) {
+    console.log('[Call signal sent]', payload);
     if (this.signalingChannel) {
       this.signalingChannel.send({
         type: 'broadcast',
         event: 'signal',
         payload
+      }).then((res: any) => {
+        console.log('[Call signal sent result]', res);
+      }).catch((err: any) => {
+        console.error('[Call signal sent error]', err);
       });
+    } else {
+      console.warn('[Call signal sent] Failed: signalingChannel is null');
     }
   }
 
