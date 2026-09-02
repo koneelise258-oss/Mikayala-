@@ -759,7 +759,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
     onUpdateMessage(msgId, { eventData });
   };
 
-  const handlePhotoSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -768,8 +768,51 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
     setShowAttachMenu(false);
     setPhotoError(null);
-    setSelectedPhotoFile(file);
-    setIsPhotoEditorOpen(true);
+
+    const isVideo = file.type.startsWith('video/') || !!file.name.match(/\.(mp4|webm|mov|m4v|mkv|avi)$/i);
+
+    if (isVideo) {
+      if (file.size === 0) {
+        setComingSoonToast("Le fichier vidéo sélectionné est vide.");
+        return;
+      }
+
+      if (file.size > 50 * 1024 * 1024) {
+        setComingSoonToast("La vidéo ne doit pas dépasser 50 Mo.");
+        return;
+      }
+
+      const targetCoupleId = getStoredPairingState().coupleId || pairingState?.coupleId;
+      if (!targetCoupleId) {
+        setComingSoonToast("Votre couple n'est pas encore jumelé.");
+        return;
+      }
+
+      setIsSending(true);
+      try {
+        const tempUrl = URL.createObjectURL(file);
+        const tempVideo = document.createElement('video');
+        tempVideo.src = tempUrl;
+        await new Promise((res) => { tempVideo.onloadedmetadata = res; setTimeout(res, 1000); });
+        const duration = Math.round(tempVideo.duration) || 5;
+        URL.revokeObjectURL(tempUrl);
+
+        const resultMessage = await envoyerMessageVideo(targetCoupleId, file, duration);
+        if (isSupabaseConfigured()) {
+          setRealMessages(prev => [...prev.filter(m => m.id !== resultMessage.id), resultMessage]);
+        }
+        soundEffects.playSent();
+        triggerHaptic(20);
+      } catch (err: any) {
+        console.error('[ChatView] Erreur envoi vidéo galerie:', err);
+        setComingSoonToast(err.message || "Erreur lors de l'envoi de la vidéo.");
+      } finally {
+        setIsSending(false);
+      }
+    } else {
+      setSelectedPhotoFile(file);
+      setIsPhotoEditorOpen(true);
+    }
   };
 
   const handleClosePhotoPreview = () => {
@@ -1943,13 +1986,13 @@ export const ChatView: React.FC<ChatViewProps> = ({
         </div>
       )}
 
-      {/* Hidden File Input for Gallery Photo (Phase 1) */}
+      {/* Hidden File Input for Gallery Media (Photos & Videos) */}
       <input
         type="file"
         ref={galleryInputRef}
         onChange={handlePhotoSelected}
         className="hidden"
-        accept="image/jpeg,image/png,image/webp"
+        accept="image/*,video/*,image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime"
       />
 
       {/* Hidden File Input for Direct Camera Photo (Phase 1) */}
@@ -2161,13 +2204,28 @@ export const ChatView: React.FC<ChatViewProps> = ({
         </div>
       </div>
 
-      {/* Direct Camera Modal (Live capture -> Photo Editor -> Photo Preview) */}
+      {/* Direct Camera Modal (Live capture -> Photo Editor -> Photo Preview or Direct Video) */}
       <DirectCameraModal
         isOpen={isDirectCameraOpen}
         onClose={() => window.history.back()}
         onCapturePhoto={(file: File) => {
           setSelectedPhotoFile(file);
           setIsPhotoEditorOpen(true);
+        }}
+        onCaptureVideo={async (file: File, duration: number) => {
+          window.history.back();
+          setIsSending(true);
+          try {
+            const resultMessage = await envoyerMessageVideo(coupleId, file, duration);
+            if (isSupabaseConfigured()) {
+              setRealMessages(prev => [...prev.filter(m => m.id !== resultMessage.id), resultMessage]);
+            }
+          } catch (err: any) {
+            console.error('[ChatView] Erreur envoi vidéo enregistrée:', err);
+            setComingSoonToast(err.message || "Erreur lors de l'envoi de la vidéo.");
+          } finally {
+            setIsSending(false);
+          }
         }}
         onOpenGalleryFallback={() => {
           window.history.back();
