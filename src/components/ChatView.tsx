@@ -88,14 +88,14 @@ interface ChatViewProps {
   partnerLastSeen?: string | null;
   sendTypingStatus?: (isTyping: boolean) => void;
   // Centralized navigation states
-  isPhotoEditorOpen: boolean;
-  setIsPhotoEditorOpen: (val: boolean) => void;
-  isDirectCameraOpen: boolean;
-  setIsDirectCameraOpen: (val: boolean) => void;
-  isPhotoPreviewOpen: boolean;
-  setIsPhotoPreviewOpen: (val: boolean) => void;
-  selectedPhotoFile: File | null;
-  setSelectedPhotoFile: (file: File | null) => void;
+  isPhotoEditorOpen?: boolean;
+  setIsPhotoEditorOpen?: (val: boolean) => void;
+  isDirectCameraOpen?: boolean;
+  setIsDirectCameraOpen?: (val: boolean) => void;
+  isPhotoPreviewOpen?: boolean;
+  setIsPhotoPreviewOpen?: (val: boolean) => void;
+  selectedPhotoFile?: File | null;
+  setSelectedPhotoFile?: (file: File | null) => void;
 }
 
 export const ChatView: React.FC<ChatViewProps> = ({
@@ -137,14 +137,14 @@ export const ChatView: React.FC<ChatViewProps> = ({
   partnerLastSeen = null,
   sendTypingStatus = (_isTyping: boolean) => {},
   // New centralized props
-  isPhotoEditorOpen,
-  setIsPhotoEditorOpen,
-  isDirectCameraOpen,
-  setIsDirectCameraOpen,
-  isPhotoPreviewOpen,
-  setIsPhotoPreviewOpen,
-  selectedPhotoFile,
-  setSelectedPhotoFile
+  isPhotoEditorOpen = false,
+  setIsPhotoEditorOpen = (_val: boolean) => {},
+  isDirectCameraOpen = false,
+  setIsDirectCameraOpen = (_val: boolean) => {},
+  isPhotoPreviewOpen = false,
+  setIsPhotoPreviewOpen = (_val: boolean) => {},
+  selectedPhotoFile = null,
+  setSelectedPhotoFile = (_file: File | null) => {}
 }) => {
   const [inputText, setInputText] = useState('');
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -1372,8 +1372,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
                     </div>
                   )}
 
-                  {/* Photo / Video */}
-                  {(msg.type === 'image' || msg.type === 'video') && (
+                  {/* Photo */}
+                  {msg.type === 'image' && (
                     <div className="space-y-1.5">
                       {msg.isViewOnce && msg.isViewed ? (
                         <div className="p-3 rounded-xl bg-black/30 border border-[#2d2254] flex items-center gap-2 text-xs text-[#a29bfe]">
@@ -1393,7 +1393,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                           </div>
                           <span>Photo vue unique (Touchez pour voir)</span>
                         </button>
-                      ) : msg.type === 'image' ? (
+                      ) : (
                         <SecureChatMessageImage
                           storagePath={msg.storagePath}
                           mediaUrl={msg.mediaUrl}
@@ -1404,24 +1404,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
                             onOpenMediaLightbox(msg);
                           }}
                         />
-                      ) : (
-                        <div
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenMediaLightbox(msg);
-                          }}
-                          className="rounded-xl overflow-hidden cursor-pointer relative group/img bg-black/20"
-                        >
-                          <video
-                            src={msg.mediaUrl}
-                            className="max-h-72 w-full object-cover rounded-xl"
-                          />
-                          {msg.isHD && (
-                            <span className="absolute top-2 left-2 text-[10px] font-bold bg-black/60 text-white px-1.5 py-0.5 rounded backdrop-blur-xs">
-                              HD
-                            </span>
-                          )}
-                        </div>
                       )}
 
                       {msg.content && (

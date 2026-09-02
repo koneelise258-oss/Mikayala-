@@ -1354,6 +1354,14 @@ export default function App() {
                 isPartnerTyping={isPartnerTyping}
                 partnerLastSeen={partnerLastSeen}
                 sendTypingStatus={(typing) => typingHandleRef.current?.sendTypingStatus(typing)}
+                isPhotoEditorOpen={isPhotoEditorOpen}
+                setIsPhotoEditorOpen={(val) => { setIsPhotoEditorOpen(val); if(val) openView('photo-editor'); }}
+                isDirectCameraOpen={isDirectCameraOpen}
+                setIsDirectCameraOpen={(val) => { setIsDirectCameraOpen(val); if(val) openView('direct-camera'); }}
+                isPhotoPreviewOpen={isPhotoPreviewOpen}
+                setIsPhotoPreviewOpen={(val) => { setIsPhotoPreviewOpen(val); if(val) openView('photo-preview'); }}
+                selectedPhotoFile={selectedPhotoFile}
+                setSelectedPhotoFile={setSelectedPhotoFile}
               />
             </div>
           ) : (

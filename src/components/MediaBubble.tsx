@@ -213,20 +213,39 @@ export const MediaBubble: React.FC<MediaBubbleProps> = ({
 
   if (type === 'video') {
     return (
-      <div className="relative rounded-xl overflow-hidden bg-black/20 max-w-[240px]">
-        <video
-          ref={videoRef}
-          src={signedUrl}
-          className="w-full aspect-square object-cover"
-          loop
-          muted
-          playsInline
-          onClick={onTogglePlay}
-        />
-        {!isPlaying && (
-          <div onClick={onTogglePlay} className="absolute inset-0 flex items-center justify-center bg-black/30 cursor-pointer">
-            <Play size={40} className="text-white fill-white opacity-80" />
+      <div className="relative rounded-xl overflow-hidden bg-black/20 max-w-[280px]">
+        {hasError || !signedUrl ? (
+          <div className="p-3 flex items-center gap-2 text-xs text-[#ff7675] bg-black/40 rounded-xl">
+            <AlertCircle size={16} />
+            <span>Vidéo non disponible</span>
           </div>
+        ) : (
+          <video
+            ref={videoRef}
+            src={signedUrl}
+            controls
+            preload="metadata"
+            playsInline
+            className="w-full max-h-72 object-contain rounded-xl bg-black"
+            onLoadedMetadata={(e) => {
+              const video = e.currentTarget;
+              console.log('[MediaBubble Video Metadata]', {
+                durationSeconds: video.duration,
+                width: video.videoWidth,
+                height: video.videoHeight,
+                src: signedUrl
+              });
+            }}
+            onError={(e) => {
+              const err = e.currentTarget.error;
+              console.error('[MediaBubble Video Error]', {
+                code: err?.code,
+                message: err?.message,
+                src: signedUrl
+              });
+              setHasError(true);
+            }}
+          />
         )}
       </div>
     );

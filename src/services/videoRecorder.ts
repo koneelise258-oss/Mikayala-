@@ -27,11 +27,14 @@ class VideoRecorderService {
       'video/webm;codecs=vp9,opus',
       'video/webm;codecs=vp8,opus',
       'video/webm',
+      'video/mp4;codecs=avc1,mp4a.40.2',
       'video/mp4;codecs=avc1',
       'video/mp4'
     ];
-    for (const type of types) {
-      if (MediaRecorder.isTypeSupported(type)) return type;
+    if (typeof MediaRecorder !== 'undefined') {
+      for (const type of types) {
+        if (MediaRecorder.isTypeSupported(type)) return type;
+      }
     }
     return '';
   }
@@ -107,6 +110,12 @@ class VideoRecorderService {
       recorder.onstop = () => {
         try {
           const blob = new Blob(this.recordedChunks, { type: mimeType });
+          console.log('[Video final]', {
+            type: blob.type,
+            size: blob.size,
+            mimeType: mimeType,
+            durationSeconds: duration
+          });
           const url = URL.createObjectURL(blob);
           const result: VideoRecordingResult = {
             blob,

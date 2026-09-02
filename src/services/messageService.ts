@@ -1118,6 +1118,14 @@ export async function envoyerMessageVideo(
   const targetCoupleId = coupleId || getStoredPairingState().coupleId;
   if (!targetCoupleId || !isSupabaseConfigured()) throw new Error("Configuration manquante");
 
+  if (!blob || blob.size <= 0) {
+    throw new Error("Fichier vidéo invalide ou vide (taille 0).");
+  }
+
+  if (blob.type && !blob.type.startsWith('video/')) {
+    console.warn('[Video upload warning] Le type du Blob ne commence pas par video/:', blob.type);
+  }
+
   const messageId = crypto.randomUUID();
   // Chemin strict : {coupleId}/video/{messageId}.{extension}
   const upload = await uploadMediaToStorage(blob, targetCoupleId, messageId, 'video');
@@ -1125,6 +1133,12 @@ export async function envoyerMessageVideo(
   if (!upload || !upload.path) {
     throw new Error("Échec du téléversement de la vidéo.");
   }
+
+  console.log('[Video upload]', {
+    blobType: blob.type,
+    blobSize: blob.size,
+    storagePath: upload.path,
+  });
 
   const senderId = await getCurrentUserId();
   const insertPayload = {
