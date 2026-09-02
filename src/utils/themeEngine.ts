@@ -368,7 +368,13 @@ export const generateDynamicFavicon = (iconPreset: AppIconPreset, partnerInitial
 
     if (butterflyIcons.includes(iconPreset)) {
       // Use the actual PNG files for official butterfly icons
+      // We keep the iconUrl as the direct path to the rounded PNG
       iconUrl = APP_ICON_PATHS[iconPreset as keyof typeof APP_ICON_PATHS];
+      
+      // To force a refresh in the browser tab and ensure rounding is perfect
+      // we can still use the canvas to redraw it if needed, but since we rounded the PNGs,
+      // simply adding a cache-busting query param or using the URL directly is enough.
+      // However, for the PWA, the manifest update is the most important.
     } else {
       // Fallback to canvas drawing for custom presets
       const canvas = document.createElement('canvas');
