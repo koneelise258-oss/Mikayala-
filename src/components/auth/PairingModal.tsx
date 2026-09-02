@@ -157,7 +157,7 @@ export const PairingModal: React.FC<PairingModalProps> = ({
     try {
       if (navigator.share) {
         await navigator.share({
-          title: 'Rejoins notre espace secret Mikayala 🔒💜',
+          title: 'Rejoins notre espace secret Mikayla 🔒💜',
           text: `Mon amour, voici notre code de jumelage secret pour notre espace : ${pairingCode}`,
           url: window.location.href
         });
@@ -465,7 +465,7 @@ export const PairingModal: React.FC<PairingModalProps> = ({
 
               <div className="mt-2 text-center">
                 <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#6c5ce7]">
-                  MIKAYALA PAIRING KEY
+                  MIKAYLA PAIRING KEY
                 </span>
               </div>
             </div>

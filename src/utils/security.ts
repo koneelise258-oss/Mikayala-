@@ -1,4 +1,4 @@
-// WebAuthn Biometric & PIN Security Engine for Mikayala
+// WebAuthn Biometric & PIN Security Engine for Mikayla
 
 export interface AuthResult {
   success: boolean;
@@ -21,7 +21,7 @@ export const isBiometricsSupported = async (): Promise<boolean> => {
 
 // Request Biometric verification using WebAuthn API
 export const authenticateWithBiometrics = async (
-  reason: string = 'Déverrouiller Mikayala'
+  reason: string = 'Déverrouiller Mikayla'
 ): Promise<AuthResult> => {
   try {
     // If WebAuthn is available, perform platform credential challenge
@@ -37,7 +37,7 @@ export const authenticateWithBiometrics = async (
         publicKey: {
           challenge,
           rp: {
-            name: "Mikayala Couple Vault",
+            name: "Mikayla Couple Vault",
             id: window.location.hostname
           },
           user: {

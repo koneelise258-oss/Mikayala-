@@ -1064,7 +1064,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
       {(!pairingState?.isPaired || !pairingState?.coupleId) && (
         <div className="bg-[#2d1215] border-b border-[#ff7675]/40 px-4 py-2 text-xs text-[#ff7675] flex items-center justify-center gap-2 text-center z-20">
           <AlertCircle size={14} className="shrink-0 text-[#ff7675]" />
-          <span>Aucun couple appairé. Veuillez appairer vos deux appareils pour discuter sur Mikayala.</span>
+          <span>Aucun couple appairé. Veuillez appairer vos deux appareils pour discuter sur Mikayla.</span>
         </div>
       )}
 
@@ -1178,7 +1178,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
             <div className="bg-[#171230]/90 border border-[#2d2254] rounded-2xl p-2.5 max-w-xs text-center shadow-sm">
               <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#55efc4] mb-0.5">
                 <Lock size={11} />
-                <span>Chiffrement de bout en bout Mikayala</span>
+                <span>Chiffrement de bout en bout Mikayla</span>
               </div>
               <p className="text-[10px] text-[#a29bfe] leading-tight">
                 Seuls vous deux pouvez lire ou écouter les messages intimes échangés ici.

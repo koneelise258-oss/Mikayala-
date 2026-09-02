@@ -181,7 +181,7 @@ export const NetworkModeModal: React.FC<NetworkModeModalProps> = ({
             </div>
 
             <div className="mt-2 pt-2 border-t border-[#2d2254]/50 flex items-center justify-between text-[10px] text-[#a29bfe]">
-              <span>Pont SMS natif avec bulles Mikayala</span>
+              <span>Pont SMS natif avec bulles Mikayla</span>
               <span className="text-[#ffeaa7] font-semibold">Prêt pour {partnerUser?.name || 'Partenaire'}</span>
             </div>
           </div>

@@ -200,7 +200,7 @@ export const WishlistModal: React.FC<WishlistModalProps> = ({
             <div className="w-full space-y-2.5">
               <button
                 onClick={() => {
-                  onShareToChat(`✨ *C'est un MATCH Mikayala !* \nNous avons tous les deux validé notre souhait : "${matchedCelebrationItem.title}" ❤️🔥 Organisons ce moment inoubliable !`);
+                  onShareToChat(`✨ *C'est un MATCH Mikayla !* \nNous avons tous les deux validé notre souhait : "${matchedCelebrationItem.title}" ❤️🔥 Organisons ce moment inoubliable !`);
                   setMatchedCelebrationItem(null);
                   onClose();
                 }}

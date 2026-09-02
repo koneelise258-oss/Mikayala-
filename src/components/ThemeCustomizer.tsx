@@ -36,7 +36,8 @@ import {
   applyThemeToDOM, 
   saveThemeConfig, 
   generateDynamicFavicon,
-  getFontFamilyCSS
+  getFontFamilyCSS,
+  APP_ICON_PATHS
 } from '../utils/themeEngine';
 import { triggerHaptic } from '../utils/security';
 import { soundEffects } from '../utils/audio';
@@ -151,7 +152,7 @@ export const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({
 
   // Preset Color Palettes
   const QUICK_PALETTES = [
-    { label: 'Mikayala Intime', hex: '#00b894' },
+    { label: 'Mikayla Intime', hex: '#00b894' },
     { label: 'WhatsApp Vert', hex: '#25D366' },
     { label: 'Rose Passion', hex: '#fd79a8' },
     { label: 'Violet Mystique', hex: '#6c5ce7' },
@@ -962,8 +963,8 @@ export const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
               {[
                 { 
-                  id: 'mikayala_heart', 
-                  name: 'Cœur Violet Mikayala', 
+                  id: 'mikayla_heart', 
+                  name: 'Cœur Mikayla (Défaut)', 
                   desc: 'Logo intime violet & émeraude', 
                   renderIcon: () => (
                     <div className="w-10 h-10 rounded-xl bg-[#130f26] border border-[#2d2254] flex items-center justify-center shadow-md">
@@ -972,46 +973,105 @@ export const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({
                   )
                 },
                 { 
-                  id: 'whatsapp_green', 
-                  name: 'Logo WhatsApp Vert', 
-                  desc: 'Camouflage parfait vert officiel', 
+                  id: 'purple', 
+                  name: 'Mikayla Papillon', 
+                  desc: 'Papillon violet cristallin officiel', 
                   renderIcon: () => (
-                    <div className="w-10 h-10 rounded-full bg-[#25D366] flex items-center justify-center shadow-md">
-                      <div className="w-5 h-5 rounded-full border-2 border-white" />
+                    <div className="w-10 h-10 rounded-xl bg-[#130f26] border border-[#2d2254] flex items-center justify-center shadow-md overflow-hidden relative">
+                      <img 
+                        src={APP_ICON_PATHS.purple} 
+                        alt="Purple" 
+                        className="w-full h-full object-cover" 
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }} 
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <Sparkle size={18} className="text-[#a29bfe]/40" />
+                      </div>
                     </div>
                   )
                 },
                 { 
-                  id: 'calc_camouflage', 
-                  name: 'Calculatrice Camouflage', 
-                  desc: 'Masquage discret et indétectable', 
+                  id: 'neon', 
+                  name: 'Mikayla Néon Glow', 
+                  desc: 'Papillon néon vibrant violet & vert', 
                   renderIcon: () => (
-                    <div className="w-10 h-10 rounded-xl bg-[#1e1e24] border border-[#ff9f0a]/30 flex flex-col items-center justify-center font-mono text-[10px] text-[#ff9f0a] font-bold shadow-md">
-                      <span>+ −</span>
-                      <span className="text-white">× =</span>
+                    <div className="w-10 h-10 rounded-xl bg-[#0a0714] border border-[#a855f7] flex items-center justify-center shadow-md overflow-hidden relative">
+                      <img 
+                        src={APP_ICON_PATHS.neon} 
+                        alt="Neon" 
+                        className="w-full h-full object-cover" 
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }} 
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <Sparkle size={18} className="text-[#a855f7]/40" />
+                      </div>
                     </div>
                   )
                 },
                 { 
-                  id: 'monogram', 
-                  name: 'Initiales du Couple', 
-                  desc: 'Monogramme intime personnalisé', 
+                  id: 'pink', 
+                  name: 'Mikayla Rose Poudré', 
+                  desc: 'Papillon délicat rose & violet', 
                   renderIcon: () => (
-                    <div className="w-10 h-10 rounded-xl bg-[#171230] border-2 border-[#fd79a8] flex items-center justify-center font-bold text-xs text-[#55efc4] shadow-md">
-                      M & K
+                    <div className="w-10 h-10 rounded-xl bg-[#1e1e24] border border-[#fd79a8]/30 flex items-center justify-center shadow-md overflow-hidden relative">
+                      <img 
+                        src={APP_ICON_PATHS.pink} 
+                        alt="Pink" 
+                        className="w-full h-full object-cover" 
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }} 
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <Sparkle size={18} className="text-[#fd79a8]/40" />
+                      </div>
                     </div>
                   )
                 },
                 { 
-                  id: 'neon_minimal', 
-                  name: 'Style Néon Minimaliste', 
-                  desc: 'Lueur cyber violette épurée', 
+                  id: 'blue', 
+                  name: 'Mikayla Bleu Cristal', 
+                  desc: 'Papillon cristallin bleu pur', 
                   renderIcon: () => (
-                    <div className="w-10 h-10 rounded-xl bg-[#0a0714] border border-[#a855f7] flex items-center justify-center font-extrabold text-base text-[#a855f7] shadow-[0_0_12px_rgba(168,85,247,0.5)]">
-                      M
+                    <div className="w-10 h-10 rounded-xl bg-[#171230] border-2 border-[#74b9ff] flex items-center justify-center shadow-md overflow-hidden relative">
+                      <img 
+                        src={APP_ICON_PATHS.blue} 
+                        alt="Blue" 
+                        className="w-full h-full object-cover" 
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }} 
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <Sparkle size={18} className="text-[#74b9ff]/40" />
+                      </div>
                     </div>
                   )
                 },
+                { 
+                  id: 'gold', 
+                  name: 'Mikayla Éclat Or', 
+                  desc: 'Papillon émeraude & précieux', 
+                  renderIcon: () => (
+                    <div className="w-10 h-10 rounded-xl bg-[#14140a] border border-[#ffeaa7] flex items-center justify-center shadow-md overflow-hidden relative">
+                      <img 
+                        src={APP_ICON_PATHS.gold} 
+                        alt="Gold" 
+                        className="w-full h-full object-cover" 
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }} 
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <Sparkle size={18} className="text-[#ffeaa7]/40" />
+                      </div>
+                    </div>
+                  )
+                }
               ].map(iconItem => (
                 <button
                   key={iconItem.id}
@@ -1089,7 +1149,7 @@ export const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({
                     setPartnerNickname(e.target.value);
                     onUpdatePartnerUser({ ...partnerUser, name: e.target.value });
                   }}
-                  placeholder="Ex: Mon Cœur ❤️, Bébé, Mikayala..."
+                  placeholder="Ex: Mon Cœur ❤️, Bébé, Mikayla..."
                   className="w-full bg-[#1c1538] border border-[#2d2254] rounded-xl px-3 py-2 text-white text-xs focus:border-[#fd79a8] focus:outline-none"
                 />
               </div>

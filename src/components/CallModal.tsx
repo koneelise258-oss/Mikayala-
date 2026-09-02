@@ -60,7 +60,7 @@ export const CallModal: React.FC<CallModalProps> = ({
   const [overlayMessages, setOverlayMessages] = useState<CallChatMessage[]>([
     {
       id: 'welcome',
-      senderName: 'Mikayala E2EE',
+      senderName: 'Mikayla E2EE',
       text: 'Appel chiffré en direct 🔒',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       isSelf: false

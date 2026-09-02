@@ -538,7 +538,7 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
                     <button
                       onClick={() => {
                         const typeLabel = currentTodChallenge.type === 'truth' || currentTodChallenge.category === 'vérité' ? '💬 VÉRITÉ' : '⚡ ACTION';
-                        onShareChallengeToChat(`🎲 *Action ou Vérité Mikayala :*\n👉 *${typeLabel} : ${currentTodChallenge.title}*\n${currentTodChallenge.description} ✨`);
+                        onShareChallengeToChat(`🎲 *Action ou Vérité Mikayla :*\n👉 *${typeLabel} : ${currentTodChallenge.title}*\n${currentTodChallenge.description} ✨`);
                         onClose();
                       }}
                       className="w-full py-3 px-4 rounded-xl bg-[#00b894] hover:bg-[#00a884] text-[#130f26] font-extrabold text-xs flex items-center justify-center gap-2 shadow-md transition-transform active:scale-95 cursor-pointer"
@@ -648,7 +648,7 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
 
                   <button
                     onClick={() => {
-                      onShareChallengeToChat(`🎲 *Défi Roue Mikayala :* \n*${selectedWheelChallenge.title}* : ${selectedWheelChallenge.description} ✨`);
+                      onShareChallengeToChat(`🎲 *Défi Roue Mikayla :* \n*${selectedWheelChallenge.title}* : ${selectedWheelChallenge.description} ✨`);
                       onClose();
                     }}
                     className="w-full py-2.5 px-4 rounded-xl bg-[#00b894] hover:bg-[#00a884] text-[#130f26] font-bold text-xs flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-md cursor-pointer"
@@ -707,7 +707,7 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
               {diceResult && (
                 <button
                   onClick={() => {
-                    onShareChallengeToChat(`🎲 *Dés Intimes Mikayala :* \n👉 *Action :* ${diceResult.action}\n👉 *Zone :* ${diceResult.zone}\n👉 *Condition :* ${diceResult.duration} 🔥`);
+                    onShareChallengeToChat(`🎲 *Dés Intimes Mikayla :* \n👉 *Action :* ${diceResult.action}\n👉 *Zone :* ${diceResult.zone}\n👉 *Condition :* ${diceResult.duration} 🔥`);
                     onClose();
                   }}
                   className="mt-4 text-xs font-bold text-[#55efc4] hover:underline flex items-center gap-1.5 cursor-pointer"

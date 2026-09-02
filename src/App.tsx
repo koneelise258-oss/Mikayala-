@@ -97,7 +97,6 @@ import { CouponsModal } from './components/CouponsModal';
 import { BlindQuizModal } from './components/BlindQuizModal';
 import { DigitalTouchModal } from './components/DigitalTouchModal';
 import { ScratchCardModal } from './components/ScratchCardModal';
-import { FakeCalculatorCamouflage } from './components/FakeCalculatorCamouflage';
 import { CoupleHubView } from './components/CoupleHubView';
 import { LoveTimerModal } from './components/LoveTimerModal';
 import { CoupleCalendarModal } from './components/CoupleCalendarModal';
@@ -419,9 +418,6 @@ export default function App() {
   const [showBiometricForVault, setShowBiometricForVault] = useState<boolean>(false);
   const [isPrivacyBlurred, setIsPrivacyBlurred] = useState<boolean>(false);
 
-  // Camouflage State (Fake Calculator)
-  const [isCamouflageActive, setIsCamouflageActive] = useState<boolean>(false);
-
   // Search state
   const [isSearching, setIsSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -578,7 +574,6 @@ export default function App() {
 
   // Overlay state: discussion masked by modals, sub-features, or camouflage
   const isAnyOverlayOpen = Boolean(
-    isCamouflageActive ||
     (!isAppAuthenticated && settings.isBiometricEnabled) ||
     isSettingsOpen ||
     isVaultOpen ||
@@ -621,47 +616,6 @@ export default function App() {
   useEffect(() => { saveCycleData(cycleData); }, [cycleData]);
   useEffect(() => { saveCoupons(coupons); }, [coupons]);
   useEffect(() => { saveQuizzes(quizzes); }, [quizzes]);
-
-  // Shake Gesture Detection for Camouflage Mode (Deactivated for now)
-  /*
-  useEffect(() => {
-    let lastX: number | null = null;
-    let lastY: number | null = null;
-    let lastZ: number | null = null;
-    let lastUpdate = 0;
-    const SHAKE_THRESHOLD = 15;
-
-    const handleMotion = (e: DeviceMotionEvent) => {
-      const current = e.accelerationIncludingGravity;
-      if (!current || current.x === null) return;
-
-      const currentTime = Date.now();
-      if ((currentTime - lastUpdate) > 100) {
-        const diffTime = currentTime - lastUpdate;
-        lastUpdate = currentTime;
-
-        const x = current.x || 0;
-        const y = current.y || 0;
-        const z = current.z || 0;
-
-        if (lastX !== null && lastY !== null && lastZ !== null) {
-          const speed = Math.abs(x + y + z - lastX - lastY - lastZ) / diffTime * 10000;
-          if (speed > SHAKE_THRESHOLD * 50) {
-            setIsCamouflageActive(true);
-            triggerHaptic([100, 50, 100]);
-          }
-        }
-
-        lastX = x;
-        lastY = y;
-        lastZ = z;
-      }
-    };
-
-    window.addEventListener('devicemotion', handleMotion);
-    return () => window.removeEventListener('devicemotion', handleMotion);
-  }, []);
-  */
 
   // Online / Offline Listeners
   useEffect(() => {
@@ -804,7 +758,7 @@ export default function App() {
         );
       }, 800);
 
-      // Étape 2 : Lu par le partenaire (2 coches colorées Mikayala) après 2200ms
+      // Étape 2 : Lu par le partenaire (2 coches colorées Mikayla) après 2200ms
       setTimeout(() => {
         setMessages(prev =>
           prev.map(m => (m.id === msgId && (m.status === 'sent' || m.status === 'delivered') ? { ...m, status: 'read', readAt: new Date().toISOString() } : m))
@@ -1172,7 +1126,6 @@ export default function App() {
                 onOpenQRCode={() => setIsQRCodeOpen(true)}
                 onOpenCamera={() => setIsCameraOpen(true)}
                 onOpenStarred={() => setIsStarredOpen(true)}
-                onOpenCamouflage={() => setIsCamouflageActive(true)}
                 onOpenThemeCustomizer={() => setIsSettingsOpen(true)}
                 onSearchToggle={() => {
                   setIsSearching(!isSearching);
@@ -1277,7 +1230,6 @@ export default function App() {
               onOpenQRCode={() => setIsQRCodeOpen(true)}
               onOpenCamera={() => setIsCameraOpen(true)}
               onOpenStarred={() => setIsStarredOpen(true)}
-              onOpenCamouflage={() => setIsCamouflageActive(true)}
               onOpenThemeCustomizer={() => setIsSettingsOpen(true)}
               onSearchToggle={() => {
                 setIsSearching(!isSearching);
@@ -1447,15 +1399,6 @@ export default function App() {
         onOpenScratchCard={() => setIsScratchCardOpen(true)}
       />
 
-      {/* Camouflage Fake Calculator Mode */}
-      {isCamouflageActive && (
-        <FakeCalculatorCamouflage
-          isOpen={isCamouflageActive}
-          onClose={() => setIsCamouflageActive(false)}
-          secretPin={settings.pinCode || '2026'}
-        />
-      )}
-
       {/* Couple Space Anonymous Pairing Modal */}
       {isPairingModalOpen && (
         <PairingModal
@@ -1487,7 +1430,7 @@ export default function App() {
           isOpen={!isAppAuthenticated && !isPairingModalOpen}
           onSuccess={() => setIsAppAuthenticated(true)}
           expectedPin={settings.securityPin || '2026'}
-          title="Mikayala Protégé"
+          title="Mikayla Protégé"
           subtitle="Authentification biométrique requise pour accéder au sanctuaire."
         />
       )}

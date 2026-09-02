@@ -1,4 +1,4 @@
-// Sound Effects using Web Audio API for Mikayala
+// Sound Effects using Web Audio API for Mikayla
 class SoundManager {
   private ctx: AudioContext | null = null;
 
@@ -177,7 +177,7 @@ class SoundManager {
     }
   }
 
-  // Biometric / Camouflage Unlock Success sound
+  // Biometric Unlock Success sound
   playBiometricSuccess() {
     try {
       const ctx = this.getContext();
@@ -198,7 +198,7 @@ class SoundManager {
     }
   }
 
-  // Biometric / Camouflage Fail buzzer
+  // Biometric Fail buzzer
   playBiometricFail() {
     try {
       const ctx = this.getContext();

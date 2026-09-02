@@ -20,7 +20,7 @@ export const BiometricAuthModal: React.FC<BiometricAuthModalProps> = ({
   onSuccess,
   onCancel,
   onClose,
-  title = "Authentification Mikayala",
+  title = "Authentification Mikayla",
   subtitle = "Vérification biométrique (Empreinte / FaceID) requise",
   expectedPin,
   requiredPin,

@@ -47,7 +47,7 @@ const INITIAL_EVENTS: CoupleEvent[] = [
     date: new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0],
     time: '20:00',
     location: 'Restaurant Le Ciel de Paris',
-    description: 'Une soirée en amoureux sans téléphone portable (juste Mikayala !)',
+    description: 'Une soirée en amoureux sans téléphone portable (juste Mikayla !)',
     category: 'date',
     color: '#fd79a8',
     attendees: []

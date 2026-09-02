@@ -176,7 +176,7 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({ message, onClose, 
         ) : (
           <img
             src={resolvedUrl}
-            alt="Média Mikayala"
+            alt="Média Mikayla"
             className="max-h-[80vh] max-w-full rounded-lg object-contain shadow-2xl select-none"
             onError={() => {
               console.error('[MediaLightbox] Erreur de rendu de l’image:', {

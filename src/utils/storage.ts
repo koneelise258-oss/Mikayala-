@@ -18,7 +18,7 @@ export const DEFAULT_USER: User = {
   name: 'Moi',
   phone: '',
   avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80',
-  bio: 'Mon sanctuaire ✨ | Protégé par Mikayala 🔒',
+  bio: 'Mon sanctuaire ✨ | Protégé par Mikayla 🔒',
   isOnline: true,
   lastSeen: 'En ligne',
   customStatus: 'Connecté(e) 🌸'
@@ -29,7 +29,7 @@ export const DEFAULT_PARTNER: User = {
   name: 'Partenaire',
   phone: '',
   avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&auto=format&fit=crop&q=80',
-  bio: 'Sanctuaire Mikayala 🔒',
+  bio: 'Sanctuaire Mikayla 🔒',
   isOnline: true,
   lastSeen: 'En ligne',
   customStatus: 'Connecté(e) 💓'

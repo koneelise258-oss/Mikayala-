@@ -26,7 +26,7 @@ export const PrivacyBlurOverlay: React.FC<PrivacyBlurOverlayProps> = ({
       </div>
 
       <h2 className="text-xl font-bold text-[#f1f2f6] tracking-wide mb-1">
-        Mikayala Protégé
+        Mikayla Protégé
       </h2>
       <p className="text-xs text-[#a29bfe] max-w-xs mb-6">
         Écran flouté par mesure de discrétion anti-regards indiscrets.

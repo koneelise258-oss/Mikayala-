@@ -81,7 +81,7 @@ export const SmsImportModal: React.FC<SmsImportModalProps> = ({
         <div className="bg-[#1e173e] p-3 rounded-2xl border border-[#2d2254] mb-3 text-[11px] text-[#a29bfe] leading-relaxed flex items-start gap-2">
           <Sparkles size={14} className="text-[#ffeaa7] shrink-0 mt-0.5" />
           <span>
-            Collez ici le SMS reçu de <strong>{partnerUser.name}</strong> pour l'intégrer automatiquement dans votre fil de discussion chiffré Mikayala.
+            Collez ici le SMS reçu de <strong>{partnerUser.name}</strong> pour l'intégrer automatiquement dans votre fil de discussion chiffré Mikayla.
           </span>
         </div>
 

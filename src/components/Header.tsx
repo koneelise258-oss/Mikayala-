@@ -32,7 +32,6 @@ interface HeaderProps {
   onOpenQRCode: () => void;
   onOpenCamera: () => void;
   onOpenStarred: () => void;
-  onOpenCamouflage: () => void;
   onOpenThemeCustomizer?: () => void;
   onSearchToggle: () => void;
   isSearching: boolean;
@@ -57,7 +56,6 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenQRCode,
   onOpenCamera,
   onOpenStarred,
-  onOpenCamouflage,
   onOpenThemeCustomizer,
   onSearchToggle,
   isSearching,
@@ -84,19 +82,6 @@ export const Header: React.FC<HeaderProps> = ({
   }, []);
 
   const handleTitleTap = () => {
-    /* 
-    // Deactivated for now
-    const next = titleTapCount + 1;
-    setTitleTapCount(next);
-    triggerHaptic(20);
-
-    if (next >= 3) {
-      setTitleTapCount(0);
-      onOpenCamouflage();
-    } else {
-      setTimeout(() => setTitleTapCount(0), 1000);
-    }
-    */
   };
 
   const getNetworkBadge = () => {
@@ -168,7 +153,7 @@ export const Header: React.FC<HeaderProps> = ({
               className="flex items-center gap-1.5 cursor-pointer active:opacity-80 shrink-0"
             >
               <span className="font-extrabold text-base tracking-tight bg-gradient-to-r from-white via-[#f1f2f6] to-[#a29bfe] bg-clip-text text-transparent">
-                Mikayala
+                Mikayla
               </span>
             </div>
 
@@ -282,7 +267,7 @@ export const Header: React.FC<HeaderProps> = ({
               {showMenu && (
                 <div className="absolute right-0 top-full mt-2 w-64 bg-[#1b1435] rounded-2xl shadow-2xl py-2 z-50 border border-[#372863] text-xs animate-in fade-in zoom-in-95 duration-100 max-h-[80vh] overflow-y-auto">
                   <div className="px-3.5 py-2.5 border-b border-[#2d2254] mb-1 bg-[#130f26]/60">
-                    <p className="text-[9px] uppercase tracking-wider text-[#a29bfe] font-bold">Sanctuaire Mikayala</p>
+                    <p className="text-[9px] uppercase tracking-wider text-[#a29bfe] font-bold">Sanctuaire Mikayla</p>
                     <p className="text-xs font-bold text-[#f1f2f6] truncate">{currentUser.name} & {partnerUser.name}</p>
                     <p className="text-[10px] text-[#55efc4] flex items-center gap-1 mt-0.5">
                       <ShieldCheck size={11} /> 100% Chiffré & Privé
@@ -322,25 +307,6 @@ export const Header: React.FC<HeaderProps> = ({
                       <span className="text-[10px] text-[#a29bfe]/70">Favoris & Médias épinglés</span>
                     </div>
                   </button>
-
-                  {/* 3. 🫣 Activer le Mode Camouflage (Calculatrice) - Deactivated for now */}
-                  {/*
-                  <button
-                    onClick={() => {
-                      onOpenCamouflage();
-                      setShowMenu(false);
-                    }}
-                    className="w-full text-left px-3.5 py-2.5 hover:bg-[#281e4b] flex items-center space-x-2.5 text-[#ffeaa7] transition-colors cursor-pointer"
-                  >
-                    <div className="p-1.5 rounded-lg bg-[#ffeaa7]/20 text-[#ffeaa7]">
-                      <Calculator size={15} />
-                    </div>
-                    <div>
-                      <span className="font-semibold block text-[#ffeaa7]">Mode Camouflage</span>
-                      <span className="text-[10px] text-[#a29bfe]/70">Fausse calculatrice secrète</span>
-                    </div>
-                  </button>
-                  */}
 
                   <div className="h-px bg-[#2d2254] my-1" />
 

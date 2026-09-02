@@ -60,21 +60,21 @@ export const generateSmsUri = (phoneNumber: string, text: string): string => {
 };
 
 export const formatSmsPayload = (rawText: string): string => {
-  // Add a discreet tag so Mikayala can recognize its own messages
+  // Add a discreet tag so Mikayla can recognize its own messages
   return `[MK] ${rawText}`;
 };
 
-export const parseIncomingSms = (rawText: string): { cleanText: string; isMikayalaMessage: boolean } => {
+export const parseIncomingSms = (rawText: string): { cleanText: string; isMikaylaMessage: boolean } => {
   const trimmed = rawText.trim();
-  if (trimmed.startsWith('[MK]') || trimmed.startsWith('[Mikayala]')) {
+  if (trimmed.startsWith('[MK]') || trimmed.startsWith('[Mikayla]')) {
     return {
-      cleanText: trimmed.replace(/^\[(MK|Mikayala)\]\s*/i, ''),
-      isMikayalaMessage: true
+      cleanText: trimmed.replace(/^\[(MK|Mikayla)\]\s*/i, ''),
+      isMikaylaMessage: true
     };
   }
   return {
     cleanText: trimmed,
-    isMikayalaMessage: false
+    isMikaylaMessage: false
   };
 };
 
@@ -98,8 +98,8 @@ export const triggerNativeSmsApp = (phoneNumber: string, messageText: string) =>
 // MODE 3: PROXIMITÉ PROCHE (BLUETOOTH & LOCAL HOTSPOT)
 // ==========================================
 
-// Bluetooth GATT Service / Characteristic UUIDs for Mikayala Intimate Peer
-const MIKAYALA_SERVICE_UUID = '0000fee0-0000-1000-8000-00805f9b34fb';
+// Bluetooth GATT Service / Characteristic UUIDs for Mikayla Intimate Peer
+const MIKAYLA_SERVICE_UUID = '0000fee0-0000-1000-8000-00805f9b34fb';
 
 export interface BluetoothConnectionResult {
   success: boolean;
@@ -114,7 +114,7 @@ export const connectProximityBluetooth = async (partnerName: string): Promise<Bl
       const navAny = navigator as any;
       const device = await navAny.bluetooth.requestDevice({
         acceptAllDevices: true,
-        optionalServices: [MIKAYALA_SERVICE_UUID]
+        optionalServices: [MIKAYLA_SERVICE_UUID]
       });
 
       return {

@@ -160,7 +160,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
           </div>
 
           <div className="text-center text-xs text-[#a29bfe]/70 pb-2">
-            Protégé par Mikayala Biometrics • Capture d'écran désactivée
+            Protégé par Mikayla Biometrics • Capture d'écran désactivée
           </div>
         </div>
       )}

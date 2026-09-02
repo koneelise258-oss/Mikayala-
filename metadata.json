@@ -1,5 +1,5 @@
 {
-  "name": "Mikayala",
+  "name": "Mikayla",
   "description": "Application PWA de couple ultra-sécurisée mobile-first avec matrice de communication Tri-Mode (Cloud Supabase, SMS Direct 0-Data, Bluetooth Proximité 0-Data), coffre-fort biométrique WebAuthn, suivi de cycle & soin, jeux intimes, wishlist fantasmes et mode camouflage.",
   "requestFramePermissions": ["camera", "microphone", "geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

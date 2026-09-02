@@ -106,7 +106,7 @@ export const CallsTab: React.FC<CallsTabProps> = ({
       {showLinkModal && (
         <div className="fixed inset-0 z-50 bg-[#0e0b1c]/90 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-[#171230] text-[#f1f2f6] rounded-3xl w-full max-w-sm p-5 border border-[#2d2254] shadow-2xl">
-            <h3 className="font-bold text-base text-white mb-1.5">Lien d'appel chiffré Mikayala</h3>
+            <h3 className="font-bold text-base text-white mb-1.5">Lien d'appel chiffré Mikayla</h3>
             <p className="text-xs text-[#a29bfe] mb-4">
               Lien direct sécurisé réservé exclusivement à votre duo intime.
             </p>

@@ -225,7 +225,7 @@ export interface CallRecord {
   duration?: number; // in seconds
 }
 
-/* --- MIKAYALA INTIMACY MODULES TYPES --- */
+/* --- MIKAYLA INTIMACY MODULES TYPES --- */
 
 export interface VaultItem {
   id: string;
@@ -317,7 +317,7 @@ export interface ChatSettings {
 
 export type BubbleShape = 'classic' | 'capsule' | 'comic';
 export type FontFamilyOption = 'system' | 'roboto' | 'mono' | 'cursive';
-export type AppIconPreset = 'mikayala_heart' | 'whatsapp_green' | 'calc_camouflage' | 'monogram' | 'neon_minimal';
+export type AppIconPreset = 'purple' | 'neon' | 'pink' | 'blue' | 'gold' | 'mikayla_heart' | 'monogram' | 'neon_minimal';
 export type WallpaperPreset = 'solid' | 'doodle_dark' | 'doodle_light' | 'gradient_neon' | 'gradient_rose' | 'gradient_emerald' | 'gradient_slate' | 'custom_image';
 
 export interface CustomColors {

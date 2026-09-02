@@ -7,7 +7,7 @@ import {
   FontFamilyOption
 } from '../types';
 
-export const THEME_STORAGE_KEY = 'mikayala_theme_config';
+export const THEME_STORAGE_KEY = 'mikayla_theme_config';
 
 export const DEFAULT_COLORS: CustomColors = {
   // 1. EN-TÊTE & NAVIGATION
@@ -52,13 +52,21 @@ export const DEFAULT_TYPOGRAPHY: TypographyConfig = {
   iosEmojis: true
 };
 
+export const APP_ICON_PATHS = {
+  purple: '/icons/icon-purple.png',
+  neon: '/icons/icon-neon.png',
+  pink: '/icons/icon-pink.png',
+  blue: '/icons/icon-blue.png',
+  gold: '/icons/icon-gold.png'
+};
+
 export const DEFAULT_THEME_CONFIG: AppThemeConfig = {
-  id: 'mikayala_default',
-  name: 'Mikayala Intime (Défaut)',
+  id: 'mikayla_default',
+  name: 'Mikayla Intime (Défaut)',
   colors: DEFAULT_COLORS,
   wallpaper: DEFAULT_WALLPAPER,
   typography: DEFAULT_TYPOGRAPHY,
-  appIcon: 'mikayala_heart'
+  appIcon: 'mikayla_heart'
 };
 
 // ==========================================
@@ -72,8 +80,8 @@ export const PRESET_THEMES: Array<{
   config: Partial<AppThemeConfig>;
 }> = [
   {
-    id: 'mikayala_default',
-    name: 'Mikayala Intime',
+    id: 'mikayla_default',
+    name: 'Mikayla Intime',
     description: 'Dark Violet & Émeraude étincelant avec motifs nocturnes',
     previewColors: ['#130f26', '#00b894', '#6c5ce7', '#005c4b'],
     config: {
@@ -364,39 +372,7 @@ export const generateDynamicFavicon = (iconPreset: AppIconPreset, partnerInitial
     // Clear background
     ctx.clearRect(0, 0, 64, 64);
 
-    if (iconPreset === 'whatsapp_green') {
-      // WhatsApp style: Vibrant green circle + white phone
-      ctx.fillStyle = '#25D366';
-      ctx.beginPath();
-      ctx.arc(32, 32, 30, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Phone handle symbol
-      ctx.fillStyle = '#FFFFFF';
-      ctx.beginPath();
-      ctx.arc(32, 32, 14, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#25D366';
-      ctx.beginPath();
-      ctx.arc(32, 32, 8, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (iconPreset === 'calc_camouflage') {
-      // Calculator Camouflage: Dark background with orange/gray buttons
-      ctx.fillStyle = '#1e1e24';
-      ctx.beginPath();
-      ctx.roundRect(4, 4, 56, 56, 12);
-      ctx.fill();
-
-      // Math symbol cross / grid
-      ctx.fillStyle = '#ff9f0a';
-      ctx.font = 'bold 22px -apple-system, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('+ −', 32, 23);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText('× =', 32, 45);
-    } else if (iconPreset === 'monogram') {
+    if (iconPreset === 'monogram') {
       // Monogram Initials of Couple
       ctx.fillStyle = '#171230';
       ctx.beginPath();
@@ -430,12 +406,13 @@ export const generateDynamicFavicon = (iconPreset: AppIconPreset, partnerInitial
       ctx.lineTo(46, 44);
       ctx.stroke();
     } else {
-      // Default: Mikayala Intime Heart with Dark Violet & Emerald
+      // Default: Mikayla Intime Butterfly with Dark Violet & Emerald
       ctx.fillStyle = '#130f26';
       ctx.beginPath();
       ctx.roundRect(4, 4, 56, 56, 14);
       ctx.fill();
 
+      // For the dynamic one, we'll keep the heart as a fallback or if "butterfly" isn't available as canvas drawing
       // Emerald Heart
       ctx.fillStyle = '#00b894';
       ctx.beginPath();
