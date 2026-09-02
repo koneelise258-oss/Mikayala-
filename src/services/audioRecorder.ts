@@ -38,14 +38,15 @@ class AudioRecorderService {
    */
   public getSupportedMimeType(): string {
     if (typeof MediaRecorder === 'undefined') {
-      return 'audio/webm';
+      return 'audio/mp4';
     }
 
     const preferredTypes = [
-      'audio/webm;codecs=opus',
-      'audio/webm',
       'audio/mp4',
       'audio/aac',
+      'audio/m4a',
+      'audio/webm;codecs=opus',
+      'audio/webm',
       'audio/ogg;codecs=opus',
       'audio/ogg',
       'audio/wav'
@@ -235,6 +236,10 @@ class AudioRecorderService {
           }
 
           const audioBlob = new Blob(this.recordedChunks, { type: mimeType });
+          console.log('[Audio final]', {
+            type: audioBlob.type,
+            size: audioBlob.size,
+          });
           const url = URL.createObjectURL(audioBlob);
 
           // Standardize waveform to 20 points

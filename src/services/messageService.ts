@@ -135,7 +135,7 @@ export async function uploadMediaToStorage(
     const messageId = fileName && fileName.includes('-') ? fileName : `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     const safeName = `${coupleId}/${folder}/${messageId}.${ext}`;
 
-    const contentTypeSent = sanitizedMime || (folder === 'audio' ? 'audio/webm' : folder === 'video' ? 'video/webm' : 'application/octet-stream');
+    const contentTypeSent = sanitizedMime || (folder === 'audio' ? 'audio/mp4' : folder === 'video' ? 'video/mp4' : 'application/octet-stream');
     const uploadFile = new File([file], `${messageId}.${ext}`, { type: contentTypeSent });
 
     console.log('[MediaUpload Diagnostic Attempt]', {
@@ -1069,6 +1069,12 @@ export async function envoyerMessageAudio(
   if (!upload || !upload.path) {
     throw new Error("Échec du téléversement de la note vocale.");
   }
+
+  console.log('[Audio upload]', {
+    blobType: blob.type,
+    blobSize: blob.size,
+    storagePath: upload.path,
+  });
 
   const senderId = await getCurrentUserId();
   const insertPayload = {
