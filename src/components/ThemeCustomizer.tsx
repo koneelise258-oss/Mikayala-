@@ -36,8 +36,7 @@ import {
   applyThemeToDOM, 
   saveThemeConfig, 
   generateDynamicFavicon,
-  getFontFamilyCSS,
-  APP_ICON_PATHS
+  getFontFamilyCSS
 } from '../utils/themeEngine';
 import { triggerHaptic } from '../utils/security';
 import { soundEffects } from '../utils/audio';
@@ -51,6 +50,41 @@ interface ThemeCustomizerProps {
   onUpdateCurrentUser: (user: User) => void;
   onUpdatePartnerUser: (user: User) => void;
 }
+
+// New Stylized Vector Butterfly for UI Previews
+const ButterflyVectorIcon = ({ preset, size = 40 }: { preset: string; size?: number }) => {
+  const colorMap: Record<string, { primary: string; secondary: string; bg: string }> = {
+    purple: { primary: '#6c5ce7', secondary: '#a29bfe', bg: '#130f26' },
+    neon: { primary: '#a855f7', secondary: '#06b6d4', bg: '#090812' },
+    pink: { primary: '#fd79a8', secondary: '#fab1a0', bg: '#1a0d16' },
+    blue: { primary: '#0984e3', secondary: '#00cec9', bg: '#0b1626' },
+    gold: { primary: '#d4af37', secondary: '#f1c40f', bg: '#1a1408' }
+  };
+  
+  const colors = colorMap[preset] || colorMap.purple;
+
+  return (
+    <div 
+      className="rounded-xl flex items-center justify-center shadow-md overflow-hidden relative"
+      style={{ width: size, height: size, backgroundColor: colors.bg, border: `1px solid ${colors.primary}40` }}
+    >
+      <svg width={size * 0.7} height={size * 0.7} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id={`grad-${preset}`} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor={colors.primary} />
+            <stop offset="100%" stopColor={colors.secondary} />
+          </linearGradient>
+        </defs>
+        {/* Left Wing */}
+        <path d="M48 48 C20 20, 15 60, 48 52 C25 75, 20 85, 48 78 L48 48 Z" fill={`url(#grad-${preset})`} />
+        {/* Right Wing */}
+        <path d="M52 48 C80 20, 85 60, 52 52 C75 75, 80 85, 52 78 L52 48 Z" fill={`url(#grad-${preset})`} />
+        {/* Body */}
+        <rect x="48.5" y="40" width="3" height="35" rx="1.5" fill="white" fillOpacity="0.8" />
+      </svg>
+    </div>
+  );
+};
 
 export const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({
   themeConfig,
@@ -72,6 +106,29 @@ export const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const partnerAvatarInputRef = useRef<HTMLInputElement>(null);
   const userAvatarInputRef = useRef<HTMLInputElement>(null);
+
+  const iconInputRef = useRef<HTMLInputElement>(null);
+  const [customIconPreview, setCustomIconPreview] = useState<string | null>(
+    typeof localStorage !== 'undefined' ? localStorage.getItem('mikayala_custom_icon') : null
+  );
+
+  const handleCustomIconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = reader.result as string;
+        setCustomIconPreview(base64);
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('mikayala_custom_icon', base64);
+        }
+        updateTheme({ appIcon: 'custom' });
+        generateDynamicFavicon('custom', `${userName[0] || 'M'} & ${partnerNickname[0] || 'K'}`);
+        soundEffects.playSent();
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   // Helper to update parts of theme and trigger live preview
   const updateTheme = (updated: Partial<AppThemeConfig>) => {
@@ -966,99 +1023,47 @@ export const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({
                   id: 'purple', 
                   name: 'Mikayla Papillon', 
                   desc: 'Papillon violet cristallin officiel', 
-                  renderIcon: () => (
-                    <div className="w-10 h-10 rounded-xl bg-[#130f26] border border-[#2d2254] flex items-center justify-center shadow-md overflow-hidden relative">
-                      <img 
-                        src={APP_ICON_PATHS.purple} 
-                        alt="Purple" 
-                        className="w-full h-full object-cover" 
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }} 
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <Sparkle size={18} className="text-[#a29bfe]/40" />
-                      </div>
-                    </div>
-                  )
+                  renderIcon: () => <ButterflyVectorIcon preset="purple" />
                 },
                 { 
                   id: 'neon', 
                   name: 'Mikayla Néon Glow', 
                   desc: 'Papillon néon vibrant violet & vert', 
-                  renderIcon: () => (
-                    <div className="w-10 h-10 rounded-xl bg-[#0a0714] border border-[#a855f7] flex items-center justify-center shadow-md overflow-hidden relative">
-                      <img 
-                        src={APP_ICON_PATHS.neon} 
-                        alt="Neon" 
-                        className="w-full h-full object-cover" 
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }} 
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <Sparkle size={18} className="text-[#a855f7]/40" />
-                      </div>
-                    </div>
-                  )
+                  renderIcon: () => <ButterflyVectorIcon preset="neon" />
                 },
                 { 
                   id: 'pink', 
                   name: 'Mikayla Rose Poudré', 
                   desc: 'Papillon délicat rose & violet', 
-                  renderIcon: () => (
-                    <div className="w-10 h-10 rounded-xl bg-[#1e1e24] border border-[#fd79a8]/30 flex items-center justify-center shadow-md overflow-hidden relative">
-                      <img 
-                        src={APP_ICON_PATHS.pink} 
-                        alt="Pink" 
-                        className="w-full h-full object-cover" 
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }} 
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <Sparkle size={18} className="text-[#fd79a8]/40" />
-                      </div>
-                    </div>
-                  )
+                  renderIcon: () => <ButterflyVectorIcon preset="pink" />
                 },
                 { 
                   id: 'blue', 
                   name: 'Mikayla Bleu Cristal', 
                   desc: 'Papillon cristallin bleu pur', 
-                  renderIcon: () => (
-                    <div className="w-10 h-10 rounded-xl bg-[#171230] border-2 border-[#74b9ff] flex items-center justify-center shadow-md overflow-hidden relative">
-                      <img 
-                        src={APP_ICON_PATHS.blue} 
-                        alt="Blue" 
-                        className="w-full h-full object-cover" 
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }} 
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <Sparkle size={18} className="text-[#74b9ff]/40" />
-                      </div>
-                    </div>
-                  )
+                  renderIcon: () => <ButterflyVectorIcon preset="blue" />
                 },
                 { 
                   id: 'gold', 
                   name: 'Mikayla Éclat Or', 
                   desc: 'Papillon émeraude & précieux', 
+                  renderIcon: () => <ButterflyVectorIcon preset="gold" />
+                },
+                { 
+                  id: 'custom', 
+                  name: 'Icône Personnalisée', 
+                  desc: 'Utilisez votre propre photo', 
                   renderIcon: () => (
-                    <div className="w-10 h-10 rounded-xl bg-[#14140a] border border-[#ffeaa7] flex items-center justify-center shadow-md overflow-hidden relative">
-                      <img 
-                        src={APP_ICON_PATHS.gold} 
-                        alt="Gold" 
-                        className="w-full h-full object-cover" 
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }} 
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <Sparkle size={18} className="text-[#ffeaa7]/40" />
-                      </div>
+                    <div className="w-10 h-10 rounded-xl bg-[#130f26] border border-dashed border-[#a29bfe]/40 flex items-center justify-center shadow-md overflow-hidden relative">
+                      {customIconPreview ? (
+                        <img 
+                          src={customIconPreview} 
+                          alt="Custom" 
+                          className="w-full h-full object-cover" 
+                        />
+                      ) : (
+                        <Upload size={18} className="text-[#a29bfe]" />
+                      )}
                     </div>
                   )
                 }
@@ -1066,6 +1071,10 @@ export const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({
                 <button
                   key={iconItem.id}
                   onClick={() => {
+                    if (iconItem.id === 'custom' && !customIconPreview) {
+                      iconInputRef.current?.click();
+                      return;
+                    }
                     updateTheme({ appIcon: iconItem.id as any });
                     generateDynamicFavicon(iconItem.id as any, `${userName[0] || 'M'} & ${partnerNickname[0] || 'K'}`);
                     soundEffects.playSent();
@@ -1088,6 +1097,27 @@ export const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({
                   </div>
                 </button>
               ))}
+            </div>
+
+            {/* Custom Icon Upload Button */}
+            <div className="pt-2">
+              <input
+                type="file"
+                ref={iconInputRef}
+                onChange={handleCustomIconUpload}
+                accept="image/*"
+                className="hidden"
+              />
+              <button
+                onClick={() => iconInputRef.current?.click()}
+                className="w-full py-2.5 px-4 bg-[#251d48] hover:bg-[#2d2254] text-white rounded-xl border border-[#2d2254] flex items-center justify-center gap-2 transition-all text-xs font-medium"
+              >
+                <ImageIcon size={14} className="text-[#a29bfe]" />
+                {customIconPreview ? "Changer l'image personnalisée" : "Importer une image personnalisée"}
+              </button>
+              <p className="text-[9px] text-center text-[#a29bfe]/60 mt-2 italic">
+                L'image sera automatiquement mise à jour dans l'onglet et le manifest PWA.
+              </p>
             </div>
           </div>
         </div>

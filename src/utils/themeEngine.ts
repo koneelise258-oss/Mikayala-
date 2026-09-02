@@ -52,12 +52,66 @@ export const DEFAULT_TYPOGRAPHY: TypographyConfig = {
   iosEmojis: true
 };
 
-export const APP_ICON_PATHS = {
-  purple: '/icons/icon-purple.png',
-  neon: '/icons/icon-neon.png',
-  pink: '/icons/icon-pink.png',
-  blue: '/icons/icon-blue.png',
-  gold: '/icons/icon-gold.png'
+// Stylized Butterfly SVG Paths for different colors
+const BUTTERFLY_SVG_DATA = {
+  purple: { primary: '#6c5ce7', secondary: '#a29bfe', bg: '#130f26' },
+  neon: { primary: '#a855f7', secondary: '#06b6d4', bg: '#090812' },
+  pink: { primary: '#fd79a8', secondary: '#fab1a0', bg: '#1a0d16' },
+  blue: { primary: '#0984e3', secondary: '#00cec9', bg: '#0b1626' },
+  gold: { primary: '#d4af37', secondary: '#f1c40f', bg: '#1a1408' }
+};
+
+/**
+ * Draws a stylized UI/UX butterfly icon on a canvas
+ */
+const drawButterflyToCanvas = (ctx: CanvasRenderingContext2D, preset: keyof typeof BUTTERFLY_SVG_DATA, size: number) => {
+  const colors = BUTTERFLY_SVG_DATA[preset];
+  const padding = size * 0.1;
+  const s = size - (padding * 2);
+  const cx = size / 2;
+  const cy = size / 2;
+
+  // Background rounded rect
+  ctx.fillStyle = colors.bg;
+  ctx.beginPath();
+  ctx.roundRect(padding/2, padding/2, size - padding, size - padding, size * 0.22);
+  ctx.fill();
+
+  // Draw Butterfly wings (minimalist geometric style)
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  const drawWing = (isRight: boolean) => {
+    ctx.save();
+    if (isRight) ctx.scale(-1, 1);
+    
+    const grad = ctx.createLinearGradient(0, -s/4, -s/2.5, s/4);
+    grad.addColorStop(0, colors.primary);
+    grad.addColorStop(1, colors.secondary);
+    
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    // Top wing
+    ctx.moveTo(-2, -2);
+    ctx.bezierCurveTo(-s/2, -s/2, -s/1.8, 0, -2, 2);
+    // Bottom wing
+    ctx.bezierCurveTo(-s/2.2, s/2, -s/2.5, s/3, -2, s/3.5);
+    ctx.lineTo(-2, -2);
+    ctx.fill();
+    ctx.restore();
+  };
+
+  drawWing(false); // Left
+  drawWing(true);  // Right
+
+  // Body
+  ctx.fillStyle = '#ffffff';
+  ctx.globalAlpha = 0.8;
+  ctx.beginPath();
+  ctx.roundRect(-1.5, -s/4, 3, s/2, 2);
+  ctx.fill();
+  
+  ctx.restore();
 };
 
 export const DEFAULT_THEME_CONFIG: AppThemeConfig = {
@@ -367,14 +421,30 @@ export const generateDynamicFavicon = (iconPreset: AppIconPreset, partnerInitial
     let iconUrl = '';
 
     if (butterflyIcons.includes(iconPreset)) {
-      // Use the actual PNG files for official butterfly icons
-      // We keep the iconUrl as the direct path to the rounded PNG
-      iconUrl = APP_ICON_PATHS[iconPreset as keyof typeof APP_ICON_PATHS];
+      // Use the new SVG-based drawing for butterfly icons
+      const canvas = document.createElement('canvas');
+      canvas.width = 1024;
+      canvas.height = 1024;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        drawButterflyToCanvas(ctx, iconPreset as keyof typeof BUTTERFLY_SVG_DATA, 1024);
+        iconUrl = canvas.toDataURL('image/png');
+      }
+    } else if (iconPreset === 'custom') {
+      // Use uploaded custom icon from localStorage
+      iconUrl = localStorage.getItem('mikayala_custom_icon') || '';
       
-      // To force a refresh in the browser tab and ensure rounding is perfect
-      // we can still use the canvas to redraw it if needed, but since we rounded the PNGs,
-      // simply adding a cache-busting query param or using the URL directly is enough.
-      // However, for the PWA, the manifest update is the most important.
+      // If no custom icon, fallback to purple vector
+      if (!iconUrl) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1024;
+        canvas.height = 1024;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          drawButterflyToCanvas(ctx, 'purple', 1024);
+          iconUrl = canvas.toDataURL('image/png');
+        }
+      }
     } else {
       // Fallback to canvas drawing for custom presets
       const canvas = document.createElement('canvas');
@@ -478,18 +548,28 @@ export const updateDynamicManifest = (iconPreset: AppIconPreset) => {
 
   try {
     const butterflyIcons = ['purple', 'neon', 'pink', 'blue', 'gold'];
-    if (!butterflyIcons.includes(iconPreset)) return;
+    let iconPath = '';
+
+    if (butterflyIcons.includes(iconPreset)) {
+      // Generate the icon on the fly for the manifest
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        drawButterflyToCanvas(ctx, iconPreset as keyof typeof BUTTERFLY_SVG_DATA, 512);
+        iconPath = canvas.toDataURL('image/png');
+      }
+    } else if (iconPreset === 'custom') {
+      iconPath = localStorage.getItem('mikayala_custom_icon') || '';
+    }
+
+    if (!iconPath) return;
 
     // We can't easily change the installed PWA icon, but we can try to update the manifest link
-    // to point to a dynamically generated JSON that uses the selected icon as the primary one.
-    // Some browsers might detect this and update the home screen shortcut.
-    
     const manifestLink = document.querySelector('link[rel="manifest"]') as HTMLLinkElement | null;
     if (!manifestLink) return;
 
-    // The current icon image path
-    const iconPath = APP_ICON_PATHS[iconPreset as keyof typeof APP_ICON_PATHS];
-    
     // Create a minimal manifest blob
     const manifestData = {
       name: 'Mikayla',
@@ -502,18 +582,18 @@ export const updateDynamicManifest = (iconPreset: AppIconPreset) => {
       icons: [
         {
           src: iconPath,
-          sizes: '1024x1024',
-          type: 'image/png',
+          sizes: 'any',
+          type: iconPath.startsWith('data:image/svg') ? 'image/svg+xml' : 'image/png',
           purpose: 'any'
         },
         {
-          src: iconPath.replace('.png', '-192.png'),
+          src: iconPath,
           sizes: '192x192',
           type: 'image/png',
           purpose: 'any'
         },
         {
-          src: iconPath.replace('.png', '-512.png'),
+          src: iconPath,
           sizes: '512x512',
           type: 'image/png',
           purpose: 'any'
