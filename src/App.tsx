@@ -1,4 +1,7 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { callService } from './services/callService';
+import { CallOverlay } from './components/CallOverlay';
+import { motion, AnimatePresence } from 'motion/react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { 
   User, 
   UserProfile,
@@ -50,7 +53,8 @@ import {
   obtenirMessages, 
   sAbonnerAuxMessages, 
   envoyerMessageTexte,
-  clearSignedUrlCache
+  clearSignedUrlCache,
+  deleteMessage
 } from './services/messageService';
 import { 
   formatLastSeen,
@@ -204,12 +208,20 @@ export default function App() {
     const initAuth = async () => {
       if (!isSupabaseConfigured()) return;
       try {
+        // Skip anonymous auth if we are in a redirect flow (hash contains access_token or recovery)
+        const hasAuthToken = window.location.hash.includes('access_token') || 
+                            window.location.hash.includes('type=recovery') ||
+                            window.location.hash.includes('type=signup') ||
+                            window.location.hash.includes('type=invite');
+
         const { data: { user }, error } = await supabase.auth.getUser();
         let uid = user?.id;
-        if (!uid) {
+        
+        if (!uid && !hasAuthToken) {
           if (error) console.warn('[App] Aucune session active, relance initAnonymousAuth():', error.message);
           uid = await initAnonymousAuth();
         }
+        
         if (uid) {
           const stored = getStoredPairingState();
           setCurrentUser(prev => {
@@ -228,17 +240,28 @@ export default function App() {
     initAuth();
     
     // Auth Listener
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       clearSignedUrlCache();
-      if (session?.user?.id) {
+      
+      const user = session?.user;
+      if (user?.id) {
+        // Log event for debugging Phase B2
+        console.log(`[Auth] Event: ${event}, User: ${user.id}, Email: ${user.email}, Confirmed: ${!!user.email_confirmed_at}`);
+
         const stored = getStoredPairingState();
         setCurrentUser(prev => {
-          const updated = { ...prev, id: session.user.id };
+          const updated = { ...prev, id: user.id };
           saveStoredUserProfile(updated);
           return updated;
         });
-        updateUserActivity(session.user.id);
-        loadProfiles(session.user.id, stored.partnerId, stored.coupleId);
+        updateUserActivity(user.id);
+        loadProfiles(user.id, stored.partnerId, stored.coupleId);
+
+        // Show success toast for email confirmation or recovery
+        if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && user.email && user.email_confirmed_at) {
+          // You might want to trigger a sound or notification here
+          console.log('[Auth] Compte sécurisé ou récupéré avec succès !');
+        }
       }
     });
 
@@ -356,6 +379,7 @@ export default function App() {
       .catch(err => console.warn('[App] Fetch messages error:', err));
 
     const unsubscribe = sAbonnerAuxMessages(coupleId, (newMsg: Message) => {
+      let isNew = false;
       setMessages(prev => {
         const idx = prev.findIndex(m => m.id === newMsg.id);
         if (idx >= 0) {
@@ -363,8 +387,47 @@ export default function App() {
           updated[idx] = newMsg;
           return updated.sort((a, b) => a.timestamp - b.timestamp);
         }
+        isNew = true;
         return [...prev, newMsg].sort((a, b) => a.timestamp - b.timestamp);
       });
+
+      // Side effects for NEW messages should be OUTSIDE setMessages
+      if (isNew) {
+        const { isChatOpen: chatOpen, activeBottomTab: bottomTab, isAnyOverlayOpen: overlayOpen, partnerId, partnerNickname: nick } = appStateRef.current;
+        const isUserLookingAtChat = chatOpen && bottomTab === 'chat' && !overlayOpen;
+        
+        if (newMsg.senderId === partnerId && !isUserLookingAtChat) {
+          setInternalNotification({ message: newMsg, visible: true });
+          soundEffects.playReceived();
+          
+          if (notificationTimeoutRef.current) clearTimeout(notificationTimeoutRef.current);
+          notificationTimeoutRef.current = window.setTimeout(() => {
+            setInternalNotification(prev => ({ ...prev, visible: false }));
+          }, 5000);
+
+          // Browser Notification
+          if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+            if ('Notification' in window && Notification.permission === 'granted') {
+              let title = 'Mikayla — Nouveau message';
+              let body = 'Vous avez reçu un nouveau message';
+
+              if (newMsg.type === 'audio') {
+                title = 'Mikayla — Note vocale reçue';
+                body = 'Nouvelle note vocale';
+              } else if (newMsg.type === 'image') {
+                body = 'Nouvelle photo';
+              }
+
+              new Notification(title, {
+                body: body,
+                icon: '/icon.png' // Use generic icon
+              });
+            }
+          }
+        }
+      }
+    }, (deletedId) => {
+      setMessages(prev => prev.filter(m => m.id !== deletedId));
     });
 
     return () => {
@@ -387,7 +450,34 @@ export default function App() {
   const [coupons, setCoupons] = useState<CoupleCoupon[]>(getStoredCoupons);
   const [quizzes, setQuizzes] = useState<BlindQuizQuestion[]>(getStoredQuizzes);
 
-  // Connectivity, Sync & Tri-Mode Network States
+  // Request Notification Permission
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+    }
+  }, []);
+
+  // App wide state for internal notifications
+  const [internalNotification, setInternalNotification] = useState<{ message: Message | null; visible: boolean }>({
+    message: null,
+    visible: false
+  });
+  const notificationTimeoutRef = useRef<number | null>(null);
+
+  const unreadCount = useMemo(() => {
+    return messages.filter(m => (m.receiverId === currentUser.id || m.senderId === partnerUser.id) && m.status !== 'read' && !m.readAt && !m.isDeletedForEveryone).length;
+  }, [messages, currentUser.id, partnerUser.id]);
+
+  // Call States
+  const [isCallOpen, setIsCallOpen] = useState(false);
+  const [callType, setCallType] = useState<CallType>('audio');
+  const [callStatus, setCallStatus] = useState<'connecting' | 'ringing' | 'ongoing' | 'incoming'>('connecting');
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const stopRingRef = useRef<(() => void) | null>(null);
+
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
   const [networkState, setNetworkState] = useState<NetworkState>(getStoredNetworkState);
@@ -401,13 +491,100 @@ export default function App() {
   const [isChatOpen, setIsChatOpen] = useState(false);
 
   // Centralized Navigation states moved from children for History management
-  const [activeSettingsSection, setActiveSettingsSection] = useState<'main' | 'couple' | 'appearance' | 'profile' | 'privacy' | 'supabase'>('main');
+  const [activeSettingsSection, setActiveSettingsSection] = useState<'main' | 'couple' | 'appearance' | 'profile' | 'privacy' | 'supabase' | 'security_auth'>('main');
   const [isPhotoEditorOpen, setIsPhotoEditorOpen] = useState<boolean>(false);
   const [isDirectCameraOpen, setIsDirectCameraOpen] = useState<boolean>(false);
   const [isPhotoPreviewOpen, setIsPhotoPreviewOpen] = useState<boolean>(false);
   const [selectedPhotoFile, setSelectedPhotoFile] = useState<File | null>(null);
 
-  // Root Double-Back Toast state
+  // Call Signaling Logic - Setup channel once IDs are available
+  useEffect(() => {
+    const coupleId = pairingState?.coupleId;
+    if (coupleId && currentUser.id && partnerUser.id) {
+      callService.setup(coupleId, currentUser.id, partnerUser.id);
+    }
+  }, [pairingState?.coupleId, currentUser.id, partnerUser.id]);
+
+  // Handle call service events - updated when status or UI state changes
+  useEffect(() => {
+    callService.setOnCallEvent((payload) => {
+      if (payload.type === 'request') {
+        setCallType(payload.callType || 'audio');
+        setCallStatus('incoming');
+        setIsCallOpen(true);
+        if (stopRingRef.current) stopRingRef.current();
+        stopRingRef.current = soundEffects.playRingTone();
+      } else if (payload.type === 'hangup') {
+        handleHangup();
+      } else if (payload.type === 'offer') {
+        if (callStatus === 'ringing') {
+          setCallStatus('ongoing');
+          if (stopRingRef.current) {
+            stopRingRef.current();
+            stopRingRef.current = null;
+          }
+        }
+      }
+    });
+
+    callService.setOnRemoteStream((stream) => {
+      setRemoteStream(stream);
+      setCallStatus('ongoing');
+      if (stopRingRef.current) {
+        stopRingRef.current();
+        stopRingRef.current = null;
+      }
+    });
+  }, [callStatus]); // Resubscribe callbacks when status changes if needed, but safer with appStateRef if we needed more complex logic
+
+  const handleStartCall = async (type: CallType) => {
+    setCallType(type);
+    setCallStatus('connecting');
+    setIsCallOpen(true);
+    
+    try {
+      const stream = await callService.startCall(type);
+      setLocalStream(stream);
+      setCallStatus('ringing');
+      if (stopRingRef.current) stopRingRef.current();
+      stopRingRef.current = soundEffects.playRingTone();
+    } catch (err: any) {
+      console.error('[App] Call start error:', err);
+      setIsCallOpen(false);
+    }
+  };
+
+  const handleAcceptCall = async () => {
+    if (stopRingRef.current) {
+      stopRingRef.current();
+      stopRingRef.current = null;
+    }
+    setCallStatus('connecting');
+    try {
+      const stream = await callService.acceptCall(callType);
+      setLocalStream(stream);
+      await callService.createOffer();
+      setCallStatus('ongoing');
+    } catch (err: any) {
+      console.error('[App] Call accept error:', err);
+      handleHangup();
+    }
+  };
+
+  const handleDeclineCall = () => {
+    handleHangup();
+  };
+
+  const handleHangup = () => {
+    callService.hangup();
+    setIsCallOpen(false);
+    setLocalStream(null);
+    setRemoteStream(null);
+    if (stopRingRef.current) {
+      stopRingRef.current();
+      stopRingRef.current = null;
+    }
+  };
   const [backToast, setBackToast] = useState<string | null>(null);
   const lastBackTimeRef = useRef<number>(0);
   const isPopStateRef = useRef<boolean>(false);
@@ -423,7 +600,6 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
 
   // Modals state
-  const [activeCall, setActiveCall] = useState<{ isOpen: boolean; type: CallType }>({ isOpen: false, type: 'video' });
   const [isContactInfoOpen, setIsContactInfoOpen] = useState(false);
   const [isQRCodeOpen, setIsQRCodeOpen] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -598,11 +774,30 @@ export default function App() {
     isCoupleHubOpen ||
     isLoveTimerOpen ||
     isCalendarOpen ||
-    activeCall.isOpen
+    isCallOpen
   );
 
   const isMobileChatActive = Boolean(isChatOpen && !isAnyOverlayOpen);
   const isDesktopChatActive = Boolean(!isAnyOverlayOpen);
+
+  // Ref to track UI state for realtime callbacks to avoid stale closures
+  const appStateRef = useRef({
+    isChatOpen,
+    activeBottomTab,
+    isAnyOverlayOpen,
+    partnerId: partnerUser.id,
+    partnerNickname
+  });
+
+  useEffect(() => {
+    appStateRef.current = {
+      isChatOpen,
+      activeBottomTab,
+      isAnyOverlayOpen,
+      partnerId: partnerUser.id,
+      partnerNickname
+    };
+  }, [isChatOpen, activeBottomTab, isAnyOverlayOpen, partnerUser.id, partnerNickname]);
 
   // Save to LocalStorage whenever state changes
   useEffect(() => { saveStoredUserProfile(currentUser); }, [currentUser]);
@@ -773,40 +968,31 @@ export default function App() {
     );
   };
 
-  const handleDeleteMessage = (msgId: string, forEveryone: boolean) => {
+  const handleDeleteMessage = async (msgId: string, forEveryone: boolean) => {
+    const targetMsg = messages.find(m => m.id === msgId);
+    
+    if (forEveryone && isSupabaseConfigured()) {
+      // Synchronisation Cloud
+      const storagePath = targetMsg?.storagePath;
+      const res = await deleteMessage(msgId, storagePath);
+      
+      if (!res.success) {
+        console.error('[App] Erreur suppression synchronisée:', res.error);
+      }
+    }
+
     if (forEveryone) {
       setMessages(prev =>
         prev.map(m =>
           m.id === msgId
-            ? { ...m, isDeleted: true, content: 'Ce message intime a été effacé.' }
+            ? { ...m, isDeletedForEveryone: true, content: 'Ce message intime a été effacé.' }
             : m
         )
       );
     } else {
+      // Suppression locale uniquement
       setMessages(prev => prev.filter(m => m.id !== msgId));
     }
-  };
-
-  // Calls Handler
-  const handleStartCall = (type: CallType) => {
-    setActiveCall({ isOpen: true, type });
-    triggerHaptic(60);
-    soundEffects.playHeartbeat();
-  };
-
-  const handleEndCall = (durationSec: number) => {
-    const newCall: CallRecord = {
-      id: `call_${Date.now()}`,
-      callerId: currentUser.id,
-      receiverId: partnerUser.id,
-      timestamp: Date.now(),
-      type: activeCall.type,
-      duration: durationSec,
-      status: durationSec > 0 ? 'completed' : 'declined'
-    };
-
-    setCalls(prev => [newCall, ...prev]);
-    setActiveCall({ isOpen: false, type: 'video' });
   };
 
   // Vault Item Handlers
@@ -1063,7 +1249,65 @@ export default function App() {
   const starredMessages = messages.filter(m => m.isStarred);
 
   return (
-    <div className="h-[100dvh] w-full bg-[#0a0714] overflow-hidden select-none flex flex-col">
+    <>
+      {/* Internal Notification Toast */}
+      <AnimatePresence>
+        {internalNotification.visible && internalNotification.message && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.9 }}
+            onClick={() => {
+              setInternalNotification(prev => ({ ...prev, visible: false }));
+              setActiveBottomTab('chat');
+              setIsChatOpen(true);
+            }}
+            className="fixed top-6 left-4 right-4 z-[100] bg-[#1b1435]/95 backdrop-blur-md border border-[#2d2254] rounded-2xl p-3 shadow-2xl flex items-center gap-3 cursor-pointer active:scale-95"
+          >
+            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#6c5ce7] to-[#a29bfe] flex items-center justify-center text-white shrink-0 overflow-hidden">
+              {partnerUser.avatar ? (
+                <img src={partnerUser.avatar} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <span className="font-bold">{partnerUser.name[0]}</span>
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white">{partnerNickname || partnerUser.name}</span>
+                <span className="text-[10px] text-[#a29bfe]">Maintenant</span>
+              </div>
+              <p className="text-[11px] text-[#a29bfe] truncate">
+                {internalNotification.message.type === 'text' 
+                  ? internalNotification.message.content 
+                  : internalNotification.message.type === 'audio' 
+                  ? '🎵 Note vocale' 
+                  : internalNotification.message.type === 'image'
+                  ? '📷 Photo'
+                  : 'Nouveau message'}
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Call Overlay */}
+      <AnimatePresence>
+        {isCallOpen && (
+          <CallOverlay
+            isOpen={isCallOpen}
+            type={callType}
+            status={callStatus}
+            partnerUser={partnerUser}
+            localStream={localStream}
+            remoteStream={remoteStream}
+            onHangup={handleHangup}
+            onAccept={handleAcceptCall}
+            onDecline={handleDeclineCall}
+          />
+        )}
+      </AnimatePresence>
+
+      <div className="h-[100dvh] w-full bg-[#0a0714] overflow-hidden select-none flex flex-col">
       {/* App Container - Responsive Mobile, Tablet & Desktop */}
       <div className="w-full h-full flex flex-col md:flex-row bg-[#130f26] relative overflow-hidden">
         
@@ -1105,6 +1349,7 @@ export default function App() {
                 onOpenScratchCard={() => setIsScratchCardOpen(true)}
                 onClaimCoupon={handleClaimCoupon}
                 onRedeemCoupon={handleRedeemCoupon}
+                coupleId={pairingState?.coupleId || ''}
                 isPartnerOnline={isPartnerOnline}
                 isPartnerTyping={isPartnerTyping}
                 partnerLastSeen={partnerLastSeen}
@@ -1166,7 +1411,7 @@ export default function App() {
                   <TabsNav
                     activeTab={activeTab}
                     onTabChange={setActiveTab}
-                    unreadCount={messages.filter(m => m.receiverId === currentUser.id && m.status !== 'read').length}
+                    unreadCount={unreadCount}
                     missedCallsCount={calls.filter(c => c.status === 'missed').length}
                   />
 
@@ -1207,7 +1452,7 @@ export default function App() {
               <BottomCoupleNav
                 activeTab={activeBottomTab}
                 onSelectTab={handleBottomNavSelect}
-                unreadCount={messages.filter(m => m.receiverId === currentUser.id && m.status !== 'read').length}
+                unreadCount={unreadCount}
                 isVaultLocked={!isVaultAuthenticated}
               />
             </div>
@@ -1270,7 +1515,7 @@ export default function App() {
                 <TabsNav
                   activeTab={activeTab}
                   onTabChange={setActiveTab}
-                  unreadCount={messages.filter(m => m.receiverId === currentUser.id && m.status !== 'read').length}
+                  unreadCount={unreadCount}
                   missedCallsCount={calls.filter(c => c.status === 'missed').length}
                 />
 
@@ -1311,7 +1556,7 @@ export default function App() {
             <BottomCoupleNav
               activeTab={activeBottomTab}
               onSelectTab={handleBottomNavSelect}
-              unreadCount={messages.filter(m => m.receiverId === currentUser.id && m.status !== 'read').length}
+              unreadCount={unreadCount}
               isVaultLocked={!isVaultAuthenticated}
             />
           </div>
@@ -1349,6 +1594,7 @@ export default function App() {
               onOpenScratchCard={() => { setIsScratchCardOpen(true); openView('scratch'); }}
               onClaimCoupon={handleClaimCoupon}
               onRedeemCoupon={handleRedeemCoupon}
+              coupleId={pairingState?.coupleId || ''}
               isPartnerOnline={isPartnerOnline}
               isPartnerTyping={isPartnerTyping}
               partnerLastSeen={partnerLastSeen}
@@ -1556,6 +1802,7 @@ export default function App() {
           onClose={() => setIsGamesOpen(false)}
           currentUser={currentUser}
           partnerUser={partnerUser}
+          coupleId={pairingState?.coupleId || ''}
           onShareChallengeToChat={(text) => {
             handleSendMessage({
               type: 'text',
@@ -1633,22 +1880,6 @@ export default function App() {
               content: text
             });
             setIsChatOpen(true);
-          }}
-        />
-      )}
-
-      {/* Fullscreen Active Audio/Video Call Modal */}
-      {activeCall.isOpen && (
-        <CallModal
-          isOpen={activeCall.isOpen}
-          callType={activeCall.type}
-          partnerUser={partnerUser}
-          onEndCall={handleEndCall}
-          onSendMessageDuringCall={(text) => {
-            handleSendMessage({
-              type: 'text',
-              content: text
-            });
           }}
         />
       )}
@@ -1875,5 +2106,6 @@ export default function App() {
         </div>
       )}
     </div>
+    </>
   );
 }

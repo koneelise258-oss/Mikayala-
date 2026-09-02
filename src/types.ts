@@ -225,6 +225,16 @@ export interface CallRecord {
   duration?: number; // in seconds
 }
 
+export interface SignalingPayload {
+  type: 'offer' | 'answer' | 'candidate' | 'hangup' | 'request';
+  senderId: string;
+  receiverId: string;
+  coupleId: string;
+  callType?: CallType;
+  sdp?: RTCSessionDescriptionInit;
+  candidate?: RTCIceCandidateInit;
+}
+
 /* --- MIKAYLA INTIMACY MODULES TYPES --- */
 
 export interface VaultItem {

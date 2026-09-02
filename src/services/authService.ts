@@ -398,5 +398,93 @@ export default {
   getStoredPairingState,
   saveStoredPairingState,
   clearPairingState,
-  generatePairingCode
+  generatePairingCode,
+
+  /**
+   * Links an email to the current anonymous account.
+   * This converts the anonymous account into a permanent one.
+   * Supabase will send a confirmation email to the provided address.
+   */
+  async linkEmailToAccount(email: string): Promise<{ success: boolean; error?: string }> {
+    if (!isSupabaseConfigured()) {
+      return { success: false, error: "Supabase n'est pas configuré." };
+    }
+    try {
+      const { error } = await supabase.auth.updateUser({ email });
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || "Une erreur inconnue est survenue." };
+    }
+  },
+
+  /**
+   * Checks if the current user is anonymous.
+   */
+  async isAnonymous(): Promise<boolean> {
+    if (!isSupabaseConfigured()) return true;
+    const { data: { user } } = await supabase.auth.getUser();
+    return !user || user.is_anonymous === true || (!user.email && !user.phone);
+  },
+
+  /**
+   * Checks if the current user has a confirmed email.
+   */
+  async isEmailConfirmed(): Promise<boolean> {
+    if (!isSupabaseConfigured()) return false;
+    const { data: { user } } = await supabase.auth.getUser();
+    return !!(user?.email && user?.email_confirmed_at);
+  },
+
+  /**
+   * Sends a Magic Link to the provided email address for reconnection.
+   */
+  async sendMagicLink(email: string): Promise<{ success: boolean; error?: string }> {
+    if (!isSupabaseConfigured()) {
+      return { success: false, error: "Supabase n'est pas configuré." };
+    }
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: window.location.origin,
+          shouldCreateUser: false // Important: only allow sign in for existing users in recovery flow
+        },
+      });
+      if (error) {
+        if (error.message.includes('User not found') || error.status === 400) {
+          return { success: false, error: "Aucun compte trouvé avec cet e-mail. Avez-vous bien lié votre compte dans les paramètres ?" };
+        }
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || "Une erreur inconnue est survenue." };
+    }
+  },
+
+  /**
+   * Gets the current user's email if it is confirmed.
+   */
+  async getCurrentUserEmail(): Promise<string | null> {
+    if (!isSupabaseConfigured()) return null;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user?.email && user?.email_confirmed_at) {
+      return user.email;
+    }
+    return null;
+  },
+
+  /**
+   * Gets the unconfirmed email if it exists (pending verification).
+   */
+  async getPendingEmail(): Promise<string | null> {
+    if (!isSupabaseConfigured()) return null;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user?.new_email) return user.new_email;
+    if (user?.email && !user?.email_confirmed_at) return user.email;
+    return null;
+  }
 };

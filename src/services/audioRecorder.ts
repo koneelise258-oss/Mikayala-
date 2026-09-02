@@ -210,20 +210,30 @@ class AudioRecorderService {
    * Stops recording and returns the final Blob, duration, and processed waveform
    */
   public async stop(): Promise<RecordingResult> {
-    return new Promise((resolve, reject) => {
-      if (!this.mediaRecorder || this.mediaRecorder.state === 'inactive') {
-        this.cleanup();
-        reject(new Error('Aucun enregistrement en cours.'));
-        return;
+    if (!this.mediaRecorder || this.mediaRecorder.state === 'inactive') {
+      const isActuallyRecording = this.audioStream !== null;
+      this.cleanup();
+      if (isActuallyRecording) {
+        // Was cleaning up but had stream, probably already stopped
+        throw new Error('STOP_ALREADY_CALLED');
       }
+      throw new Error('NO_ACTIVE_RECORDING');
+    }
 
-      const recorder = this.mediaRecorder;
+    return new Promise((resolve, reject) => {
+      const recorder = this.mediaRecorder!;
       const mimeType = recorder.mimeType || this.getSupportedMimeType() || 'audio/webm';
       const rawDuration = (Date.now() - this.startTime - this.totalPausedDuration) / 1000;
       const duration = Math.max(1, Math.round(rawDuration));
 
       recorder.onstop = () => {
         try {
+          if (this.recordedChunks.length === 0) {
+            this.cleanup();
+            reject(new Error('EMPTY_RECORDING'));
+            return;
+          }
+
           const audioBlob = new Blob(this.recordedChunks, { type: mimeType });
           const url = URL.createObjectURL(audioBlob);
 
@@ -246,7 +256,12 @@ class AudioRecorderService {
         }
       };
 
-      recorder.stop();
+      try {
+        recorder.stop();
+      } catch (err) {
+        this.cleanup();
+        reject(err);
+      }
     });
   }
 

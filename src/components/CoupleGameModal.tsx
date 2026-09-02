@@ -22,6 +22,7 @@ import {
   Shuffle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { gameService } from '../services/gameService';
 import { GameChallenge, CustomDiceConfig, User } from '../types';
 import { triggerHaptic } from '../utils/security';
 import { soundEffects } from '../utils/audio';
@@ -39,6 +40,7 @@ interface CoupleGameModalProps {
   onClose: () => void;
   currentUser: User;
   partnerUser: User;
+  coupleId: string;
   onShareChallengeToChat: (text: string) => void;
 }
 
@@ -47,13 +49,54 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
   onClose,
   currentUser,
   partnerUser,
-  onShareChallengeToChat
+  onShareChallengeToChat,
+  coupleId
 }) => {
   const [activeTab, setActiveTab] = useState<'truth_or_dare' | 'wheel' | 'dice' | 'customizer'>('truth_or_dare');
   
   // Game Challenges State
   const [challenges, setChallenges] = useState<GameChallenge[]>(() => getStoredGameChallenges());
   const [diceConfig, setDiceConfig] = useState<CustomDiceConfig>(() => getStoredDiceConfig());
+
+  // Real-time synchronization
+  useEffect(() => {
+    if (isOpen && coupleId && currentUser.id) {
+      gameService.setup(coupleId, currentUser.id);
+      gameService.setOnGameEvent((payload) => {
+        if (payload.type === 'spin_wheel') {
+          // Sync wheel spin
+          setRotationDegree(payload.data.targetAngle);
+          setIsSpinning(true);
+          setSelectedWheelChallenge(null);
+          
+          setTimeout(() => {
+            setIsSpinning(false);
+            setSelectedWheelChallenge(payload.data.challenge);
+            soundEffects.playMatchSound();
+          }, 3800);
+        } else if (payload.type === 'roll_dice') {
+          setIsRollingDice(true);
+          setDiceResult(null);
+          setTimeout(() => {
+            setDiceResult(payload.data.result);
+            setIsRollingDice(false);
+            soundEffects.playReaction();
+          }, 1500);
+        } else if (payload.type === 'draw_tod') {
+          setIsTodRevealing(true);
+          setCurrentTodChallenge(null);
+          setTimeout(() => {
+            setCurrentTodChallenge(payload.data.challenge);
+            setIsTodRevealing(false);
+            soundEffects.playReaction();
+            if (payload.data.challenge.intensity === 3) {
+              confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+            }
+          }, 450);
+        }
+      });
+    }
+  }, [isOpen, coupleId, currentUser.id]);
 
   // --- TRUTH OR DARE STATE ---
   const [todMode, setTodMode] = useState<'all' | 'truth' | 'dare'>('all');
@@ -145,6 +188,9 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
       soundEffects.playReaction();
       triggerHaptic([80, 40, 120]);
 
+      // Sync with partner
+      gameService.sendEvent(coupleId, currentUser.id, 'draw_tod', { challenge: chosen });
+
       if (chosen.intensity === 3) {
         confetti({
           particleCount: 50,
@@ -189,6 +235,10 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
         : challenges[Math.floor(Math.random() * challenges.length)];
 
       setSelectedWheelChallenge(chosen);
+      
+      // Sync with partner
+      gameService.sendEvent(coupleId, currentUser.id, 'spin_wheel', { targetAngle, challenge: chosen });
+
       soundEffects.playMatchSound();
       triggerHaptic([100, 50, 150]);
 
@@ -223,14 +273,18 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
         const finalZone = zones[Math.floor(Math.random() * zones.length)];
         const finalDuration = durations[Math.floor(Math.random() * durations.length)];
 
-        setDiceResult({
+        const result = {
           action: finalAction,
           zone: finalZone,
           duration: finalDuration
-        });
+        };
+        setDiceResult(result);
         setIsRollingDice(false);
         soundEffects.playReaction();
         triggerHaptic([100, 100]);
+
+        // Sync with partner
+        gameService.sendEvent(coupleId, currentUser.id, 'roll_dice', { result });
       }
     }, 120);
   };

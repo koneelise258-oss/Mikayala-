@@ -16,39 +16,66 @@ const signedUrlCache: Record<string, SignedUrlCacheItem> = {};
  */
 export const profileService = {
   // 1. Get my own profile
-  async getMyProfile(): Promise<{ success: boolean; data?: UserProfile; error?: string }> {
+  async getMyProfile(retries = 3): Promise<{ success: boolean; data?: UserProfile; error?: string }> {
     if (!isSupabaseConfigured()) return { success: false, error: 'Supabase non configuré' };
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { success: false, error: 'Non authentifié' };
     
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .maybeSingle();
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) return { success: false, error: 'Non authentifié' };
       
-    if (error) {
-      console.error('[profileService] Error fetching my profile:', error);
-      return { success: false, error: error.message };
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle();
+        
+      if (error) {
+        if (retries > 0 && error.message.includes('Failed to fetch')) {
+          console.warn(`[profileService] Retrying getMyProfile... (${retries} left)`);
+          await new Promise(r => setTimeout(r, 1000));
+          return this.getMyProfile(retries - 1);
+        }
+        console.error('[profileService] Error fetching my profile:', error);
+        return { success: false, error: error.message };
+      }
+      return { success: true, data: data as UserProfile };
+    } catch (err: any) {
+      if (retries > 0 && (err.message?.includes('fetch') || !navigator.onLine)) {
+        await new Promise(r => setTimeout(r, 1000));
+        return this.getMyProfile(retries - 1);
+      }
+      return { success: false, error: err.message || 'Erreur réseau inconnue' };
     }
-    return { success: true, data: data as UserProfile };
   },
 
   // 2. Get partner's profile
-  async getPartnerProfile(partnerId: string): Promise<{ success: boolean; data?: UserProfile; error?: string }> {
+  async getPartnerProfile(partnerId: string, retries = 3): Promise<{ success: boolean; data?: UserProfile; error?: string }> {
     if (!isSupabaseConfigured() || !partnerId) return { success: false, error: 'Paramètres invalides' };
     
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', partnerId)
-      .maybeSingle();
-      
-    if (error) {
-      console.error('[profileService] Error fetching partner profile:', error);
-      return { success: false, error: error.message };
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', partnerId)
+        .maybeSingle();
+        
+      if (error) {
+        if (retries > 0 && error.message.includes('Failed to fetch')) {
+          console.warn(`[profileService] Retrying getPartnerProfile... (${retries} left)`);
+          await new Promise(r => setTimeout(r, 1000));
+          return this.getPartnerProfile(partnerId, retries - 1);
+        }
+        console.error('[profileService] Error fetching partner profile:', error);
+        return { success: false, error: error.message };
+      }
+      return { success: true, data: data as UserProfile };
+    } catch (err: any) {
+      if (retries > 0 && (err.message?.includes('fetch') || !navigator.onLine)) {
+        await new Promise(r => setTimeout(r, 1000));
+        return this.getPartnerProfile(partnerId, retries - 1);
+      }
+      return { success: false, error: err.message || 'Erreur réseau inconnue' };
     }
-    return { success: true, data: data as UserProfile };
   },
 
   // 3. Update my profile (display_name, bio)

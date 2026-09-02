@@ -100,41 +100,83 @@ export function mapDbRecordToMessage(row: any): Message {
  */
 export async function uploadMediaToStorage(
   file: File | Blob,
+  coupleId: string,
   fileName?: string,
   folder = 'media'
-): Promise<string | null> {
+): Promise<{ url: string; path: string } | null> {
   if (!isSupabaseConfigured()) {
     if (file && typeof file === 'object') {
-      return URL.createObjectURL(file);
+      return { url: URL.createObjectURL(file), path: '' };
     }
     return null;
   }
 
   try {
-    const ext = fileName?.split('.').pop() || (file.type?.includes('audio') ? 'webm' : 'bin');
-    const safeName = `${folder}/${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${ext}`;
+    const rawType = file.type || '';
+    // Sanitize MIME type (remove parameters like ;codecs=opus)
+    const sanitizedMime = rawType.split(';')[0].trim();
+    
+    // Choose extension based on mime type
+    let ext = 'bin';
+    if (sanitizedMime.includes('audio')) {
+      ext = (sanitizedMime.includes('mp4') || sanitizedMime.includes('aac') || sanitizedMime.includes('m4a')) ? 'mp4'
+          : sanitizedMime.includes('wav') ? 'wav'
+          : sanitizedMime.includes('mpeg') || sanitizedMime.includes('mp3') ? 'mp3'
+          : 'webm';
+    } else if (sanitizedMime.includes('video')) {
+      ext = sanitizedMime.includes('mp4') ? 'mp4' : 'webm';
+    } else if (sanitizedMime.includes('image')) {
+      ext = sanitizedMime.includes('jpeg') ? 'jpg' : sanitizedMime.includes('png') ? 'png' : 'webp';
+    } else if (fileName && fileName.includes('.')) {
+      ext = fileName.split('.').pop() || 'bin';
+    }
+    
+    // Use messageId for filename if provided, otherwise timestamp+random
+    const messageId = fileName && fileName.includes('-') ? fileName : `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const safeName = `${coupleId}/${folder}/${messageId}.${ext}`;
+
+    const contentTypeSent = sanitizedMime || (folder === 'audio' ? 'audio/webm' : folder === 'video' ? 'video/webm' : 'application/octet-stream');
+    const uploadFile = new File([file], `${messageId}.${ext}`, { type: contentTypeSent });
+
+    console.log('[MediaUpload Diagnostic Attempt]', {
+      blobTypeReal: rawType,
+      recorderMimeTypeReal: sanitizedMime,
+      extension: ext,
+      sizeBytes: file.size,
+      bucket: STORAGE_BUCKET,
+      storagePath: safeName,
+      contentTypeSent: contentTypeSent
+    });
 
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from(STORAGE_BUCKET)
-      .upload(safeName, file, {
+      .upload(safeName, uploadFile, {
         cacheControl: '3600',
         upsert: false,
-        contentType: file.type || undefined
+        contentType: contentTypeSent
       });
 
-    if (uploadError) {
-      console.error('[messageService] Storage upload error:', uploadError.message);
-      return file && typeof file === 'object' ? URL.createObjectURL(file) : null;
+    console.log('[MediaUpload Response]', {
+      bucket: STORAGE_BUCKET,
+      storagePath: safeName,
+      success: !uploadError && Boolean(uploadData),
+      uploadPathResult: uploadData?.path || null,
+      errorDetails: uploadError ? {
+        name: uploadError.name,
+        message: uploadError.message,
+        statusCode: (uploadError as any)?.statusCode || (uploadError as any)?.status || null
+      } : null
+    });
+
+    if (uploadError || !uploadData) {
+      console.error('[messageService] Storage upload error:', uploadError?.message || uploadError);
+      throw new Error(uploadError?.message || 'Erreur lors du téléversement du média');
     }
 
-    const { data: publicData } = supabase.storage
-      .from(STORAGE_BUCKET)
-      .getPublicUrl(uploadData.path);
-
-    return publicData.publicUrl;
-  } catch (error) {
-    console.error('[messageService] Exception uploading media:', error);
-    return file && typeof file === 'object' ? URL.createObjectURL(file) : null;
+    return { url: '', path: uploadData.path };
+  } catch (error: any) {
+    console.error('[messageService] Exception uploading media:', error?.message || error);
+    throw error;
   }
 }
 
@@ -270,8 +312,19 @@ export async function obtenirSignedUrl(storagePath: string): Promise<string | nu
       .from(STORAGE_BUCKET)
       .createSignedUrl(storagePath, 3600);
 
+    console.log('[createSignedUrl Response]', {
+      storagePath,
+      success: Boolean(data?.signedUrl),
+      cached: false,
+      errorDetails: error ? {
+        message: error.message,
+        name: error.name,
+        code: (error as any)?.statusCode || (error as any)?.code
+      } : null
+    });
+
     if (error || !data?.signedUrl) {
-      console.error('[Storage] Impossible de charger cette photo (échec createSignedUrl):', {
+      console.error('[Storage] Impossible de charger ce média (échec createSignedUrl):', {
         storagePath,
         code: (error as any)?.statusCode || (error as any)?.code || (error as any)?.name || 'STORAGE_ERROR',
         message: error?.message || 'Signed URL generation failed'
@@ -415,6 +468,8 @@ export async function envoyerMessagePhoto(
 
     if (insertError || !messageData) {
       console.error('[messageService] Échec insertion message après upload photo. Détails:', insertError);
+      // Suppression du fichier si l'insertion DB échoue
+      await supabase.storage.from(STORAGE_BUCKET).remove([storagePath]);
       throw new Error(`La photo a été téléversée mais l'enregistrement du message a échoué : ${insertError?.message || 'Erreur base de données'}`);
     }
 
@@ -512,14 +567,16 @@ export async function getMessages(coupleId: string): Promise<Message[]> {
 export const obtenirMessages = getMessages;
 
 /**
- * S'abonne en temps réel aux nouveaux messages (INSERT et UPDATE) dans public.messages
+ * S'abonne en temps réel aux nouveaux messages (INSERT, UPDATE, DELETE) dans public.messages
  * @param coupleId UUID du couple
- * @param callback Fonction appelée dès qu'un message arrive
- * @param onError Callback optionnel en cas d'erreur de connexion Realtime
+ * @param onNewMessage Appelé lors d'un INSERT ou UPDATE
+ * @param onDeleteMessage Appelé lors d'un DELETE
+ * @param onError Callback optionnel pour les erreurs fatales
  */
 export function sAbonnerAuxMessages(
   coupleId: string,
-  callback: (message: Message) => void,
+  onNewMessage: (message: Message) => void,
+  onDeleteMessage?: (messageId: string) => void,
   onError?: (error: Error) => void
 ): () => void {
   const targetCoupleId = coupleId || getStoredPairingState().coupleId;
@@ -527,60 +584,77 @@ export function sAbonnerAuxMessages(
     return () => {};
   }
 
-  const channelName = `messages-couple-${targetCoupleId}-${Date.now()}`;
-  const channel = supabase
-    .channel(channelName)
-    .on(
-      'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages',
-        filter: `couple_id=eq.${targetCoupleId}`
-      },
-      (payload) => {
-        console.log('[Chat] nouveau message reçu:', payload.new?.id || 'inconnu');
-        try {
-          if (payload.new) {
-            const mapped = mapDbRecordToMessage(payload.new);
-            callback(mapped);
+  let isStopped = false;
+  let retryCount = 0;
+  let activeChannel: any = null;
+
+  const subscribe = (attempt = 0) => {
+    if (isStopped) return;
+
+    // Nettoyage préventif du canal précédent si existant
+    if (activeChannel) {
+      supabase.removeChannel(activeChannel);
+      activeChannel = null;
+    }
+
+    const channelName = `msgs-${targetCoupleId}-${Date.now()}-${attempt}`;
+    const channel = supabase.channel(channelName);
+
+    channel
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `couple_id=eq.${targetCoupleId}` },
+        (payload) => {
+          if (payload.new) onNewMessage(mapDbRecordToMessage(payload.new));
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'messages', filter: `couple_id=eq.${targetCoupleId}` },
+        (payload) => {
+          if (payload.new) onNewMessage(mapDbRecordToMessage(payload.new));
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'messages', filter: `couple_id=eq.${targetCoupleId}` },
+        (payload) => {
+          if (payload.old?.id && onDeleteMessage) onDeleteMessage(payload.old.id);
+        }
+      )
+      .subscribe((status, err) => {
+        if (isStopped) return;
+
+        if (status === 'SUBSCRIBED') {
+          console.log(`[Realtime] Connecté au canal: ${channelName}`);
+          retryCount = 0; // Reset on success
+        } else if (status === 'CHANNEL_ERROR' || status === 'CLOSED') {
+          const errorMsg = err?.message || 'Transport failure or socket closed';
+          console.warn(`[Realtime] Problème (${status}): ${errorMsg}`);
+          
+          if (!isStopped && retryCount < 10) {
+            const delay = Math.min(1000 * Math.pow(2, retryCount), 15000);
+            retryCount++;
+            console.log(`[Realtime] Tentative de reconnexion ${retryCount}/10 dans ${delay}ms...`);
+            setTimeout(() => subscribe(retryCount), delay);
+          } else if (retryCount >= 10 && onError) {
+            onError(new Error("Impossible de maintenir la connexion temps réel après plusieurs tentatives."));
           }
-        } catch (e) {
-          console.error('[messageService] Erreur traitement INSERT temps réel:', e);
         }
-      }
-    )
-    .on(
-      'postgres_changes',
-      {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'messages',
-        filter: `couple_id=eq.${targetCoupleId}`
-      },
-      (payload) => {
-        try {
-          if (payload.new) {
-            const mapped = mapDbRecordToMessage(payload.new);
-            callback(mapped);
-          }
-        } catch (e) {
-          console.error('[messageService] Erreur traitement UPDATE temps réel:', e);
-        }
-      }
-    )
-    .subscribe((status, err) => {
-      console.log('[Chat] Realtime status:', status);
-      if (err) {
-        console.error(`[messageService] Statut abonnement Realtime: ${status}`, err.message);
-        if (onError) {
-          onError(new Error(`Erreur lors de la synchronisation en temps réel (${status}) : ${err.message}`));
-        }
-      }
-    });
+      });
+
+    activeChannel = channel;
+  };
+
+  subscribe();
 
   return () => {
-    supabase.removeChannel(channel);
+    console.log('[Realtime] Désabonnement demandé.');
+    isStopped = true;
+    if (activeChannel) {
+      supabase.removeChannel(activeChannel);
+      activeChannel = null;
+    }
   };
 }
 
@@ -906,10 +980,16 @@ export const sendMessage = async (payload: SendMessagePayload): Promise<Message>
       const basePayload: Record<string, any> = {
         couple_id: coupleId,
         sender_id: senderId,
+        message_type: payload.type || 'text',
         content: payload.content || ''
       };
       if (payload.receiverId) basePayload.receiver_id = payload.receiverId;
       if (payload.mediaUrl) basePayload.media_url = payload.mediaUrl;
+      if (payload.storagePath) basePayload.storage_path = payload.storagePath;
+      if (payload.audioDuration) basePayload.audio_duration = payload.audioDuration;
+      if (payload.waveform) basePayload.waveform = payload.waveform;
+      if (payload.replyToId) basePayload.reply_to_id = payload.replyToId;
+      if (payload.isViewOnce) basePayload.is_view_once = payload.isViewOnce;
 
       const { data } = await supabase
         .from('messages')
@@ -936,6 +1016,140 @@ export const sendMessage = async (payload: SendMessagePayload): Promise<Message>
   };
 };
 
+/**
+ * Deletes a message for everyone (Sync with DB & Storage)
+ */
+export async function deleteMessage(messageId: string, storagePath?: string | null): Promise<{ success: boolean; error?: string }> {
+  if (!isSupabaseConfigured()) return { success: false, error: "Supabase non configuré" };
+
+  try {
+    // 1. If there's a storage path, delete the file first
+    if (storagePath) {
+      const { error: storageError } = await supabase.storage
+        .from(STORAGE_BUCKET)
+        .remove([storagePath]);
+      
+      if (storageError) {
+        console.error('[messageService] Error deleting storage file:', storageError);
+      }
+    }
+
+    // 2. Delete the message record
+    const { error } = await supabase
+      .from('messages')
+      .delete()
+      .eq('id', messageId);
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Envoie un message audio (note vocale)
+ */
+export async function envoyerMessageAudio(
+  coupleId: string,
+  blob: Blob,
+  duration: number,
+  waveform: number[]
+): Promise<Message> {
+  const targetCoupleId = coupleId || getStoredPairingState().coupleId;
+  if (!targetCoupleId || !isSupabaseConfigured()) throw new Error("Configuration manquante");
+
+  const messageId = crypto.randomUUID();
+  // Chemin strict : {coupleId}/audio/{messageId}.{extension}
+  const upload = await uploadMediaToStorage(blob, targetCoupleId, messageId, 'audio');
+  
+  if (!upload || !upload.path) {
+    throw new Error("Échec du téléversement de la note vocale.");
+  }
+
+  const senderId = await getCurrentUserId();
+  const insertPayload = {
+    id: messageId,
+    couple_id: targetCoupleId,
+    sender_id: senderId,
+    message_type: 'audio',
+    storage_path: upload.path,
+    audio_duration: duration,
+    waveform: JSON.stringify(waveform),
+    content: 'Note vocale'
+  };
+
+  const { data, error } = await supabase.from('messages').insert(insertPayload).select().single();
+
+  console.log('[MessageInsert Audio Response]', {
+    messageId,
+    type: 'audio',
+    storagePath: upload.path,
+    success: !error && Boolean(data),
+    errorDetails: error ? { code: error.code, message: error.message } : null
+  });
+
+  if (error) {
+    // Suppression du fichier si l'insertion DB échoue
+    await supabase.storage.from(STORAGE_BUCKET).remove([upload.path]);
+    throw new Error(`Erreur DB : ${error.message}`);
+  }
+
+  return mapDbRecordToMessage(data);
+}
+
+/**
+ * Envoie un message vidéo
+ */
+export async function envoyerMessageVideo(
+  coupleId: string,
+  blob: Blob,
+  duration: number
+): Promise<Message> {
+  const targetCoupleId = coupleId || getStoredPairingState().coupleId;
+  if (!targetCoupleId || !isSupabaseConfigured()) throw new Error("Configuration manquante");
+
+  const messageId = crypto.randomUUID();
+  // Chemin strict : {coupleId}/video/{messageId}.{extension}
+  const upload = await uploadMediaToStorage(blob, targetCoupleId, messageId, 'video');
+  
+  if (!upload || !upload.path) {
+    throw new Error("Échec du téléversement de la vidéo.");
+  }
+
+  const senderId = await getCurrentUserId();
+  const insertPayload = {
+    id: messageId,
+    couple_id: targetCoupleId,
+    sender_id: senderId,
+    message_type: 'video',
+    storage_path: upload.path,
+    audio_duration: duration, // On utilise la même colonne pour la durée
+    content: 'Message vidéo'
+  };
+
+  const { data, error } = await supabase.from('messages').insert(insertPayload).select().single();
+
+  console.log('[MessageInsert Video Response]', {
+    messageId,
+    type: 'video',
+    storagePath: upload.path,
+    success: !error && Boolean(data),
+    errorDetails: error ? { code: error.code, message: error.message } : null
+  });
+
+  if (error) {
+    await supabase.storage.from(STORAGE_BUCKET).remove([upload.path]);
+    throw new Error(`Erreur DB : ${error.message}`);
+  }
+
+  return mapDbRecordToMessage(data);
+}
+
+
 export const fetchMessages = obtenirMessages;
 export const subscribeToMessages = (
   coupleId: string,
@@ -947,6 +1161,8 @@ export const markAsRead = markMessageAsRead;
 export default {
   envoyerMessageTexte,
   envoyerMessagePhoto,
+  envoyerMessageAudio,
+  envoyerMessageVideo,
   obtenirSignedUrl,
   clearSignedUrlCache,
   compressImageToWebp,
@@ -965,6 +1181,7 @@ export default {
   canMarkConversationAsRead,
   sendMessage,
   fetchMessages,
+  deleteMessage,
   deleteViewOnceMedia,
   uploadMediaToStorage,
   mapDbRecordToMessage

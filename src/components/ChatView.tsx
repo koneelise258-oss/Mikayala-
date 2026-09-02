@@ -8,6 +8,8 @@ import {
   Globe, MessageSquare, Radio, Bluetooth, Wifi, ArrowDownToLine, AlertCircle, Loader2,
   Image as ImageIcon, Camera
 } from 'lucide-react';
+import { audioRecorder } from '../services/audioRecorder';
+import { videoRecorder } from '../services/videoRecorder';
 import { User, Message, ChatSettings, PollData, EventData, LocationData, CallType, CoupleCoupon, NetworkState, UserProfile } from '../types';
 import { formatTime, formatDateDivider, formatDuration, renderFormattedText } from '../utils/formatters';
 import { soundEffects } from '../utils/audio';
@@ -15,6 +17,7 @@ import { triggerHaptic } from '../utils/security';
 import { triggerNativeSmsApp } from '../utils/networkManager';
 import { ScratchCardBubble } from './ScratchCardBubble';
 import { PhotoBubbleImage, SecureChatMessageImage } from './PhotoBubbleImage';
+import { MediaBubble } from './MediaBubble';
 import { PhotoPreviewModal } from './PhotoPreviewModal';
 import { DirectCameraModal } from './DirectCameraModal';
 import { PhotoEditor } from './photo/PhotoEditor';
@@ -22,6 +25,8 @@ import { getStoredPairingState, initAnonymousAuth, fetchActiveCoupleFromSupabase
 import { 
   envoyerMessageTexte, 
   envoyerMessagePhoto,
+  envoyerMessageAudio,
+  envoyerMessageVideo,
   obtenirSignedUrl,
   clearSignedUrlCache,
   getMessages, 
@@ -32,7 +37,8 @@ import {
   markMessagesAsDelivered,
   markMessagesAsRead,
   markMessageAsRead,
-  canMarkConversationAsRead as canMarkConversationAsReadGlobal
+  canMarkConversationAsRead as canMarkConversationAsReadGlobal,
+  uploadMediaToStorage
 } from '../services/messageService';
 import {
   formatLastSeen,
@@ -76,6 +82,7 @@ interface ChatViewProps {
   onOpenScratchCard?: () => void;
   onClaimCoupon?: (couponId: string) => void;
   onRedeemCoupon?: (couponId: string) => void;
+  coupleId: string;
   isPartnerOnline?: boolean;
   isPartnerTyping?: boolean;
   partnerLastSeen?: string | null;
@@ -124,6 +131,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   onOpenScratchCard,
   onClaimCoupon,
   onRedeemCoupon,
+  coupleId,
   isPartnerOnline = false,
   isPartnerTyping = false,
   partnerLastSeen = null,
@@ -396,9 +404,17 @@ export const ChatView: React.FC<ChatViewProps> = ({
           }
         }
       },
+      (deletedId) => {
+        // Handled via App.tsx global state
+      },
       (realtimeError: Error) => {
-        console.error('[ChatView] Erreur flux Realtime:', realtimeError);
-        setChatError(realtimeError.message || 'Erreur lors de la connexion au flux en temps réel.');
+        // Only show error if it's not a transient connection error being retried
+        if (!realtimeError.message?.includes('socket closed') && !realtimeError.message?.includes('CHANNEL_ERROR')) {
+          console.error('[ChatView] Erreur flux Realtime:', realtimeError);
+          setChatError(realtimeError.message || 'Erreur lors de la connexion au flux en temps réel.');
+        } else {
+          console.warn('[ChatView] Erreur de connexion Realtime (tentative de reconnexion en cours...):', realtimeError.message);
+        }
       }
     );
 
@@ -626,34 +642,69 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }
   };
 
-  const handleFinishVoiceRecord = () => {
+  const handleStartVoiceRecord = async () => {
+    try {
+      if (inputMode === 'voice') {
+        await audioRecorder.start();
+      } else {
+        await videoRecorder.start();
+      }
+      setIsRecordingVoice(true);
+      triggerHaptic(50);
+    } catch (err: any) {
+      console.error('[Chat] Recording error:', err);
+      setComingSoonToast(err.message || "Erreur microphone/caméra");
+    }
+  };
+
+  const handleFinishVoiceRecord = async () => {
+    // Si recordTimer < 1, on annule silencieusement (idempotent)
     if (recordTimer < 1) {
+      if (inputMode === 'voice') audioRecorder.cancel();
+      else videoRecorder.cancel();
       setIsRecordingVoice(false);
       return;
     }
 
-    if (inputMode === 'voice') {
-      onSendMessage({
-        senderId: currentUser.id,
-        receiverId: partnerUser.id,
-        type: 'audio',
-        content: 'Note vocale',
-        audioDuration: Math.max(recordTimer, 2),
-        waveform: Array.from({ length: 18 }, () => Math.floor(Math.random() * 75) + 20)
-      });
-    } else {
-      onSendMessage({
-        senderId: currentUser.id,
-        receiverId: partnerUser.id,
-        type: 'video_note',
-        content: 'Message vidéo instantané',
-        mediaUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=80',
-        audioDuration: Math.max(recordTimer, 2)
-      });
-    }
+    setIsSending(true);
+    try {
+      let resultMessage: Message;
+      
+      if (inputMode === 'voice') {
+        const result = await audioRecorder.stop();
+        resultMessage = await envoyerMessageAudio(coupleId, result.blob, result.duration, result.waveform);
+      } else {
+        const result = await videoRecorder.stop();
+        resultMessage = await envoyerMessageVideo(coupleId, result.blob, result.duration);
+      }
 
-    soundEffects.playSent();
-    setIsRecordingVoice(false);
+      // Ajout immédiat à l'état local si Supabase est configuré
+      if (isSupabaseConfigured()) {
+        setRealMessages(prev => {
+          if (prev.some(m => m.id === resultMessage.id)) return prev;
+          return [...prev, resultMessage].sort((a, b) => a.timestamp - b.timestamp);
+        });
+      }
+
+      onSendMessage(resultMessage);
+      soundEffects.playSent();
+    } catch (err: any) {
+      // Gestion de l'erreur idempotente si stop a déjà été appelé par le timeout automatique
+      if (
+        err.message === 'STOP_ALREADY_CALLED' ||
+        err.message === 'NO_ACTIVE_RECORDING' ||
+        err.message === 'EMPTY_RECORDING' ||
+        err.message?.includes('Aucun enregistrement en cours')
+      ) {
+        console.warn('[Chat] Recording already stopped or inactive.');
+      } else {
+        console.error('[Chat] Error finishing record:', err);
+        setComingSoonToast(err.message || "Échec de l'envoi du média.");
+      }
+    } finally {
+      setIsSending(false);
+      setIsRecordingVoice(false);
+    }
   };
 
   const handleToggleReaction = (msgId: string, emoji: string) => {
@@ -1273,12 +1324,22 @@ export const ChatView: React.FC<ChatViewProps> = ({
                       <p className="font-bold text-[#55efc4]">
                         {quotedMsg.senderId === currentUser.id ? 'Vous' : partnerUser.name}
                       </p>
-                      <p className="text-[#a29bfe] truncate">{quotedMsg.content}</p>
+                      <p className={`text-[#a29bfe] truncate ${quotedMsg.isDeletedForEveryone ? 'italic' : ''}`}>
+                        {quotedMsg.isDeletedForEveryone ? 'Message effacé' : quotedMsg.content}
+                      </p>
                     </div>
                   )}
 
-                  {/* HEARTBEAT MESSAGE TYPE */}
-                  {msg.type === 'heartbeat' && (
+                  {/* Deleted Message Placeholder */}
+                  {msg.isDeletedForEveryone ? (
+                    <div className="flex items-center gap-2 italic opacity-60 text-[11px] py-1">
+                      <Trash2 size={13} />
+                      <span>Ce message intime a été effacé.</span>
+                    </div>
+                  ) : (
+                    <>
+                      {/* HEARTBEAT MESSAGE TYPE */}
+                      {msg.type === 'heartbeat' && (
                     <div
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1371,54 +1432,29 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
                   {/* Voice Audio Player */}
                   {msg.type === 'audio' && (
-                    <div className="flex items-center gap-3 py-1 min-w-[200px] sm:min-w-[240px]">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setPlayingAudioId(isPlayingThis ? null : msg.id);
-                        }}
-                        className="w-10 h-10 rounded-full bg-[#00b894] text-[#130f26] flex items-center justify-center shrink-0 shadow-md hover:scale-105 transition-transform cursor-pointer"
-                      >
-                        {isPlayingThis ? <Pause size={18} /> : <Play size={18} className="ml-0.5" />}
-                      </button>
-
-                      <div className="flex-1 flex flex-col justify-center gap-1.5">
-                        <div className="flex items-end gap-0.5 h-6">
-                          {(msg.waveform || [30, 60, 40, 90, 70, 50, 80, 40, 60, 30, 90, 70, 40, 60]).map((h, barIdx) => {
-                            const totalBars = (msg.waveform || []).length || 14;
-                            const currentProgressRatio = ((audioProgress[msg.id] || 0) / ((msg.audioDuration || 14) * 10));
-                            const isBarActive = barIdx / totalBars <= currentProgressRatio;
-
-                            return (
-                              <div
-                                key={barIdx}
-                                style={{ height: `${h}%` }}
-                                className={`flex-1 rounded-full transition-colors ${
-                                  isBarActive ? 'bg-[#00b894]' : 'bg-[#a29bfe]/40'
-                                }`}
-                              />
-                            );
-                          })}
-                        </div>
-                        <div className="flex items-center justify-between text-[10px] text-[#a29bfe]">
-                          <span>
-                            {isPlayingThis
-                              ? formatDuration(Math.floor((audioProgress[msg.id] || 0) / 10))
-                              : formatDuration(msg.audioDuration || 14)}
-                          </span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setAudioSpeed(prev => prev === 1 ? 1.5 : prev === 1.5 ? 2 : 1);
-                            }}
-                            className="bg-black/30 hover:bg-black/50 px-1.5 py-0.5 rounded text-white font-semibold cursor-pointer"
-                          >
-                            {audioSpeed}x
-                          </button>
-                        </div>
-                      </div>
-                    </div>
+                    <MediaBubble
+                      type="audio"
+                      storagePath={msg.storagePath}
+                      mediaUrl={msg.mediaUrl}
+                      audioDuration={msg.audioDuration}
+                      waveform={msg.waveform}
+                      isPlaying={playingAudioId === msg.id}
+                      progress={audioProgress[msg.id] || 0}
+                      onTogglePlay={() => setPlayingAudioId(playingAudioId === msg.id ? null : msg.id)}
+                    />
                   )}
+
+                  {/* Video Message Player */}
+                  {(msg.type === 'video' || msg.type === 'video_note') && (
+                    <MediaBubble
+                      type="video"
+                      storagePath={msg.storagePath}
+                      mediaUrl={msg.mediaUrl}
+                      isPlaying={playingAudioId === msg.id}
+                      onTogglePlay={() => setPlayingAudioId(playingAudioId === msg.id ? null : msg.id)}
+                    />
+                  )}
+
 
                   {/* Interactive Poll */}
                   {msg.type === 'poll' && msg.pollData && (
@@ -1606,8 +1642,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
                       </div>
                     </div>
                   )}
+                </>
+              )}
 
-                  {/* Footer info: Time, Transport Badge, Ticks, Pin, Star */}
+              {/* Footer info: Time, Transport Badge, Ticks, Pin, Star */}
                   <div 
                     className="flex items-center justify-end gap-1 text-[10px] mt-1 shrink-0 select-none"
                     style={{
@@ -2127,7 +2165,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
             ) : (
               <button
                 type="button"
-                onClick={() => setIsRecordingVoice(true)}
+                onClick={handleStartVoiceRecord}
                 onDoubleClick={() => setInputMode(inputMode === 'voice' ? 'video_note' : 'voice')}
                 aria-label="Note vocale"
                 className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#00b894] hover:bg-[#00a884] text-[#130f26] flex items-center justify-center shadow-lg transition-transform active:scale-95 shrink-0 cursor-pointer"
@@ -2175,6 +2213,80 @@ export const ChatView: React.FC<ChatViewProps> = ({
           setIsPhotoPreviewOpen(true);
         }}
       />
+
+      {/* Message Actions Context Menu Overlay */}
+      {activeContextMenuMsgId && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setActiveContextMenuMsgId(null)}
+        >
+          <div 
+            className="w-full max-w-xs bg-[#1b1435] border border-[#2d2254] rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 border-b border-[#2d2254] flex items-center justify-between">
+              <span className="text-xs font-bold text-[#a29bfe] uppercase tracking-wider">Options du message</span>
+              <button onClick={() => setActiveContextMenuMsgId(null)} className="text-[#a29bfe] hover:text-white p-1 rounded-lg hover:bg-white/5">
+                <X size={18} />
+              </button>
+            </div>
+            
+            <div className="p-2 space-y-1">
+              <button 
+                onClick={() => {
+                  const msg = filteredMessages.find(m => m.id === activeContextMenuMsgId);
+                  if (msg) setReplyingTo(msg);
+                  setActiveContextMenuMsgId(null);
+                }}
+                className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-white/5 text-sm text-white transition-colors text-left"
+              >
+                <CornerUpLeft size={18} className="text-[#00b894]" />
+                <span>Répondre</span>
+              </button>
+              
+              <button 
+                onClick={() => {
+                  setActiveContextMenuMsgId(null);
+                }}
+                className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-white/5 text-sm text-white transition-colors text-left"
+              >
+                <Star size={18} className="text-[#ffeaa7]" />
+                <span>Marquer d'une étoile</span>
+              </button>
+
+              <div className="h-px bg-[#2d2254] my-1 mx-2" />
+              
+              <button 
+                onClick={() => {
+                  // Not persistent yet - showing as unavailable per requirements
+                  alert("La suppression persistante 'pour moi' sera disponible prochainement.");
+                  setActiveContextMenuMsgId(null);
+                }}
+                className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-[#ff7675]/10 text-sm text-[#ff7675] transition-colors text-left opacity-50"
+              >
+                <Trash2 size={18} />
+                <div className="flex flex-col">
+                  <span>Supprimer pour moi</span>
+                  <span className="text-[10px] opacity-70">(Bientôt disponible)</span>
+                </div>
+              </button>
+
+              {filteredMessages.find(m => m.id === activeContextMenuMsgId)?.senderId === (currentAuthUserId || currentUser.id) && (
+                <button 
+                  onClick={() => {
+                    onDeleteMessage(activeContextMenuMsgId, true);
+                    setActiveContextMenuMsgId(null);
+                  }}
+                  className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-[#ff7675]/20 text-sm text-[#ff7675] font-bold transition-colors text-left"
+                >
+                  <Trash2 size={18} />
+                  <span>Supprimer pour nous deux</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Photo Preview Modal with Caption and WebP Optimizer (Phase 1) */}
       <PhotoPreviewModal
