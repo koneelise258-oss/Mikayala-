@@ -72,6 +72,7 @@ import {
 } from './utils/themeEngine';
 import { getStoredNetworkState, saveNetworkState, saveNetworkMode } from './utils/networkManager';
 import { Header } from './components/Header';
+import { NotificationService } from './services/notificationService';
 import { TabsNav, ActiveTab } from './components/TabsNav';
 import { BottomCoupleNav, BottomNavTab } from './components/BottomCoupleNav';
 import { CoupleHubModal } from './components/CoupleHubModal';
@@ -405,24 +406,32 @@ export default function App() {
             setInternalNotification(prev => ({ ...prev, visible: false }));
           }, 5000);
 
-          // Browser Notification
-          if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
-            if ('Notification' in window && Notification.permission === 'granted') {
-              let title = 'Mikayla — Nouveau message';
-              let body = 'Vous avez reçu un nouveau message';
+          // Local Browser / Service Worker Notification: only if app is not visible
+          const isAppVisible = typeof document !== 'undefined' && document.visibilityState === 'visible';
+          if (!isAppVisible) {
+            let title = `Message de ${nick || partnerUser.name}`;
+            let body = newMsg.content || 'Nouveau message reçu';
 
-              if (newMsg.type === 'audio') {
-                title = 'Mikayla — Note vocale reçue';
-                body = 'Nouvelle note vocale';
-              } else if (newMsg.type === 'image') {
-                body = 'Nouvelle photo';
-              }
-
-              new Notification(title, {
-                body: body,
-                icon: '/icon.png' // Use generic icon
-              });
+            if (newMsg.type === 'audio') {
+              title = `Note vocale de ${nick || partnerUser.name}`;
+              body = '🎤 Note vocale reçue';
+            } else if (newMsg.type === 'image') {
+              title = `Photo de ${nick || partnerUser.name}`;
+              body = '📷 Photo reçue';
+            } else if (newMsg.type === 'video') {
+              title = `Vidéo de ${nick || partnerUser.name}`;
+              body = '🎥 Vidéo reçue';
             }
+
+            NotificationService.sendLocalNotification(title, {
+              body,
+              tag: `msg-${newMsg.id}`,
+              data: {
+                type: 'message',
+                id: newMsg.id,
+                url: '/?tab=chat'
+              }
+            });
           }
         }
       }
@@ -459,6 +468,47 @@ export default function App() {
     }
   }, []);
 
+  // Service Worker notificationclick message listener & URL search params for deep linking
+  useEffect(() => {
+    // 1. Handle URL query params when app is opened directly
+    if (typeof window !== 'undefined' && window.location.search) {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab');
+      if (tabParam === 'chat') {
+        setActiveBottomTab('chat');
+        setActiveTab('discussions');
+      } else if (tabParam === 'calls') {
+        setActiveBottomTab('chat');
+        setActiveTab('appels');
+      }
+    }
+
+    // 2. Handle Service Worker notification click postMessage when app is already focused or backgrounded
+    const handleSwMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'NOTIFICATION_CLICK') {
+        const data = event.data.data;
+        if (data?.type === 'message') {
+          setActiveBottomTab('chat');
+          setActiveTab('discussions');
+          setIsChatOpen(true);
+        } else if (data?.type === 'incoming_call' || data?.type === 'missed_call') {
+          setActiveBottomTab('chat');
+          setActiveTab('appels');
+        }
+      }
+    };
+
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleSwMessage);
+    }
+
+    return () => {
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+      }
+    };
+  }, []);
+
   // App wide state for internal notifications
   const [internalNotification, setInternalNotification] = useState<{ message: Message | null; visible: boolean }>({
     message: null,
@@ -477,6 +527,12 @@ export default function App() {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const stopRingRef = useRef<(() => void) | null>(null);
+
+  // Call session tracking & deduplication refs
+  const activeCallIdRef = useRef<string | null>(null);
+  const isCallerRef = useRef<boolean>(false);
+  const callStartTimeRef = useRef<number | null>(null);
+  const notifiedCallEventsRef = useRef<Set<string>>(new Set());
 
   const callStatusRef = useRef(callStatus);
   useEffect(() => {
@@ -524,15 +580,131 @@ export default function App() {
           console.log('[App] Ignored incoming call request: busy in status', callStatusRef.current);
           return;
         }
+        const callId = payload.callId || callService.getActiveCallId() || crypto.randomUUID();
+        activeCallIdRef.current = callId;
+        isCallerRef.current = false;
+        callStartTimeRef.current = null;
+
         setCallType(payload.callType || 'audio');
         setCallStatus('incoming');
         setIsCallOpen(true);
         if (stopRingRef.current) stopRingRef.current();
         stopRingRef.current = soundEffects.playRingTone();
-      } else if (payload.type === 'hangup') {
-        handleHangup();
+
+        const partnerName = appStateRef.current.partnerNickname || partnerUser.name;
+        const notifKey = `incoming-${callId}`;
+        if (!notifiedCallEventsRef.current.has(notifKey)) {
+          notifiedCallEventsRef.current.add(notifKey);
+          NotificationService.sendLocalNotification(`Appel entrant de ${partnerName}`, {
+            body: `Appel ${payload.callType === 'video' ? 'vidéo' : 'audio'} en attente...`,
+            tag: `incoming-call-${callId}`,
+            data: {
+              type: 'incoming_call',
+              id: callId,
+              url: '/?tab=calls'
+            }
+          });
+        }
+      } else if (payload.type === 'hangup' || payload.type === 'declined' || payload.type === 'missed') {
+        console.log('[App] Received call end signal:', payload.type, 'payloadCallId:', payload.callId);
+        
+        // Item 3: Check callId before processing end signal
+        const currentActiveId = activeCallIdRef.current || callService.getActiveCallId();
+        if (payload.callId && currentActiveId && payload.callId !== currentActiveId) {
+          console.log('[App] Ignored call end signal for mismatched callId:', payload.callId, 'current:', currentActiveId);
+          return;
+        }
+
+        const wasOngoing = callStatusRef.current === 'ongoing';
+        const wasIncoming = callStatusRef.current === 'incoming';
+        const wasCaller = isCallerRef.current;
+        const endedCallId = currentActiveId || payload.callId || crypto.randomUUID();
+
+        setIsCallOpen(false);
+        setCallStatus('idle');
+        setLocalStream(null);
+        setRemoteStream(null);
+        if (stopRingRef.current) {
+          stopRingRef.current();
+          stopRingRef.current = null;
+        }
+
+        // Items 1 & 2: Explicitly handle statuses without creating missed calls for normal hangups
+        if (payload.type === 'declined') {
+          if (wasCaller) {
+            const record: CallRecord = {
+              id: endedCallId,
+              callerId: currentUser.id,
+              receiverId: partnerUser.id,
+              type: payload.callType || callType,
+              status: 'declined',
+              timestamp: Date.now(),
+              duration: 0
+            };
+            setCalls(prev => {
+              const updated = [record, ...prev];
+              saveCalls(updated);
+              return updated;
+            });
+          }
+        } else if (payload.type === 'missed') {
+          const partnerName = appStateRef.current.partnerNickname || partnerUser.name;
+          const notifKey = `missed-${endedCallId}`;
+          if (wasIncoming && !notifiedCallEventsRef.current.has(notifKey)) {
+            notifiedCallEventsRef.current.add(notifKey);
+            NotificationService.sendLocalNotification('Appel manqué', {
+              body: `Appel manqué de ${partnerName}`,
+              tag: `missed-call-${endedCallId}`,
+              data: {
+                type: 'missed_call',
+                id: endedCallId,
+                url: '/?tab=calls'
+              }
+            });
+          }
+
+          const newMissedCall: CallRecord = {
+            id: endedCallId,
+            callerId: wasCaller ? currentUser.id : partnerUser.id,
+            receiverId: wasCaller ? partnerUser.id : currentUser.id,
+            type: payload.callType || callType,
+            status: 'missed',
+            timestamp: Date.now(),
+            duration: 0
+          };
+          setCalls(prev => {
+            const updated = [newMissedCall, ...prev];
+            saveCalls(updated);
+            return updated;
+          });
+        } else if (payload.type === 'hangup') {
+          // Hangup after call acceptance -> completed call
+          if (wasOngoing) {
+            const duration = callStartTimeRef.current ? Math.max(1, Math.round((Date.now() - callStartTimeRef.current) / 1000)) : 0;
+            const completedCall: CallRecord = {
+              id: endedCallId,
+              callerId: wasCaller ? currentUser.id : partnerUser.id,
+              receiverId: wasCaller ? partnerUser.id : currentUser.id,
+              type: payload.callType || callType,
+              status: 'completed',
+              timestamp: callStartTimeRef.current || Date.now(),
+              duration
+            };
+            setCalls(prev => {
+              const updated = [completedCall, ...prev];
+              saveCalls(updated);
+              return updated;
+            });
+          }
+          // Normal hangup before answer (caller cancelled) does NOT create a missed call
+        }
+
+        activeCallIdRef.current = null;
+        callStartTimeRef.current = null;
+        isCallerRef.current = false;
       } else if (payload.type === 'offer') {
         if (callStatusRef.current === 'ringing' || callStatusRef.current === 'connecting') {
+          callStartTimeRef.current = Date.now();
           setCallStatus('ongoing');
           if (stopRingRef.current) {
             stopRingRef.current();
@@ -544,7 +716,10 @@ export default function App() {
 
     callService.setOnRemoteStream((stream) => {
       setRemoteStream(stream);
-      setCallStatus('ongoing');
+      if (callStatusRef.current !== 'ongoing') {
+        callStartTimeRef.current = Date.now();
+        setCallStatus('ongoing');
+      }
       if (stopRingRef.current) {
         stopRingRef.current();
         stopRingRef.current = null;
@@ -557,12 +732,15 @@ export default function App() {
       console.warn('[App] Start call blocked: call already in progress with status', callStatusRef.current);
       return;
     }
+    isCallerRef.current = true;
+    callStartTimeRef.current = null;
     setCallType(type);
     setCallStatus('connecting');
     setIsCallOpen(true);
     
     try {
       const stream = await callService.startCall(type);
+      activeCallIdRef.current = callService.getActiveCallId() || crypto.randomUUID();
       setLocalStream(stream);
       setCallStatus('ringing');
       if (stopRingRef.current) stopRingRef.current();
@@ -583,6 +761,7 @@ export default function App() {
       const stream = await callService.acceptCall(callType);
       setLocalStream(stream);
       await callService.createOffer();
+      callStartTimeRef.current = Date.now();
       setCallStatus('ongoing');
     } catch (err: any) {
       console.error('[App] Call accept error:', err);
@@ -591,10 +770,42 @@ export default function App() {
   };
 
   const handleDeclineCall = () => {
-    handleHangup();
+    const endedCallId = activeCallIdRef.current || callService.getActiveCallId() || crypto.randomUUID();
+    callService.decline();
+    setIsCallOpen(false);
+    setCallStatus('idle');
+    setLocalStream(null);
+    setRemoteStream(null);
+    if (stopRingRef.current) {
+      stopRingRef.current();
+      stopRingRef.current = null;
+    }
+
+    const record: CallRecord = {
+      id: endedCallId,
+      callerId: partnerUser.id,
+      receiverId: currentUser.id,
+      type: callType,
+      status: 'declined',
+      timestamp: Date.now(),
+      duration: 0
+    };
+    setCalls(prev => {
+      const updated = [record, ...prev];
+      saveCalls(updated);
+      return updated;
+    });
+
+    activeCallIdRef.current = null;
+    callStartTimeRef.current = null;
+    isCallerRef.current = false;
   };
 
   const handleHangup = () => {
+    const wasOngoing = callStatusRef.current === 'ongoing';
+    const endedCallId = activeCallIdRef.current || callService.getActiveCallId() || crypto.randomUUID();
+    const wasCaller = isCallerRef.current;
+
     callService.hangup();
     setIsCallOpen(false);
     setCallStatus('idle');
@@ -604,6 +815,28 @@ export default function App() {
       stopRingRef.current();
       stopRingRef.current = null;
     }
+
+    if (wasOngoing) {
+      const duration = callStartTimeRef.current ? Math.max(1, Math.round((Date.now() - callStartTimeRef.current) / 1000)) : 0;
+      const completedCall: CallRecord = {
+        id: endedCallId,
+        callerId: wasCaller ? currentUser.id : partnerUser.id,
+        receiverId: wasCaller ? partnerUser.id : currentUser.id,
+        type: callType,
+        status: 'completed',
+        timestamp: callStartTimeRef.current || Date.now(),
+        duration
+      };
+      setCalls(prev => {
+        const updated = [completedCall, ...prev];
+        saveCalls(updated);
+        return updated;
+      });
+    }
+
+    activeCallIdRef.current = null;
+    callStartTimeRef.current = null;
+    isCallerRef.current = false;
   };
   const [backToast, setBackToast] = useState<string | null>(null);
   const lastBackTimeRef = useRef<number>(0);

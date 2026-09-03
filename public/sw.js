@@ -36,6 +36,30 @@ self.addEventListener('message', (event) => {
   }
 });
 
+// Notification click event handler - opens or focuses the web application window and switches to the proper view
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const notificationData = event.notification.data || {};
+  const targetUrl = notificationData.url || '/';
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url && 'focus' in client) {
+          client.postMessage({
+            type: 'NOTIFICATION_CLICK',
+            data: notificationData
+          });
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetUrl);
+      }
+    })
+  );
+});
+
 // Network-First with Cache fallback for seamless updates between User 1 & User 2
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;

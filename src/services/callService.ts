@@ -14,6 +14,14 @@ class CallService {
   private outgoingSignalQueue: SignalingPayload[] = [];
   private iceCandidatesQueue: RTCIceCandidateInit[] = [];
 
+  // Active call tracking
+  private activeCallId: string | null = null;
+  private callState: 'idle' | 'connecting' | 'ringing' | 'incoming' | 'connected' = 'idle';
+
+  // Timers
+  private ringingTimer: ReturnType<typeof setTimeout> | null = null;
+  private disconnectedTimer: ReturnType<typeof setTimeout> | null = null;
+
   // Perfect Negotiation flags & state
   private isCallActive: boolean = false;
   private makingOffer: boolean = false;
@@ -25,6 +33,11 @@ class CallService {
   private partnerId: string | null = null;
 
   public setup(coupleId: string, currentUserId: string, partnerId: string) {
+    if (this.peerConnection && ['connecting', 'connected'].includes(this.peerConnection.connectionState)) {
+      console.warn(`[${new Date().toISOString()}] [CallService] Setup ignoré pendant un appel actif`);
+      return;
+    }
+
     this.coupleId = coupleId;
     this.currentUserId = currentUserId;
     this.partnerId = partnerId;
@@ -84,9 +97,99 @@ class CallService {
     return this.isCallActive;
   }
 
+  public getActiveCallId(): string | null {
+    return this.activeCallId;
+  }
+
+  public getCallState(): string {
+    return this.callState;
+  }
+
   private isPolitePeer(): boolean {
     if (!this.currentUserId || !this.partnerId) return true;
     return this.currentUserId < this.partnerId;
+  }
+
+  private startRingingTimeout(callId: string) {
+    this.clearRingingTimeout();
+
+    this.ringingTimer = setTimeout(() => {
+      if (this.activeCallId === callId && (this.callState === 'ringing' || this.callState === 'connecting' || this.callState === 'incoming')) {
+        console.warn(`[${new Date().toISOString()}] [CallService] Ringing timeout reached (30s) for callId:`, callId);
+        this.sendSignal({
+          type: 'missed',
+          callId,
+          senderId: this.currentUserId!,
+          receiverId: this.partnerId!,
+          coupleId: this.coupleId!,
+        });
+        if (this.onCallEventCallback) {
+          this.onCallEventCallback({
+            type: 'missed',
+            callId,
+            senderId: this.partnerId || '',
+            receiverId: this.currentUserId || '',
+            coupleId: this.coupleId || ''
+          });
+        }
+        this.cleanup('ringing_timeout');
+      }
+    }, 30000);
+  }
+
+  private clearRingingTimeout() {
+    if (this.ringingTimer) {
+      clearTimeout(this.ringingTimer);
+      this.ringingTimer = null;
+    }
+  }
+
+  private handleConnectionStateChange() {
+    const state = this.peerConnection?.connectionState;
+    console.log(`[${new Date().toISOString()}] [WebRTC connection state]`, state, { activeCallId: this.activeCallId });
+
+    if (state === 'connected') {
+      if (this.disconnectedTimer) {
+        clearTimeout(this.disconnectedTimer);
+        this.disconnectedTimer = null;
+      }
+      this.clearRingingTimeout();
+      this.callState = 'connected';
+      return;
+    }
+
+    if (state === 'disconnected') {
+      if (this.disconnectedTimer) return;
+
+      console.warn(`[${new Date().toISOString()}] [CallService] Disconnected state detected. Starting 5s grace period before ending call...`);
+      this.disconnectedTimer = setTimeout(() => {
+        const currentState = this.peerConnection?.connectionState;
+        if (currentState === 'disconnected' || currentState === 'failed') {
+          console.error(`[${new Date().toISOString()}] [CallService] Connection failed after 5s grace period. Ending call.`);
+          this.endCallWithReason('connection_failed');
+        }
+        this.disconnectedTimer = null;
+      }, 5000);
+      return;
+    }
+
+    if (state === 'failed') {
+      this.endCallWithReason('connection_failed');
+    }
+  }
+
+  public endCallWithReason(reason: string) {
+    console.warn(`[${new Date().toISOString()}] [CallService endCallWithReason] Reason:`, reason, { activeCallId: this.activeCallId });
+    if (this.onCallEventCallback) {
+      this.onCallEventCallback({
+        type: 'hangup',
+        callId: this.activeCallId || undefined,
+        senderId: this.currentUserId || '',
+        receiverId: this.partnerId || '',
+        coupleId: this.coupleId || ''
+      });
+    }
+    this.cleanup(reason);
   }
 
   private createPeerConnection() {
@@ -109,6 +212,7 @@ class CallService {
       if (event.candidate) {
         this.sendSignal({
           type: 'candidate',
+          callId: this.activeCallId || undefined,
           senderId: this.currentUserId!,
           receiverId: this.partnerId!,
           coupleId: this.coupleId!,
@@ -118,30 +222,15 @@ class CallService {
     };
 
     this.peerConnection.onconnectionstatechange = () => {
-      const state = this.peerConnection?.connectionState;
-      console.log('[WebRTC connectionState]:', state);
-      if (state === 'failed') {
-        console.error('[WebRTC connectionState] Connection FAILED (terminal failure). Ending call.');
-        if (this.onCallEventCallback) {
-          this.onCallEventCallback({
-            type: 'hangup',
-            senderId: this.partnerId || '',
-            receiverId: this.currentUserId || '',
-            coupleId: this.coupleId || ''
-          });
-        }
-        this.cleanup();
-      } else if (state === 'disconnected') {
-        console.warn('[WebRTC connectionState] Disconnected (temporary/transient state, waiting for potential recovery...)');
-      }
+      this.handleConnectionStateChange();
     };
 
     this.peerConnection.oniceconnectionstatechange = () => {
-      console.log('[WebRTC iceConnectionState]:', this.peerConnection?.iceConnectionState);
+      console.log(`[${new Date().toISOString()}] [WebRTC iceConnectionState]:`, this.peerConnection?.iceConnectionState, { activeCallId: this.activeCallId });
     };
 
     this.peerConnection.onsignalingstatechange = () => {
-      console.log('[WebRTC signalingState]:', this.peerConnection?.signalingState);
+      console.log(`[${new Date().toISOString()}] [WebRTC signalingState]:`, this.peerConnection?.signalingState, { activeCallId: this.activeCallId });
     };
   }
 
@@ -163,6 +252,29 @@ class CallService {
   }
 
   private async handleIncomingSignal(payload: SignalingPayload) {
+    if (payload.type === 'request') {
+      if (this.isCallActive || (this.activeCallId && this.callState !== 'idle')) {
+        console.warn(`[${new Date().toISOString()}] [CallService] Busy: ignoring incoming request for callId`, payload.callId, 'current activeCallId:', this.activeCallId);
+        return;
+      }
+      const incomingCallId = payload.callId || crypto.randomUUID();
+      this.activeCallId = incomingCallId;
+      this.callState = 'incoming';
+      this.startRingingTimeout(incomingCallId);
+    } else {
+      if (payload.callId && this.activeCallId && payload.callId !== this.activeCallId) {
+        console.warn(`[${new Date().toISOString()}] [CallService] Signal ancien ou inconnu ignoré`, {
+          receivedCallId: payload.callId,
+          activeCallId: this.activeCallId,
+          type: payload.type,
+        });
+        return;
+      }
+      if (!this.activeCallId && payload.callId) {
+        this.activeCallId = payload.callId;
+      }
+    }
+
     if (this.onCallEventCallback) {
       this.onCallEventCallback(payload);
     }
@@ -171,6 +283,7 @@ class CallService {
       switch (payload.type) {
         case 'offer':
           if (payload.sdp) {
+            this.clearRingingTimeout();
             const isPolite = this.isPolitePeer();
             const offerCollision = this.makingOffer || (this.peerConnection && this.peerConnection.signalingState !== 'stable');
             this.ignoreOffer = !isPolite && offerCollision;
@@ -195,6 +308,7 @@ class CallService {
 
             this.sendSignal({
               type: 'answer',
+              callId: this.activeCallId || undefined,
               senderId: this.currentUserId!,
               receiverId: this.partnerId!,
               coupleId: this.coupleId!,
@@ -205,10 +319,12 @@ class CallService {
 
         case 'answer':
           if (payload.sdp && this.peerConnection) {
+            this.clearRingingTimeout();
             this.isSettingRemoteDescription = true;
             await this.peerConnection.setRemoteDescription(new RTCSessionDescription(payload.sdp));
             this.isSettingRemoteDescription = false;
             await this.processIceCandidatesQueue();
+            this.callState = 'connected';
           }
           break;
 
@@ -230,8 +346,18 @@ class CallService {
           break;
 
         case 'hangup':
-          console.log('[CallService] Received hangup signal. Cleaning up.');
-          this.cleanup();
+          console.log(`[${new Date().toISOString()}] [CallService] Received hangup signal for activeCallId:`, this.activeCallId);
+          this.cleanup('received_hangup');
+          break;
+
+        case 'declined':
+          console.log(`[${new Date().toISOString()}] [CallService] Received declined signal for activeCallId:`, this.activeCallId);
+          this.cleanup('received_declined');
+          break;
+
+        case 'missed':
+          console.log(`[${new Date().toISOString()}] [CallService] Received missed signal for activeCallId:`, this.activeCallId);
+          this.cleanup('received_missed');
           break;
       }
     } catch (err) {
@@ -240,8 +366,12 @@ class CallService {
   }
 
   public async startCall(type: CallType): Promise<MediaStream> {
-    console.log('[CallService startCall] Starting call session of type:', type);
-    this.cleanup();
+    const callId = crypto.randomUUID();
+    console.log(`[${new Date().toISOString()}] [CallService startCall] Starting call session of type:`, type, 'Generated callId:', callId);
+    this.cleanup('start_new_call');
+
+    this.activeCallId = callId;
+    this.callState = 'connecting';
     this.isCallActive = true;
 
     this.localStream = await navigator.mediaDevices.getUserMedia({
@@ -261,17 +391,24 @@ class CallService {
 
     this.sendSignal({
       type: 'request',
+      callId: this.activeCallId,
       senderId: this.currentUserId!,
       receiverId: this.partnerId!,
       coupleId: this.coupleId!,
       callType: type
     });
 
+    this.startRingingTimeout(callId);
+    this.callState = 'ringing';
+
     return this.localStream;
   }
 
   public async acceptCall(type: CallType): Promise<MediaStream> {
-    console.log('[CallService acceptCall] Accepting call of type:', type);
+    console.log(`[${new Date().toISOString()}] [CallService acceptCall] Accepting call of type:`, type, { activeCallId: this.activeCallId });
+    this.clearRingingTimeout();
+    this.callState = 'connecting';
+
     if (!this.localStream) {
       this.localStream = await navigator.mediaDevices.getUserMedia({
         audio: true,
@@ -305,6 +442,7 @@ class CallService {
 
       this.sendSignal({
         type: 'offer',
+        callId: this.activeCallId || undefined,
         senderId: this.currentUserId!,
         receiverId: this.partnerId!,
         coupleId: this.coupleId!,
@@ -318,14 +456,27 @@ class CallService {
   }
 
   public hangup() {
-    console.log('[CallService hangup] Sending hangup signal & cleaning up.');
+    console.log(`[${new Date().toISOString()}] [CallService hangup] Sending hangup signal & cleaning up.`, { activeCallId: this.activeCallId });
     this.sendSignal({
       type: 'hangup',
+      callId: this.activeCallId || undefined,
       senderId: this.currentUserId!,
       receiverId: this.partnerId!,
       coupleId: this.coupleId!
     });
-    this.cleanup();
+    this.cleanup('user_hangup');
+  }
+
+  public decline() {
+    console.log(`[${new Date().toISOString()}] [CallService decline] Sending declined signal & cleaning up.`, { activeCallId: this.activeCallId });
+    this.sendSignal({
+      type: 'declined',
+      callId: this.activeCallId || undefined,
+      senderId: this.currentUserId!,
+      receiverId: this.partnerId!,
+      coupleId: this.coupleId!
+    });
+    this.cleanup('user_decline');
   }
 
   private sendSignalDirect(payload: SignalingPayload) {
@@ -388,8 +539,22 @@ class CallService {
     }
   }
 
-  public cleanup() {
-    console.log('[CallService cleanup] Cleaning up media tracks, RTCPeerConnection, and queues.');
+  public cleanup(reason: string) {
+    console.warn(`[${new Date().toISOString()}] [CallService cleanup]`, {
+      reason,
+      activeCallId: this.activeCallId,
+      callState: this.callState,
+      connectionState: this.peerConnection?.connectionState || 'none',
+      iceState: this.peerConnection?.iceConnectionState || 'none',
+      signalingState: this.peerConnection?.signalingState || 'none',
+    });
+
+    if (this.disconnectedTimer) {
+      clearTimeout(this.disconnectedTimer);
+      this.disconnectedTimer = null;
+    }
+    this.clearRingingTimeout();
+
     this.isCallActive = false;
     this.makingOffer = false;
     this.isSettingRemoteDescription = false;
@@ -408,6 +573,9 @@ class CallService {
     }
 
     this.cleanupPeerConnection();
+
+    this.activeCallId = null;
+    this.callState = 'idle';
   }
 
   public getLocalStream() {

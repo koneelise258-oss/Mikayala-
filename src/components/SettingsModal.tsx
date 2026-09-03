@@ -32,6 +32,7 @@ import { soundEffects } from '../utils/audio';
 import { ThemeCustomizer } from './ThemeCustomizer';
 import { clearPairingState, getStoredPairingState, default as authService } from '../services/authService';
 import { profileService } from '../services/profileService';
+import { NotificationService } from '../services/notificationService';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -103,6 +104,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   // PIN code change
   const [pinCode, setPinCode] = useState(settings.securityPin || '1234');
+
+  // Local Notifications state
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(() => 
+    NotificationService.getPermissionStatus()
+  );
 
   useEffect(() => {
     if (isOpen && activeSection === 'security_auth') {
@@ -750,6 +756,71 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   />
                   <div className="w-11 h-6 bg-[#2d2254] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#00b894]"></div>
                 </label>
+              </div>
+
+              {/* Local Notifications Permission Card */}
+              <div className="p-3.5 rounded-2xl bg-[#130f26] border border-[#2d2254] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-[#6c5ce7]/15 text-[#a29bfe]">
+                      <Bell size={18} />
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm text-white">Notifications Locales</p>
+                      <p className="text-xs text-[#a29bfe]">Messages, appels entrants & manqués</p>
+                    </div>
+                  </div>
+                  <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                    notificationPermission === 'granted'
+                      ? 'bg-[#00b894]/20 text-[#55efc4] border border-[#00b894]/30'
+                      : notificationPermission === 'denied'
+                      ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                      : 'bg-[#ffeaa7]/20 text-[#ffeaa7] border border-[#ffeaa7]/30'
+                  }`}>
+                    {notificationPermission === 'granted'
+                      ? 'Autorisées'
+                      : notificationPermission === 'denied'
+                      ? 'Bloquées'
+                      : 'Non configuré'}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  {notificationPermission !== 'granted' ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const status = await NotificationService.requestPermission();
+                        setNotificationPermission(status);
+                        triggerHaptic(30);
+                      }}
+                      className="flex-1 py-2.5 px-3 bg-[#6c5ce7] hover:bg-[#5849be] text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Bell size={14} />
+                      <span>Demander la permission</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        NotificationService.sendLocalNotification('Mikayla — Test de notification', {
+                          body: 'Les notifications locales fonctionnent parfaitement ! ✨',
+                          tag: 'test-notification',
+                          data: {
+                            type: 'test',
+                            id: 'test-notification',
+                            url: '/'
+                          }
+                        });
+                        triggerHaptic(20);
+                      }}
+                      className="flex-1 py-2.5 px-3 bg-[#1e173e] hover:bg-[#281e4b] border border-[#2d2254] text-[#55efc4] font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Check size={14} />
+                      <span>Tester une notification</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* 4-digit PIN setting */}
