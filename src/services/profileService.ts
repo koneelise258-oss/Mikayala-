@@ -232,33 +232,82 @@ export const profileService = {
 
   // 5. Get signed URL with memory cache
   async getSignedAvatarUrl(path: string, version: number): Promise<string | null> {
-    if (!isSupabaseConfigured() || !path) return null;
+    if (!isSupabaseConfigured() || !path || typeof path !== 'string' || !path.trim()) return null;
     
-    const cacheKey = `${path}_v${version}`;
+    const cleanPath = path.trim();
+
+    // If path is already a direct URL (http, https, data URI, blob)
+    if (cleanPath.startsWith('http://') || cleanPath.startsWith('https://') || cleanPath.startsWith('data:') || cleanPath.startsWith('blob:')) {
+      return cleanPath;
+    }
+
+    const cacheKey = `${cleanPath}_v${version}`;
     const cached = signedUrlCache[cacheKey];
     const now = Date.now();
 
     // Cache valid for 3600s, we refresh 5 minutes before (300s)
-    if (cached && cached.expiresAt > now + 300000) {
-      return cached.url;
+    if (cached) {
+      if (cached.expiresAt > now) {
+        return cached.url || null;
+      }
     }
 
-    const { data, error } = await supabase.storage
-      .from('avatars')
-      .createSignedUrl(path, 3600);
-      
-    if (error || !data?.signedUrl) {
-      console.error('[profileService] Error creating signed URL:', error);
+    try {
+      const { data, error } = await supabase.storage
+        .from('avatars')
+        .createSignedUrl(cleanPath, 3600);
+        
+      if (error || !data?.signedUrl) {
+        // Fallback to getPublicUrl if signed URL fails (e.g. public bucket or permission)
+        try {
+          const { data: pubData } = supabase.storage.from('avatars').getPublicUrl(cleanPath);
+          if (pubData?.publicUrl) {
+            signedUrlCache[cacheKey] = {
+              url: pubData.publicUrl,
+              expiresAt: now + 300000 // 5 minutes cache
+            };
+            return pubData.publicUrl;
+          }
+        } catch {
+          // ignore fallback error
+        }
+
+        console.warn('[profileService] Warning creating signed URL (using fallback):', error?.message || error);
+        // Cache negative response for 30s to avoid repeated failing requests
+        signedUrlCache[cacheKey] = {
+          url: '',
+          expiresAt: now + 30000
+        };
+        return null;
+      }
+
+      // Save to cache
+      signedUrlCache[cacheKey] = {
+        url: data.signedUrl,
+        expiresAt: now + 3600000
+      };
+
+      return data.signedUrl;
+    } catch (err: any) {
+      console.warn('[profileService] Network error during signed URL generation:', err?.message || err);
+      try {
+        const { data: pubData } = supabase.storage.from('avatars').getPublicUrl(cleanPath);
+        if (pubData?.publicUrl) {
+          signedUrlCache[cacheKey] = {
+            url: pubData.publicUrl,
+            expiresAt: now + 300000
+          };
+          return pubData.publicUrl;
+        }
+      } catch {
+        // ignore
+      }
+      signedUrlCache[cacheKey] = {
+        url: '',
+        expiresAt: now + 30000
+      };
       return null;
     }
-
-    // Save to cache
-    signedUrlCache[cacheKey] = {
-      url: data.signedUrl,
-      expiresAt: now + 3600000
-    };
-
-    return data.signedUrl;
   },
 
   // 6. Get partner nickname

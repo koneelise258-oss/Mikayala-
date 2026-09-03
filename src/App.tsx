@@ -150,24 +150,17 @@ export default function App() {
       setMyProfile(myRes.data);
       
       // Handle signed URL for my avatar
+      let myAvatarUrl: string | undefined = undefined;
       if (myRes.data.avatar_path) {
         const url = await profileService.getSignedAvatarUrl(myRes.data.avatar_path, myRes.data.avatar_version);
-        if (url) {
-          setCurrentUser(prev => ({
-            ...prev,
-            name: myRes.data!.display_name,
-            bio: myRes.data!.bio || prev.bio,
-            avatar: url
-          }));
-        }
-      } else {
-        setCurrentUser(prev => ({
-          ...prev,
-          name: myRes.data!.display_name,
-          bio: myRes.data!.bio || prev.bio,
-          avatar: undefined // Reset if no path
-        }));
+        if (url) myAvatarUrl = url;
       }
+      setCurrentUser(prev => ({
+        ...prev,
+        name: myRes.data!.display_name,
+        bio: myRes.data!.bio || prev.bio,
+        avatar: myAvatarUrl ?? (myRes.data?.avatar_path ? prev.avatar : undefined)
+      }));
     }
 
     // Partner profile & nickname
@@ -177,24 +170,17 @@ export default function App() {
         setPartnerProfile(pRes.data);
         
         // Handle signed URL for partner avatar
+        let partnerAvatarUrl: string | undefined = undefined;
         if (pRes.data.avatar_path) {
           const url = await profileService.getSignedAvatarUrl(pRes.data.avatar_path, pRes.data.avatar_version);
-          if (url) {
-            setPartnerUser(prev => ({
-              ...prev,
-              name: pRes.data!.display_name,
-              bio: pRes.data!.bio || prev.bio,
-              avatar: url
-            }));
-          }
-        } else {
-          setPartnerUser(prev => ({
-            ...prev,
-            name: pRes.data!.display_name,
-            bio: pRes.data!.bio || prev.bio,
-            avatar: undefined // Reset if no path
-          }));
+          if (url) partnerAvatarUrl = url;
         }
+        setPartnerUser(prev => ({
+          ...prev,
+          name: pRes.data!.display_name,
+          bio: pRes.data!.bio || prev.bio,
+          avatar: partnerAvatarUrl ?? (pRes.data?.avatar_path ? prev.avatar : undefined)
+        }));
       }
 
       if (coupleId) {

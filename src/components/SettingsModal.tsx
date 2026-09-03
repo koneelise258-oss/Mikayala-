@@ -106,9 +106,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [pinCode, setPinCode] = useState(settings.securityPin || '1234');
 
   // Notifications state
-  const [vapidKeyInput, setVapidKeyInput] = useState<string>(() => 
-    NotificationService.getStoredVapidPublicKey()
-  );
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(() => 
     NotificationService.getPermissionStatus()
   );
@@ -118,7 +115,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setVapidKeyInput(NotificationService.getStoredVapidPublicKey());
       NotificationService.getPushSubscription().then(sub => {
         setPushSubscribed(Boolean(sub));
       });
@@ -946,44 +942,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </p>
               </div>
 
-              {/* VAPID Public Key Card */}
-              <div className="p-4 bg-[#130f26] rounded-2xl border border-[#2d2254] space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <KeyRound size={16} className="text-[#a29bfe]" />
-                    <span className="font-bold text-xs text-white uppercase tracking-wider">
-                      Clé publique VAPID (Web Push)
-                    </span>
-                  </div>
-                  {vapidKeyInput ? (
-                    <span className="text-[11px] font-bold text-[#55efc4] bg-[#00b894]/15 px-2 py-0.5 rounded-full border border-[#00b894]/30">
-                      Configurée ✓
-                    </span>
-                  ) : (
-                    <span className="text-[11px] font-medium text-[#ffeaa7] bg-[#ffeaa7]/15 px-2 py-0.5 rounded-full border border-[#ffeaa7]/30">
-                      À renseigner
-                    </span>
-                  )}
-                </div>
-
-                <div className="space-y-1.5">
-                  <input
-                    type="text"
-                    value={vapidKeyInput}
-                    onChange={(e) => {
-                      const val = e.target.value.trim();
-                      setVapidKeyInput(val);
-                      NotificationService.setStoredVapidPublicKey(val);
-                    }}
-                    placeholder="Collez ici votre VAPID Public Key (ex: BEl62iUYg...)"
-                    className="w-full px-3.5 py-2.5 text-xs bg-[#1a1435] border border-[#2d2254] rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-[#6c5ce7] font-mono select-all"
-                  />
-                  <p className="text-[11px] text-[#a29bfe]/80 leading-tight">
-                    Cette clé est enregistrée sur votre appareil pour permettre au navigateur de créer la souscription Push chiffrée.
-                  </p>
-                </div>
-              </div>
-
               {/* Action Buttons */}
               <div className="space-y-2.5">
                 {pushFeedback && (
@@ -997,22 +955,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="button"
                   disabled={isSubscribingPush}
                   onClick={handleEnableNotifications}
-                  className="w-full py-3.5 px-4 bg-[#6c5ce7] hover:bg-[#5849be] text-white font-bold text-sm rounded-2xl shadow-lg shadow-[#6c5ce7]/25 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 active:scale-[0.98]"
+                  className="w-full py-4 px-4 bg-gradient-to-r from-[#6c5ce7] to-[#a29bfe] hover:opacity-90 text-white font-bold text-sm rounded-2xl shadow-lg shadow-[#6c5ce7]/25 transition-all flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50 active:scale-[0.98]"
                 >
                   {isSubscribingPush ? (
                     <>
                       <Loader2 size={18} className="animate-spin" />
-                      <span>Activation et synchronisation en cours...</span>
+                      <span>Activation en cours...</span>
                     </>
                   ) : pushSubscribed ? (
                     <>
-                      <Check size={18} className="text-[#55efc4]" />
-                      <span>Resynchroniser les Notifications Push</span>
+                      <Check size={18} className="text-[#2ed573]" />
+                      <span>Notifications Push actives ✨ (Cliquez pour resynchroniser)</span>
                     </>
                   ) : (
                     <>
                       <Bell size={18} />
-                      <span>Activer les Notifications Push</span>
+                      <span>Activer les Notifications Push (1 clic)</span>
                     </>
                   )}
                 </button>

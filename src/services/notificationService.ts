@@ -24,6 +24,8 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray;
 }
 
+const BUILTIN_VAPID_PUBLIC_KEY = 'BGeh5TnZfj08FGQXrBSSZ5a70U9bm42aWitlkdUF5CQSjK-WnFLTjELAaegj5iUIJNWO2auC-2rzGb7Wjr3j_9E';
+
 export class NotificationService {
   private static recentTags = new Set<string>();
 
@@ -63,9 +65,12 @@ export class NotificationService {
       return envKey.trim();
     }
     if (typeof localStorage !== 'undefined') {
-      return localStorage.getItem('mikayla_vapid_public_key') || '';
+      const stored = localStorage.getItem('mikayla_vapid_public_key');
+      if (stored && stored.trim()) {
+        return stored.trim();
+      }
     }
-    return '';
+    return BUILTIN_VAPID_PUBLIC_KEY;
   }
 
   public static setStoredVapidPublicKey(key: string): void {
