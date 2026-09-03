@@ -563,6 +563,74 @@ export default function App() {
   const [isPhotoPreviewOpen, setIsPhotoPreviewOpen] = useState<boolean>(false);
   const [selectedPhotoFile, setSelectedPhotoFile] = useState<File | null>(null);
 
+  // Missed Call Chat Notification Helper
+  const sendMissedCallChatMessageRef = useRef<(
+    callId: string,
+    cType: CallType,
+    callerId: string,
+    callerName: string
+  ) => Promise<void>>(async () => {});
+
+  const sendMissedCallChatMessage = useCallback(async (
+    callId: string,
+    cType: CallType,
+    callerId: string,
+    callerName: string
+  ) => {
+    const dedupeKey = `missed_call_${callId}`;
+    if (notifiedCallEventsRef.current.has(dedupeKey)) {
+      console.log('[App] Missed call message already recorded for callId:', callId);
+      return;
+    }
+    notifiedCallEventsRef.current.add(dedupeKey);
+
+    const isVideo = cType === 'video';
+    const callTypeName = isVideo ? 'vidéo' : 'vocal';
+    const content = `${isVideo ? '📹' : '📞'} Appel ${callTypeName} manqué • Origine : ${callerName}`;
+
+    console.log('[App] Posting missed call message to chat:', { callId, content, callerId, callerName });
+
+    const coupleId = pairingState?.coupleId || getStoredPairingState().coupleId;
+    const isPaired = pairingState?.isPaired && Boolean(coupleId) && isSupabaseConfigured();
+
+    if (isPaired && coupleId) {
+      try {
+        const sentMsg = await envoyerMessageTexte(coupleId, content);
+        setMessages(prev => {
+          if (prev.some(m => m.id === sentMsg.id)) return prev;
+          return [...prev, sentMsg].sort((a, b) => a.timestamp - b.timestamp);
+        });
+        return;
+      } catch (err) {
+        console.warn('[App] Supabase envoyerMessageTexte failed for missed call, falling back to local:', err);
+      }
+    }
+
+    // Local / Offline / Demo fallback
+    const localMsg: Message = {
+      id: dedupeKey,
+      senderId: callerId,
+      receiverId: callerId === currentUser.id ? partnerUser.id : currentUser.id,
+      type: 'text',
+      content,
+      status: 'delivered',
+      timestamp: Date.now()
+    };
+    setMessages(prev => {
+      const idx = prev.findIndex(m => m.id === localMsg.id);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = localMsg;
+        return updated;
+      }
+      return [...prev, localMsg].sort((a, b) => a.timestamp - b.timestamp);
+    });
+  }, [pairingState?.coupleId, pairingState?.isPaired, currentUser.id, partnerUser.id]);
+
+  useEffect(() => {
+    sendMissedCallChatMessageRef.current = sendMissedCallChatMessage;
+  }, [sendMissedCallChatMessage]);
+
   // Call Signaling Logic - Setup channel once IDs are available
   useEffect(() => {
     const coupleId = pairingState?.coupleId;
@@ -629,7 +697,7 @@ export default function App() {
           stopRingRef.current = null;
         }
 
-        // Items 1 & 2: Explicitly handle statuses without creating missed calls for normal hangups
+        // Explicitly handle statuses with missed call records and chat messages
         if (payload.type === 'declined') {
           if (wasCaller) {
             const record: CallRecord = {
@@ -646,9 +714,12 @@ export default function App() {
               saveCalls(updated);
               return updated;
             });
+
+            const myDisplayName = myProfile?.name || currentUser.name || 'Moi';
+            sendMissedCallChatMessageRef.current(endedCallId, payload.callType || callType, currentUser.id, myDisplayName);
           }
         } else if (payload.type === 'missed') {
-          const partnerName = appStateRef.current.partnerNickname || partnerUser.name;
+          const partnerName = appStateRef.current.partnerNickname || partnerProfile?.name || partnerUser.name;
           const notifKey = `missed-${endedCallId}`;
           if (wasIncoming && !notifiedCallEventsRef.current.has(notifKey)) {
             notifiedCallEventsRef.current.add(notifKey);
@@ -677,6 +748,16 @@ export default function App() {
             saveCalls(updated);
             return updated;
           });
+
+          if (wasCaller) {
+            const myDisplayName = myProfile?.name || currentUser.name || 'Moi';
+            sendMissedCallChatMessageRef.current(endedCallId, payload.callType || callType, currentUser.id, myDisplayName);
+          } else if (wasIncoming) {
+            const isPaired = pairingState?.isPaired && Boolean(pairingState?.coupleId) && isSupabaseConfigured();
+            if (!isPaired) {
+              sendMissedCallChatMessageRef.current(endedCallId, payload.callType || callType, partnerUser.id, partnerName);
+            }
+          }
         } else if (payload.type === 'hangup') {
           // Hangup after call acceptance -> completed call
           if (wasOngoing) {
@@ -695,8 +776,43 @@ export default function App() {
               saveCalls(updated);
               return updated;
             });
+          } else if (wasIncoming) {
+            // Caller hung up before answer -> missed call for callee
+            const partnerName = appStateRef.current.partnerNickname || partnerProfile?.name || partnerUser.name;
+            const notifKey = `missed-${endedCallId}`;
+            if (!notifiedCallEventsRef.current.has(notifKey)) {
+              notifiedCallEventsRef.current.add(notifKey);
+              NotificationService.sendLocalNotification('Appel manqué', {
+                body: `Appel manqué de ${partnerName}`,
+                tag: `missed-call-${endedCallId}`,
+                data: {
+                  type: 'missed_call',
+                  id: endedCallId,
+                  url: '/?tab=calls'
+                }
+              });
+            }
+
+            const newMissedCall: CallRecord = {
+              id: endedCallId,
+              callerId: partnerUser.id,
+              receiverId: currentUser.id,
+              type: payload.callType || callType,
+              status: 'missed',
+              timestamp: Date.now(),
+              duration: 0
+            };
+            setCalls(prev => {
+              const updated = [newMissedCall, ...prev];
+              saveCalls(updated);
+              return updated;
+            });
+
+            const isPaired = pairingState?.isPaired && Boolean(pairingState?.coupleId) && isSupabaseConfigured();
+            if (!isPaired) {
+              sendMissedCallChatMessageRef.current(endedCallId, payload.callType || callType, partnerUser.id, partnerName);
+            }
           }
-          // Normal hangup before answer (caller cancelled) does NOT create a missed call
         }
 
         activeCallIdRef.current = null;
@@ -796,6 +912,12 @@ export default function App() {
       return updated;
     });
 
+    const isPaired = pairingState?.isPaired && Boolean(pairingState?.coupleId) && isSupabaseConfigured();
+    if (!isPaired) {
+      const partnerName = appStateRef.current.partnerNickname || partnerProfile?.name || partnerUser.name || 'Partenaire';
+      sendMissedCallChatMessageRef.current(endedCallId, callType, partnerUser.id, partnerName);
+    }
+
     activeCallIdRef.current = null;
     callStartTimeRef.current = null;
     isCallerRef.current = false;
@@ -832,6 +954,25 @@ export default function App() {
         saveCalls(updated);
         return updated;
       });
+    } else if (wasCaller) {
+      // Caller hung up while ringing/connecting because partner didn't answer -> missed call
+      const newMissedCall: CallRecord = {
+        id: endedCallId,
+        callerId: currentUser.id,
+        receiverId: partnerUser.id,
+        type: callType,
+        status: 'missed',
+        timestamp: Date.now(),
+        duration: 0
+      };
+      setCalls(prev => {
+        const updated = [newMissedCall, ...prev];
+        saveCalls(updated);
+        return updated;
+      });
+
+      const myDisplayName = myProfile?.name || currentUser.name || 'Moi';
+      sendMissedCallChatMessageRef.current(endedCallId, callType, currentUser.id, myDisplayName);
     }
 
     activeCallIdRef.current = null;

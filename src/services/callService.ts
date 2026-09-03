@@ -17,6 +17,7 @@ class CallService {
   // Active call tracking
   private activeCallId: string | null = null;
   private callState: 'idle' | 'connecting' | 'ringing' | 'incoming' | 'connected' = 'idle';
+  private currentCallType: CallType = 'audio';
 
   // Timers
   private ringingTimer: ReturnType<typeof setTimeout> | null = null;
@@ -122,6 +123,7 @@ class CallService {
           senderId: this.currentUserId!,
           receiverId: this.partnerId!,
           coupleId: this.coupleId!,
+          callType: this.currentCallType
         });
         if (this.onCallEventCallback) {
           this.onCallEventCallback({
@@ -129,7 +131,8 @@ class CallService {
             callId,
             senderId: this.partnerId || '',
             receiverId: this.currentUserId || '',
-            coupleId: this.coupleId || ''
+            coupleId: this.coupleId || '',
+            callType: this.currentCallType
           });
         }
         this.cleanup('ringing_timeout');
@@ -260,6 +263,9 @@ class CallService {
       const incomingCallId = payload.callId || crypto.randomUUID();
       this.activeCallId = incomingCallId;
       this.callState = 'incoming';
+      if (payload.callType) {
+        this.currentCallType = payload.callType;
+      }
       this.startRingingTimeout(incomingCallId);
     } else {
       if (payload.callId && this.activeCallId && payload.callId !== this.activeCallId) {
@@ -371,6 +377,7 @@ class CallService {
     this.cleanup('start_new_call');
 
     this.activeCallId = callId;
+    this.currentCallType = type;
     this.callState = 'connecting';
     this.isCallActive = true;
 
@@ -407,6 +414,7 @@ class CallService {
   public async acceptCall(type: CallType): Promise<MediaStream> {
     console.log(`[${new Date().toISOString()}] [CallService acceptCall] Accepting call of type:`, type, { activeCallId: this.activeCallId });
     this.clearRingingTimeout();
+    this.currentCallType = type;
     this.callState = 'connecting';
 
     if (!this.localStream) {
@@ -457,12 +465,14 @@ class CallService {
 
   public hangup() {
     console.log(`[${new Date().toISOString()}] [CallService hangup] Sending hangup signal & cleaning up.`, { activeCallId: this.activeCallId });
+    const isUnanswered = this.callState === 'ringing' || this.callState === 'connecting';
     this.sendSignal({
-      type: 'hangup',
+      type: isUnanswered ? 'missed' : 'hangup',
       callId: this.activeCallId || undefined,
       senderId: this.currentUserId!,
       receiverId: this.partnerId!,
-      coupleId: this.coupleId!
+      coupleId: this.coupleId!,
+      callType: this.currentCallType
     });
     this.cleanup('user_hangup');
   }
@@ -474,9 +484,14 @@ class CallService {
       callId: this.activeCallId || undefined,
       senderId: this.currentUserId!,
       receiverId: this.partnerId!,
-      coupleId: this.coupleId!
+      coupleId: this.coupleId!,
+      callType: this.currentCallType
     });
     this.cleanup('user_decline');
+  }
+
+  public getCurrentCallType(): CallType {
+    return this.currentCallType;
   }
 
   private sendSignalDirect(payload: SignalingPayload) {

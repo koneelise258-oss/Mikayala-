@@ -6,7 +6,7 @@ import {
   Play, Pause, X, ChevronDown, Sparkles, Plus, Compass, Heart, Lock,
   Dices, HeartHandshake, Flame, Volume2, Ticket, EyeOff, Zap, Award, Gift,
   Globe, MessageSquare, Radio, Bluetooth, Wifi, ArrowDownToLine, AlertCircle, Loader2,
-  Image as ImageIcon, Camera
+  Image as ImageIcon, Camera, PhoneMissed, VideoOff
 } from 'lucide-react';
 import { audioRecorder } from '../services/audioRecorder';
 import { videoRecorder } from '../services/videoRecorder';
@@ -1408,14 +1408,50 @@ export const ChatView: React.FC<ChatViewProps> = ({
                     </div>
                   )}
 
-                  {/* Normal Text Message */}
-                  {msg.type === 'text' && (
-                    <div 
-                      className="leading-relaxed whitespace-pre-wrap break-words font-medium"
-                      style={{ fontSize: 'var(--mk-font-size, 14px)' }}
-                    >
-                      {renderFormattedText(msg.content)}
-                    </div>
+                  {/* Missed Call or Normal Text Message */}
+                  {(msg.type === 'text' || msg.type === 'system') && (
+                    Boolean(msg.content && (msg.content.includes('Appel vocal manqué') || msg.content.includes('Appel vidéo manqué') || msg.content.includes('Appel manqué'))) ? (
+                      <div className="p-1 min-w-[200px]">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-2xl bg-[#ff7675]/20 border border-[#ff7675]/35 flex items-center justify-center shrink-0 shadow-inner">
+                            {msg.content.includes('vidéo') ? (
+                              <VideoOff size={20} className="text-[#ff7675]" />
+                            ) : (
+                              <PhoneMissed size={20} className="text-[#ff7675]" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-bold text-sm text-[#ff7675] truncate leading-tight">
+                              {msg.content.includes('vidéo') ? 'Appel vidéo manqué' : 'Appel vocal manqué'}
+                            </h4>
+                            <p className="text-xs text-[#a29bfe] font-medium truncate mt-0.5">
+                              {msg.content.includes('Origine :')
+                                ? msg.content.substring(msg.content.indexOf('Origine :'))
+                                : `Origine : ${isMe ? (currentUser.name || 'Vous') : (partnerNickname || partnerProfile?.name || partnerUser.name)}`}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onStartCall(msg.content.includes('vidéo') ? 'video' : 'audio');
+                          }}
+                          className="w-full mt-2.5 py-1.5 px-3 bg-[#ff7675]/15 hover:bg-[#ff7675]/25 active:scale-95 border border-[#ff7675]/30 rounded-xl text-xs font-bold text-[#ff7675] flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                          title="Rappeler directement"
+                        >
+                          {msg.content.includes('vidéo') ? <Video size={14} /> : <Phone size={14} />}
+                          <span>Rappeler</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div 
+                        className="leading-relaxed whitespace-pre-wrap break-words font-medium"
+                        style={{ fontSize: 'var(--mk-font-size, 14px)' }}
+                      >
+                        {renderFormattedText(msg.content)}
+                      </div>
+                    )
                   )}
 
                   {/* Photo */}

@@ -20,7 +20,8 @@ import {
   Flame,
   BarChart2,
   MapPin,
-  User as UserIcon
+  User as UserIcon,
+  PhoneMissed
 } from 'lucide-react';
 import { formatTime } from '../utils/formatters';
 import { triggerHaptic } from '../utils/security';
@@ -110,7 +111,13 @@ export const ChatList: React.FC<ChatListProps> = ({
 
     let contentNode = <span>{lastMessage.content}</span>;
 
-    if (lastMessage.type === 'heartbeat') {
+    if (lastMessage.content && (lastMessage.content.includes('Appel vocal manqué') || lastMessage.content.includes('Appel vidéo manqué') || lastMessage.content.includes('Appel manqué'))) {
+      contentNode = (
+        <span className="flex items-center gap-1.5 text-[#ff7675] font-semibold">
+          <PhoneMissed size={14} className="text-[#ff7675] shrink-0" /> {lastMessage.content}
+        </span>
+      );
+    } else if (lastMessage.type === 'heartbeat') {
       contentNode = (
         <span className="flex items-center gap-1.5 text-[#fd79a8] font-medium">
           <Heart size={14} className="fill-[#fd79a8] animate-pulse" /> {lastMessage.content || 'Battement de cœur'}
