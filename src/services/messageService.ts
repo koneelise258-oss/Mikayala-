@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { Message, MessageStatus, MessageType } from '../types';
 import { getStoredPairingState, initAnonymousAuth } from './authService';
+import { NotificationService } from './notificationService';
 
 export interface SendMessagePayload extends Partial<Message> {
   senderId?: string;
@@ -562,6 +563,24 @@ export async function envoyerMessageTexte(coupleId: string, contenu: string): Pr
 
   if (!data) {
     throw new Error("Aucune confirmation retournée par la base de données Supabase.");
+  }
+
+  // Notifier le partenaire en arrière-plan via send-push Edge Function
+  try {
+    const partnerId = getStoredPairingState().partnerId;
+    if (partnerId) {
+      NotificationService.sendPushViaEdgeFunction({
+        recipientId: partnerId,
+        coupleId: targetCoupleId,
+        title: 'Nouveau message 💌',
+        body: cleanContent.length > 80 ? `${cleanContent.substring(0, 77)}...` : cleanContent,
+        data: { url: `/?couple=${targetCoupleId}` }
+      }).catch((err) => {
+        console.debug('[messageService] Push trigger non-bloquant:', err);
+      });
+    }
+  } catch {
+    // Non-bloquant
   }
 
   return mapDbRecordToMessage(data);

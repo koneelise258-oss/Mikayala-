@@ -36,6 +36,44 @@ self.addEventListener('message', (event) => {
   }
 });
 
+// Web Push notification handler for incoming messages and alerts
+self.addEventListener('push', (event) => {
+  let data = {};
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch (e) {
+      data = { body: event.data.text() };
+    }
+  }
+
+  const title = data.title || 'Mikayla 💌';
+  const options = {
+    body: data.body || 'Nouveau message reçu',
+    icon: data.icon || '/icons/icon-purple-192.png',
+    badge: data.badge || '/icons/icon-purple-192.png',
+    vibrate: [200, 100, 200],
+    data: data.data || { url: '/' },
+    tag: data.tag || `push-${Date.now()}`,
+    renotify: true
+  };
+
+  event.waitUntil(
+    Promise.all([
+      self.registration.showNotification(title, options),
+      // Inform client windows if active
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({
+            type: 'PUSH_NOTIFICATION_RECEIVED',
+            payload: data
+          });
+        });
+      })
+    ])
+  );
+});
+
 // Notification click event handler - opens or focuses the web application window and switches to the proper view
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();

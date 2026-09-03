@@ -32,7 +32,7 @@ import { soundEffects } from '../utils/audio';
 import { ThemeCustomizer } from './ThemeCustomizer';
 import { clearPairingState, getStoredPairingState, default as authService } from '../services/authService';
 import { profileService } from '../services/profileService';
-import { NotificationService } from '../services/notificationService';
+import { NotificationService, PushNotificationService } from '../services/notificationService';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -52,8 +52,8 @@ interface SettingsModalProps {
   myProfile?: UserProfile | null;
   onProfileUpdated?: () => void;
   // Centralized section management
-  activeSection: 'main' | 'couple' | 'appearance' | 'profile' | 'privacy' | 'supabase' | 'security_auth';
-  onSetActiveSection: (section: 'main' | 'couple' | 'appearance' | 'profile' | 'privacy' | 'supabase' | 'security_auth') => void;
+  activeSection: 'main' | 'couple' | 'appearance' | 'profile' | 'privacy' | 'supabase' | 'security_auth' | 'notifications';
+  onSetActiveSection: (section: 'main' | 'couple' | 'appearance' | 'profile' | 'privacy' | 'supabase' | 'security_auth' | 'notifications') => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -105,10 +105,47 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // PIN code change
   const [pinCode, setPinCode] = useState(settings.securityPin || '1234');
 
-  // Local Notifications state
+  // Notifications state
+  const [vapidKeyInput, setVapidKeyInput] = useState<string>(() => 
+    NotificationService.getStoredVapidPublicKey()
+  );
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(() => 
     NotificationService.getPermissionStatus()
   );
+  const [pushSubscribed, setPushSubscribed] = useState<boolean>(false);
+  const [isSubscribingPush, setIsSubscribingPush] = useState<boolean>(false);
+  const [pushFeedback, setPushFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setVapidKeyInput(NotificationService.getStoredVapidPublicKey());
+      NotificationService.getPushSubscription().then(sub => {
+        setPushSubscribed(Boolean(sub));
+      });
+    }
+  }, [isOpen]);
+
+  const handleEnableNotifications = async () => {
+    setIsSubscribingPush(true);
+    setPushFeedback(null);
+    try {
+      // Direct call to PushNotificationService.subscribeUser() (Objective 2)
+      const res = await PushNotificationService.subscribeUser();
+      setNotificationPermission(NotificationService.getPermissionStatus());
+      triggerHaptic(30);
+
+      if (res.success) {
+        setPushSubscribed(true);
+        setPushFeedback('Notifications Push activées et synchronisées dans Supabase ! ✨');
+      } else {
+        setPushFeedback(res.error || 'Notifications locales accordées');
+      }
+    } catch (err: any) {
+      setPushFeedback(err?.message || 'Erreur d’activation');
+    } finally {
+      setIsSubscribingPush(false);
+    }
+  };
 
   useEffect(() => {
     if (isOpen && activeSection === 'security_auth') {
@@ -323,6 +360,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {activeSection === 'appearance' && 'Apparence & Design System'}
               {activeSection === 'profile' && 'Profil de Couple'}
               {activeSection === 'privacy' && 'Biométrie & Anti-Discrétion'}
+              {activeSection === 'notifications' && 'Notifications Push & Alertes'}
               {activeSection === 'security_auth' && 'Sécurité & Accès'}
               {activeSection === 'supabase' && 'Synchronisation Cloud Supabase'}
             </h3>
@@ -430,6 +468,41 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <div className="flex-1 min-w-0">
                     <p className="font-bold text-sm text-white">Biométrie & Anti-Discrétion</p>
                     <p className="text-xs text-[#a29bfe] truncate">FaceID / Empreinte, Code PIN & Floutage</p>
+                  </div>
+                </button>
+
+                {/* 4. Notifications Push & Alertes */}
+                <button
+                  onClick={() => onSetActiveSection('notifications')}
+                  className="w-full p-3.5 rounded-2xl bg-gradient-to-r from-[#171235] to-[#241747] hover:from-[#211949] hover:to-[#2c1d56] border border-[#6c5ce7]/50 flex items-center gap-3.5 text-left transition-all cursor-pointer group shadow-sm"
+                >
+                  <div className="p-2.5 rounded-xl bg-[#6c5ce7]/25 text-[#a29bfe] group-hover:text-white group-hover:scale-105 transition-transform">
+                    <Bell size={22} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold text-sm text-white">Notifications Push & Alertes</p>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                        notificationPermission === 'granted' && pushSubscribed
+                          ? 'bg-[#00b894]/20 text-[#55efc4] border border-[#00b894]/30'
+                          : notificationPermission === 'granted'
+                          ? 'bg-[#ffeaa7]/20 text-[#ffeaa7] border border-[#ffeaa7]/30'
+                          : notificationPermission === 'denied'
+                          ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                          : 'bg-[#6c5ce7]/25 text-[#a29bfe] border border-[#6c5ce7]/30'
+                      }`}>
+                        {notificationPermission === 'granted' && pushSubscribed
+                          ? 'Push Actif ✨'
+                          : notificationPermission === 'granted'
+                          ? 'Autorisées'
+                          : notificationPermission === 'denied'
+                          ? 'Bloquées'
+                          : 'À configurer'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#a29bfe] truncate">
+                      Clé VAPID, messages en arrière-plan & tests immédiats
+                    </p>
                   </div>
                 </button>
 
@@ -758,68 +831,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </label>
               </div>
 
-              {/* Local Notifications Permission Card */}
-              <div className="p-3.5 rounded-2xl bg-[#130f26] border border-[#2d2254] space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="p-2 rounded-xl bg-[#6c5ce7]/15 text-[#a29bfe]">
-                      <Bell size={18} />
-                    </div>
-                    <div>
-                      <p className="font-bold text-sm text-white">Notifications Locales</p>
-                      <p className="text-xs text-[#a29bfe]">Messages, appels entrants & manqués</p>
-                    </div>
+              {/* Link to Notifications Push Section */}
+              <div
+                onClick={() => onSetActiveSection('notifications')}
+                className="p-3.5 rounded-2xl bg-gradient-to-r from-[#171235] to-[#241747] border border-[#6c5ce7]/40 flex items-center justify-between cursor-pointer hover:border-[#6c5ce7] transition-all group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-[#6c5ce7]/20 text-[#a29bfe] group-hover:scale-105 transition-transform">
+                    <Bell size={18} />
                   </div>
-                  <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
-                    notificationPermission === 'granted'
+                  <div>
+                    <p className="font-bold text-sm text-white">Notifications Push & Alertes</p>
+                    <p className="text-xs text-[#a29bfe]">Messages en arrière-plan, VAPID & alertes</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
+                    notificationPermission === 'granted' && pushSubscribed
                       ? 'bg-[#00b894]/20 text-[#55efc4] border border-[#00b894]/30'
-                      : notificationPermission === 'denied'
-                      ? 'bg-red-500/20 text-red-400 border border-red-500/30'
                       : 'bg-[#ffeaa7]/20 text-[#ffeaa7] border border-[#ffeaa7]/30'
                   }`}>
-                    {notificationPermission === 'granted'
-                      ? 'Autorisées'
-                      : notificationPermission === 'denied'
-                      ? 'Bloquées'
-                      : 'Non configuré'}
+                    {notificationPermission === 'granted' && pushSubscribed ? 'Push Actif ✨' : 'Gérer →'}
                   </span>
-                </div>
-
-                <div className="flex items-center gap-2 pt-1">
-                  {notificationPermission !== 'granted' ? (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const status = await NotificationService.requestPermission();
-                        setNotificationPermission(status);
-                        triggerHaptic(30);
-                      }}
-                      className="flex-1 py-2.5 px-3 bg-[#6c5ce7] hover:bg-[#5849be] text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <Bell size={14} />
-                      <span>Demander la permission</span>
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        NotificationService.sendLocalNotification('Mikayla — Test de notification', {
-                          body: 'Les notifications locales fonctionnent parfaitement ! ✨',
-                          tag: 'test-notification',
-                          data: {
-                            type: 'test',
-                            id: 'test-notification',
-                            url: '/'
-                          }
-                        });
-                        triggerHaptic(20);
-                      }}
-                      className="flex-1 py-2.5 px-3 bg-[#1e173e] hover:bg-[#281e4b] border border-[#2d2254] text-[#55efc4] font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <Check size={14} />
-                      <span>Tester une notification</span>
-                    </button>
-                  )}
                 </div>
               </div>
 
@@ -870,6 +903,158 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       {item.label}
                     </button>
                   ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Section: Notifications Push & Alertes */}
+          {activeSection === 'notifications' && (
+            <div className="space-y-4 animate-in slide-in-from-right-4 duration-300">
+              {/* Main Status Header Card */}
+              <div className="p-4 bg-gradient-to-br from-[#1b1435] to-[#251846] rounded-2xl border border-[#6c5ce7]/40 space-y-3 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 rounded-2xl bg-[#6c5ce7]/25 text-[#a29bfe]">
+                      <Bell size={24} className="text-[#a29bfe]" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-base text-white">Notifications Push Web</h4>
+                      <p className="text-xs text-[#a29bfe]">Alertes instantanées en arrière-plan</p>
+                    </div>
+                  </div>
+                  <span className={`text-xs font-bold px-3 py-1 rounded-full ${
+                    notificationPermission === 'granted' && pushSubscribed
+                      ? 'bg-[#00b894]/25 text-[#55efc4] border border-[#00b894]/40'
+                      : notificationPermission === 'granted'
+                      ? 'bg-[#ffeaa7]/25 text-[#ffeaa7] border border-[#ffeaa7]/40'
+                      : notificationPermission === 'denied'
+                      ? 'bg-red-500/25 text-red-400 border border-red-500/40'
+                      : 'bg-[#6c5ce7]/25 text-[#a29bfe] border border-[#6c5ce7]/40'
+                  }`}>
+                    {notificationPermission === 'granted' && pushSubscribed
+                      ? 'Push Actif ✨'
+                      : notificationPermission === 'granted'
+                      ? 'Autorisées'
+                      : notificationPermission === 'denied'
+                      ? 'Bloquées'
+                      : 'Non configuré'}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-300 leading-relaxed">
+                  Recevez immédiatement une alerte sur votre écran de verrouillage lorsque votre partenaire vous envoie un message, une photo ou un battement de cœur.
+                </p>
+              </div>
+
+              {/* VAPID Public Key Card */}
+              <div className="p-4 bg-[#130f26] rounded-2xl border border-[#2d2254] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <KeyRound size={16} className="text-[#a29bfe]" />
+                    <span className="font-bold text-xs text-white uppercase tracking-wider">
+                      Clé publique VAPID (Web Push)
+                    </span>
+                  </div>
+                  {vapidKeyInput ? (
+                    <span className="text-[11px] font-bold text-[#55efc4] bg-[#00b894]/15 px-2 py-0.5 rounded-full border border-[#00b894]/30">
+                      Configurée ✓
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-medium text-[#ffeaa7] bg-[#ffeaa7]/15 px-2 py-0.5 rounded-full border border-[#ffeaa7]/30">
+                      À renseigner
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <input
+                    type="text"
+                    value={vapidKeyInput}
+                    onChange={(e) => {
+                      const val = e.target.value.trim();
+                      setVapidKeyInput(val);
+                      NotificationService.setStoredVapidPublicKey(val);
+                    }}
+                    placeholder="Collez ici votre VAPID Public Key (ex: BEl62iUYg...)"
+                    className="w-full px-3.5 py-2.5 text-xs bg-[#1a1435] border border-[#2d2254] rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-[#6c5ce7] font-mono select-all"
+                  />
+                  <p className="text-[11px] text-[#a29bfe]/80 leading-tight">
+                    Cette clé est enregistrée sur votre appareil pour permettre au navigateur de créer la souscription Push chiffrée.
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="space-y-2.5">
+                {pushFeedback && (
+                  <div className="p-3 rounded-xl bg-[#6c5ce7]/15 border border-[#6c5ce7]/30 text-xs text-[#a29bfe] flex items-center gap-2">
+                    <Sparkles size={16} className="text-[#a29bfe] shrink-0" />
+                    <span>{pushFeedback}</span>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  disabled={isSubscribingPush}
+                  onClick={handleEnableNotifications}
+                  className="w-full py-3.5 px-4 bg-[#6c5ce7] hover:bg-[#5849be] text-white font-bold text-sm rounded-2xl shadow-lg shadow-[#6c5ce7]/25 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 active:scale-[0.98]"
+                >
+                  {isSubscribingPush ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" />
+                      <span>Activation et synchronisation en cours...</span>
+                    </>
+                  ) : pushSubscribed ? (
+                    <>
+                      <Check size={18} className="text-[#55efc4]" />
+                      <span>Resynchroniser les Notifications Push</span>
+                    </>
+                  ) : (
+                    <>
+                      <Bell size={18} />
+                      <span>Activer les Notifications Push</span>
+                    </>
+                  )}
+                </button>
+
+                {notificationPermission === 'granted' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      NotificationService.sendLocalNotification('Mikayla — Test de notification 💌', {
+                        body: 'Super ! Les notifications fonctionnent sur votre appareil ! ✨',
+                        tag: 'test-notification',
+                        data: {
+                          type: 'test',
+                          id: 'test-notification',
+                          url: '/'
+                        }
+                      });
+                      triggerHaptic(30);
+                      setPushFeedback('Notification de test envoyée ! Regardez le haut de votre écran.');
+                    }}
+                    className="w-full py-3 px-4 bg-[#1e173e] hover:bg-[#281e4b] border border-[#2d2254] text-[#55efc4] font-bold text-xs rounded-2xl transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98]"
+                  >
+                    <Sparkles size={16} />
+                    <span>Envoyer une notification de test immédiate</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Instructions Guide */}
+              <div className="p-4 bg-[#130f26] rounded-2xl border border-[#2d2254] space-y-2.5 text-xs">
+                <p className="font-bold text-[#a29bfe] uppercase tracking-wider text-[11px]">
+                  Instructions par appareil
+                </p>
+                <div className="space-y-2 text-gray-300">
+                  <div className="flex items-start gap-2">
+                    <span className="font-bold text-[#a29bfe]">📱 iPhone :</span>
+                    <span>Ouvrez dans Safari, appuyez sur <strong>Partager</strong> ⬆️ puis sur <strong>« Sur l'écran d'accueil »</strong>. Ouvrez ensuite l'icône depuis votre écran pour activer le Push.</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="font-bold text-[#55efc4]">🤖 Android :</span>
+                    <span>Fonctionne directement dans Chrome. Cliquez sur « Activer les Notifications Push » puis acceptez la demande du navigateur.</span>
+                  </div>
                 </div>
               </div>
             </div>
