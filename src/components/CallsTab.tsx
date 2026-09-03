@@ -52,15 +52,35 @@ export const CallsTab: React.FC<CallsTabProps> = ({
       <div className="divide-y divide-[#2d2254]/40">
         {calls.map((call) => {
           const isCaller = call.callerId === currentUser.id;
+          const isMissedForMe = !isCaller && (call.status === 'missed' || call.status === 'declined');
 
           const renderStatusIcon = () => {
-            if (call.status === 'missed') {
+            if (isMissedForMe) {
               return <PhoneMissed size={15} className="text-[#ff7675] shrink-0" />;
             }
             if (isCaller) {
-              return <PhoneOutgoing size={15} className="text-[#00b894] shrink-0" />;
+              return <PhoneOutgoing size={15} className={`shrink-0 ${call.duration && call.duration > 0 ? 'text-[#00b894]' : 'text-[#a29bfe]'}`} />;
             }
             return <PhoneIncoming size={15} className="text-[#55efc4] shrink-0" />;
+          };
+
+          const getStatusText = () => {
+            if (isCaller) {
+              if (call.duration && call.duration > 0) {
+                return `Appel sortant • ${formatDuration(call.duration)}`;
+              }
+              return 'Appel sortant (non répondu)';
+            }
+            if (call.status === 'missed') {
+              return 'Appel manqué';
+            }
+            if (call.status === 'declined') {
+              return 'Appel rejeté';
+            }
+            if (call.duration && call.duration > 0) {
+              return `Appel entrant • ${formatDuration(call.duration)}`;
+            }
+            return 'Appel entrant';
           };
 
           return (
@@ -77,15 +97,14 @@ export const CallsTab: React.FC<CallsTabProps> = ({
 
               {/* Call Details */}
               <div className="flex-1 min-w-0">
-                <h3 className={`font-bold text-sm truncate ${call.status === 'missed' ? 'text-[#ff7675]' : 'text-[#f1f2f6]'}`}>
+                <h3 className={`font-bold text-sm truncate ${isMissedForMe ? 'text-[#ff7675]' : 'text-[#f1f2f6]'}`}>
                   {partnerUser.name}
                 </h3>
                 <div className="flex items-center gap-1.5 text-xs text-[#a29bfe] mt-0.5">
                   {renderStatusIcon()}
+                  <span>{getStatusText()}</span>
+                  <span>•</span>
                   <span>{formatDateDivider(call.timestamp)}, {formatTime(call.timestamp)}</span>
-                  {call.duration && (
-                    <span>• {formatDuration(call.duration)}</span>
-                  )}
                 </div>
               </div>
 

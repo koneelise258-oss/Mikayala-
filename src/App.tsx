@@ -105,6 +105,7 @@ import { ScratchCardModal } from './components/ScratchCardModal';
 import { CoupleHubView } from './components/CoupleHubView';
 import { LoveTimerModal } from './components/LoveTimerModal';
 import { CoupleCalendarModal } from './components/CoupleCalendarModal';
+import { vaultService } from './services/vaultService';
 import { Lock, Star, X, CheckCheck } from 'lucide-react';
 import { formatTime, formatDateDivider } from './utils/formatters';
 import { soundEffects } from './utils/audio';
@@ -118,6 +119,12 @@ export default function App() {
   const [calls, setCalls] = useState<CallRecord[]>(getStoredCalls);
   const [settings, setSettings] = useState<ChatSettings>(getStoredSettings);
   const [themeConfig, setThemeConfig] = useState<AppThemeConfig>(getStoredThemeConfig);
+
+  const handleThemeChange = (newTheme: AppThemeConfig) => {
+    setThemeConfig(newTheme);
+    saveThemeConfig(newTheme);
+    applyThemeToDOM(newTheme);
+  };
 
   // Profile & Nickname States
   const [myProfile, setMyProfile] = useState<UserProfile | null>(null);
@@ -380,32 +387,35 @@ export default function App() {
 
       // Side effects for NEW messages should be OUTSIDE setMessages
       if (isNew) {
-        const { isChatOpen: chatOpen, activeBottomTab: bottomTab, isAnyOverlayOpen: overlayOpen, partnerId, partnerNickname: nick } = appStateRef.current;
-        const isUserLookingAtChat = chatOpen && bottomTab === 'chat' && !overlayOpen;
+        const { isChatOpen: chatOpen, activeBottomTab: bottomTab, isAnyOverlayOpen: overlayOpen, partnerNickname: nick } = appStateRef.current;
+        const isFromOther = newMsg.senderId !== currentUser.id;
         
-        if (newMsg.senderId === partnerId && !isUserLookingAtChat) {
-          setInternalNotification({ message: newMsg, visible: true });
-          soundEffects.playReceived();
-          
-          if (notificationTimeoutRef.current) clearTimeout(notificationTimeoutRef.current);
-          notificationTimeoutRef.current = window.setTimeout(() => {
-            setInternalNotification(prev => ({ ...prev, visible: false }));
-          }, 5000);
-
-          // Local Browser / Service Worker Notification: only if app is not visible
+        if (isFromOther) {
           const isAppVisible = typeof document !== 'undefined' && document.visibilityState === 'visible';
-          if (!isAppVisible) {
-            let title = `Message de ${nick || partnerUser.name}`;
+          const isUserLookingAtChat = isAppVisible && chatOpen && bottomTab === 'chat' && !overlayOpen;
+          
+          if (!isUserLookingAtChat) {
+            setInternalNotification({ message: newMsg, visible: true });
+            soundEffects.playReceived();
+            
+            if (notificationTimeoutRef.current) clearTimeout(notificationTimeoutRef.current);
+            notificationTimeoutRef.current = window.setTimeout(() => {
+              setInternalNotification(prev => ({ ...prev, visible: false }));
+            }, 5000);
+
+            // Local / Service Worker Notification
+            const partnerDisplayName = nick || partnerProfile?.name || partnerUser.name || 'Partenaire';
+            let title = `Message de ${partnerDisplayName}`;
             let body = newMsg.content || 'Nouveau message reçu';
 
             if (newMsg.type === 'audio') {
-              title = `Note vocale de ${nick || partnerUser.name}`;
+              title = `Note vocale de ${partnerDisplayName}`;
               body = '🎤 Note vocale reçue';
             } else if (newMsg.type === 'image') {
-              title = `Photo de ${nick || partnerUser.name}`;
+              title = `Photo de ${partnerDisplayName}`;
               body = '📷 Photo reçue';
             } else if (newMsg.type === 'video') {
-              title = `Vidéo de ${nick || partnerUser.name}`;
+              title = `Vidéo de ${partnerDisplayName}`;
               body = '🎥 Vidéo reçue';
             }
 
@@ -444,6 +454,41 @@ export default function App() {
   const [cycleData, setCycleData] = useState<CycleData>(getStoredCycleData);
   const [coupons, setCoupons] = useState<CoupleCoupon[]>(getStoredCoupons);
   const [quizzes, setQuizzes] = useState<BlindQuizQuestion[]>(getStoredQuizzes);
+
+  // Shared Vault Real-Time Synchronization (BroadcastChannel + Supabase)
+  useEffect(() => {
+    if (pairingState?.coupleId && currentUser?.id) {
+      vaultService.setup(pairingState.coupleId, currentUser.id);
+      const unsubscribe = vaultService.subscribe((payload) => {
+        if (payload.action === 'add' && payload.item) {
+          const itemToAdd = payload.item;
+          setVaultItems(prev => {
+            if (prev.some(v => v.id === itemToAdd.id)) return prev;
+            const updated = [itemToAdd, ...prev];
+            saveVaultItems(updated);
+            return updated;
+          });
+          soundEffects.playReceived();
+        } else if (payload.action === 'delete' && payload.itemId) {
+          setVaultItems(prev => {
+            const updated = prev.filter(v => v.id !== payload.itemId);
+            saveVaultItems(updated);
+            return updated;
+          });
+        } else if (payload.action === 'burn' && payload.itemId) {
+          setVaultItems(prev => {
+            const updated = prev.map(v => (v.id === payload.itemId ? { ...v, isBurned: true, isViewed: true } : v));
+            saveVaultItems(updated);
+            return updated;
+          });
+        }
+      });
+
+      return () => {
+        unsubscribe();
+      };
+    }
+  }, [pairingState?.coupleId, currentUser?.id]);
 
   // Request Notification Permission
   useEffect(() => {
@@ -541,6 +586,21 @@ export default function App() {
   // Navigation & View states
   const [activeTab, setActiveTab] = useState<ActiveTab>('discussions');
   const [isChatOpen, setIsChatOpen] = useState(false);
+
+  // Performance: Adaptive screen detection to avoid rendering duplicate desktop tree on mobile
+  const [isMobileScreen, setIsMobileScreen] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    return window.innerWidth < 768;
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobileScreen(prev => (prev !== mobile ? mobile : prev));
+    };
+    window.addEventListener('resize', handleResize, { passive: true });
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Centralized Navigation states moved from children for History management
   const [activeSettingsSection, setActiveSettingsSection] = useState<'main' | 'couple' | 'appearance' | 'profile' | 'privacy' | 'supabase' | 'security_auth' | 'notifications'>('main');
@@ -941,18 +1001,18 @@ export default function App() {
         return updated;
       });
     } else if (wasCaller) {
-      // Caller hung up while ringing/connecting because partner didn't answer -> missed call
-      const newMissedCall: CallRecord = {
+      // Caller hung up while ringing/connecting because partner didn't answer -> outgoing unanswered call for caller
+      const outgoingUnanswered: CallRecord = {
         id: endedCallId,
         callerId: currentUser.id,
         receiverId: partnerUser.id,
         type: callType,
-        status: 'missed',
+        status: 'declined',
         timestamp: Date.now(),
         duration: 0
       };
       setCalls(prev => {
-        const updated = [newMissedCall, ...prev];
+        const updated = [outgoingUnanswered, ...prev];
         saveCalls(updated);
         return updated;
       });
@@ -1376,24 +1436,42 @@ export default function App() {
   };
 
   // Vault Item Handlers
-  const handleAddVaultItem = (item: Omit<VaultItem, 'id' | 'createdAt'>) => {
+  const handleAddVaultItem = (item: Omit<VaultItem, 'id' | 'createdAt' | 'dateAdded'> & { dateAdded?: number }) => {
     const newItem: VaultItem = {
       ...item,
       id: `vault_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      dateAdded: item.dateAdded || Date.now(),
+      addedBy: item.addedBy || currentUser.id,
+      addedByName: item.addedByName || currentUser.name,
+      addedByAvatar: item.addedByAvatar || currentUser.avatar,
     };
-    setVaultItems(prev => [newItem, ...prev]);
+    setVaultItems(prev => {
+      const updated = [newItem, ...prev.filter(v => v.id !== newItem.id)];
+      saveVaultItems(updated);
+      return updated;
+    });
+    vaultService.broadcastChange('add', currentUser, newItem);
     triggerHaptic(50);
   };
 
   const handleDeleteVaultItem = (id: string) => {
-    setVaultItems(prev => prev.filter(v => v.id !== id));
+    setVaultItems(prev => {
+      const updated = prev.filter(v => v.id !== id);
+      saveVaultItems(updated);
+      return updated;
+    });
+    vaultService.broadcastChange('delete', currentUser, undefined, id);
+    triggerHaptic([50, 50]);
   };
 
   const handleViewOnceBurned = (id: string) => {
-    setVaultItems(prev =>
-      prev.map(v => (v.id === id ? { ...v, isBurned: true } : v))
-    );
+    setVaultItems(prev => {
+      const updated = prev.map(v => (v.id === id ? { ...v, isBurned: true, isViewed: true } : v));
+      saveVaultItems(updated);
+      return updated;
+    });
+    vaultService.broadcastChange('burn', currentUser, undefined, id);
   };
 
   // Wishlist Handlers
@@ -1691,8 +1769,9 @@ export default function App() {
       {/* App Container - Responsive Mobile, Tablet & Desktop */}
       <div className="w-full h-full flex flex-col md:flex-row bg-[#130f26] relative overflow-hidden">
         
-        {/* Mobile View: Either ChatView or Main Home */}
-        <div className="flex-1 flex flex-col h-full md:hidden relative overflow-hidden">
+        {isMobileScreen ? (
+          /* Mobile View: Either ChatView or Main Home */
+          <div className="flex-1 flex flex-col h-full relative overflow-hidden">
           {isChatOpen ? (
             /* Active Chat View on Mobile */
             <div className="flex-1 flex flex-col h-full bg-[#130f26] relative overflow-hidden">
@@ -1742,6 +1821,8 @@ export default function App() {
                 setIsPhotoPreviewOpen={(val) => { setIsPhotoPreviewOpen(val); if(val) openView('photo-preview'); }}
                 selectedPhotoFile={selectedPhotoFile}
                 setSelectedPhotoFile={setSelectedPhotoFile}
+                themeConfig={themeConfig}
+                onThemeChange={handleThemeChange}
               />
             </div>
           ) : (
@@ -1800,7 +1881,7 @@ export default function App() {
                     activeTab={activeTab}
                     onTabChange={setActiveTab}
                     unreadCount={unreadCount}
-                    missedCallsCount={calls.filter(c => c.status === 'missed').length}
+                    missedCallsCount={calls.filter(c => c.status === 'missed' && c.receiverId === currentUser.id).length}
                   />
 
                   <div className="flex-1 overflow-y-auto relative">
@@ -1846,9 +1927,9 @@ export default function App() {
             </div>
           )}
         </div>
-
-        {/* Tablet & Desktop View: Split Sidebar (Left) + Chat View (Right) */}
-        <div className="hidden md:flex flex-row w-full h-full">
+      ) : (
+        /* Tablet & Desktop View: Split Sidebar (Left) + Chat View (Right) */
+        <div className="flex flex-row w-full h-full">
           {/* Left Navigation Sidebar */}
           <div className="w-[340px] lg:w-[390px] xl:w-[420px] shrink-0 border-r border-[#2d2254] flex flex-col h-full bg-[#130f26] relative z-20">
             <Header
@@ -1954,6 +2035,8 @@ export default function App() {
             <ChatView
               currentUser={currentUser}
               partnerUser={partnerUser}
+              partnerProfile={partnerProfile}
+              partnerNickname={partnerNickname}
               messages={messages}
               settings={settings}
               networkState={networkState}
@@ -1996,9 +2079,12 @@ export default function App() {
               setIsPhotoPreviewOpen={(val) => { setIsPhotoPreviewOpen(val); if(val) openView('photo-preview'); }}
               selectedPhotoFile={selectedPhotoFile}
               setSelectedPhotoFile={setSelectedPhotoFile}
+              themeConfig={themeConfig}
+              onThemeChange={handleThemeChange}
             />
           </div>
         </div>
+      )}
 
       </div>
 
@@ -2111,6 +2197,14 @@ export default function App() {
           onCreateCoupon={handleCreateCoupon}
           onClaimCoupon={handleClaimCoupon}
           onRedeemCoupon={handleRedeemCoupon}
+          onShareCouponToChat={(coupon) => {
+            handleSendMessage({
+              type: 'couple_coupon',
+              content: `🎟️ Bon d'amour : "${coupon.title}"`,
+              couponData: coupon
+            });
+            setIsChatOpen(true);
+          }}
         />
       )}
 
@@ -2124,6 +2218,16 @@ export default function App() {
           partnerUser={partnerUser}
           onAnswerQuiz={handleAnswerQuiz}
           onCreateQuiz={handleCreateQuiz}
+          onShareResultToChat={(question) => {
+            const myAns = question.answers?.[currentUser.id]?.answerText || '';
+            const partnerAns = question.answers?.[partnerUser.id]?.answerText || '';
+            handleSendMessage({
+              type: 'blind_quiz',
+              content: `✨ Résultats Quiz : "${question.question}"\n${currentUser.name} : "${myAns}"\n${partnerUser.name} : "${partnerAns}"`,
+              blindQuizData: question
+            });
+            setIsChatOpen(true);
+          }}
         />
       )}
 
@@ -2154,9 +2258,19 @@ export default function App() {
           onLock={handleCloseVault}
           vaultItems={vaultItems}
           currentUser={currentUser}
+          partnerUser={partnerUser}
+          messages={messages}
           onAddItem={handleAddVaultItem}
           onDeleteItem={handleDeleteVaultItem}
           onViewOnceBurned={handleViewOnceBurned}
+          onShareToChat={(text, mediaUrl) => {
+            handleSendMessage({
+              type: mediaUrl ? 'image' : 'text',
+              content: text,
+              mediaUrl: mediaUrl || undefined
+            });
+            setIsChatOpen(true);
+          }}
         />
       )}
 
@@ -2358,11 +2472,7 @@ export default function App() {
             openView('pairing');
             triggerHaptic([50, 100]);
           }}
-          onThemeChange={(newTheme) => {
-            setThemeConfig(newTheme);
-            saveThemeConfig(newTheme);
-            applyThemeToDOM(newTheme);
-          }}
+          onThemeChange={handleThemeChange}
           onUpdateCurrentUser={(updated) => {
             setCurrentUser(updated);
             saveStoredUserProfile(updated);
@@ -2417,6 +2527,19 @@ export default function App() {
           onClose={() => window.history.back()}
           onMarkAsViewed={(msgId) => {
             handleUpdateMessage(msgId, { isViewed: true });
+          }}
+          onSaveToVault={(mediaUrl, caption) => {
+            handleAddVaultItem({
+              title: activeMediaLightbox.fileName || 'Photo intime du chat 🔒',
+              type: activeMediaLightbox.type === 'video' ? 'video' : 'photo',
+              mediaUrl,
+              category: 'intime',
+              addedBy: currentUser.id,
+              addedByName: currentUser.name,
+              addedByAvatar: currentUser.avatar,
+              caption: caption || activeMediaLightbox.content || '',
+              source: 'chat'
+            });
           }}
         />
       )}

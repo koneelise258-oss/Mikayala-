@@ -166,6 +166,17 @@ export interface Message {
   digitalTouchData?: DigitalTouchData;
   couponData?: CoupleCoupon;
   blindQuizData?: BlindQuizQuestion;
+  gameChallengeData?: {
+    type: 'truth_or_dare' | 'wheel' | 'dice';
+    title: string;
+    description: string;
+    category?: string;
+    intensity?: 1 | 2 | 3;
+    diceResult?: { action: string; zone: string; duration: string };
+    isCompleted?: boolean;
+    completedBy?: string;
+    completedAt?: number;
+  };
   reactions?: Record<string, string>; // userId -> emoji
   replyToId?: string;
   isStarred?: boolean;
@@ -246,6 +257,8 @@ export interface VaultItem {
   thumbnailUrl?: string;
   category: 'intime' | 'souvenirs' | 'voyages' | 'capsule';
   addedBy: string;
+  addedByName?: string;
+  addedByAvatar?: string;
   dateAdded: number;
   createdAt?: number;
   isViewOnce?: boolean;
@@ -253,6 +266,7 @@ export interface VaultItem {
   isBurned?: boolean;
   caption?: string;
   tags?: string[];
+  source?: 'chat' | 'direct' | 'upload';
 }
 
 export interface WishlistItem {
@@ -326,7 +340,7 @@ export interface ChatSettings {
   hapticFeedback: boolean;
 }
 
-export type BubbleShape = 'classic' | 'capsule' | 'comic';
+export type BubbleShape = 'classic' | 'capsule' | 'comic' | 'modern';
 export type FontFamilyOption = 'system' | 'roboto' | 'mono' | 'cursive';
 export type AppIconPreset = 'purple' | 'neon' | 'pink' | 'blue' | 'gold' | 'mikayla_heart' | 'monogram' | 'neon_minimal' | 'custom';
 export type WallpaperPreset = 'solid' | 'doodle_dark' | 'doodle_light' | 'gradient_neon' | 'gradient_rose' | 'gradient_emerald' | 'gradient_slate' | 'custom_image';

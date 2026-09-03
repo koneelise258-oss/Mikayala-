@@ -1,19 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { X, Download, Eye, Loader2, Image as ImageIcon, RefreshCw } from 'lucide-react';
+import { X, Download, Eye, Loader2, Image as ImageIcon, RefreshCw, Lock, Check } from 'lucide-react';
 import { Message } from '../types';
 import { obtenirSignedUrl } from '../services/messageService';
+import { triggerHaptic } from '../utils/security';
+import { soundEffects } from '../utils/audio';
 
 interface MediaLightboxProps {
   message: Message | null;
   onClose: () => void;
   onMarkAsViewed?: (msgId: string) => void;
+  onSaveToVault?: (mediaUrl: string, caption?: string) => void;
 }
 
-export const MediaLightbox: React.FC<MediaLightboxProps> = ({ message, onClose, onMarkAsViewed }) => {
+export const MediaLightbox: React.FC<MediaLightboxProps> = ({ 
+  message, 
+  onClose, 
+  onMarkAsViewed,
+  onSaveToVault 
+}) => {
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(Boolean(message?.storagePath));
   const [hasError, setHasError] = useState<boolean>(false);
   const [retryKey, setRetryKey] = useState<number>(0);
+  const [isSavedToVault, setIsSavedToVault] = useState<boolean>(false);
 
   useEffect(() => {
     if (!message) {
@@ -128,6 +137,28 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({ message, onClose, 
         </div>
 
         <div className="flex items-center gap-2">
+          {!message.isViewOnce && resolvedUrl && onSaveToVault && (
+            <button
+              onClick={() => {
+                if (resolvedUrl && !isSavedToVault) {
+                  onSaveToVault(resolvedUrl, message.content || '');
+                  setIsSavedToVault(true);
+                  triggerHaptic([60, 40, 100]);
+                  soundEffects.playSent();
+                }
+              }}
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full font-semibold transition-all ${
+                isSavedToVault
+                  ? 'bg-[#00b894]/20 border border-[#00b894] text-[#55efc4]'
+                  : 'bg-[#281e4b] hover:bg-[#382a69] border border-[#6c5ce7]/50 text-white cursor-pointer shadow-md'
+              }`}
+              title="Enregistrer dans le Coffre-Fort partagé"
+            >
+              {isSavedToVault ? <Check size={14} /> : <Lock size={14} className="text-[#00b894]" />}
+              <span>{isSavedToVault ? 'Dans le Coffre 🔒' : 'Coffre-Fort'}</span>
+            </button>
+          )}
+
           {!message.isViewOnce && resolvedUrl && (
             <button
               onClick={handleDownload}

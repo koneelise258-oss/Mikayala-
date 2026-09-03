@@ -49,7 +49,87 @@ export const DEFAULT_TYPOGRAPHY: TypographyConfig = {
   fontFamily: 'system',
   bubbleBorderRadius: 16,
   bubbleShape: 'classic',
-  iosEmojis: true
+  iosEmojis: false
+};
+
+/**
+ * Calculates relative luminance according to WCAG 2.1 specs (0 to 1)
+ */
+export const getLuminance = (hexColor: string): number => {
+  try {
+    if (!hexColor) return 0.2;
+    let cleanHex = hexColor.replace('#', '').trim();
+    if (cleanHex.length === 3) {
+      cleanHex = cleanHex.split('').map(c => c + c).join('');
+    }
+    if (cleanHex.length !== 6) return 0.2;
+    const r = parseInt(cleanHex.substring(0, 2), 16) / 255;
+    const g = parseInt(cleanHex.substring(2, 4), 16) / 255;
+    const b = parseInt(cleanHex.substring(4, 6), 16) / 255;
+
+    const a = [r, g, b].map(v => {
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    });
+    return a[0] * 0.2126 + a[1] * 0.7152 + a[2] * 0.0722;
+  } catch {
+    return 0.2;
+  }
+};
+
+/**
+ * Automatically computes high-contrast text, timestamp, and sender colors
+ * for any given background color (ensuring total legibility across dark and light palettes)
+ */
+export const getContrastingTextColor = (bgHex: string): { 
+  text: string; 
+  time: string; 
+  sender: string;
+  isLight: boolean;
+} => {
+  const lum = getLuminance(bgHex);
+  const isLight = lum > 0.42;
+
+  if (isLight) {
+    return {
+      text: '#0f172a', // Deep dark slate
+      time: 'rgba(15, 23, 42, 0.72)',
+      sender: '#0369a1', // Deep rich cyan/blue
+      isLight: true
+    };
+  } else {
+    return {
+      text: '#f8fafc', // Clean bright white
+      time: 'rgba(241, 242, 246, 0.75)',
+      sender: '#55efc4', // Emerald / mint
+      isLight: false
+    };
+  }
+};
+
+/**
+ * Automatically adapts typography and text colors across an entire CustomColors object
+ */
+export const autoAdaptColorsToContrast = (colors: CustomColors): CustomColors => {
+  const sentBg = colors.bubbleSentBg || DEFAULT_COLORS.bubbleSentBg;
+  const recvBg = colors.bubbleRecvBg || DEFAULT_COLORS.bubbleRecvBg;
+  const headerBg = colors.headerBg || DEFAULT_COLORS.headerBg;
+
+  const sentContrast = getContrastingTextColor(sentBg);
+  const recvContrast = getContrastingTextColor(recvBg);
+  const headerContrast = getContrastingTextColor(headerBg);
+
+  return {
+    ...colors,
+    bubbleSentBg: sentBg,
+    bubbleSentText: sentContrast.text,
+    bubbleSentTime: sentContrast.time,
+    bubbleRecvBg: recvBg,
+    bubbleRecvText: recvContrast.text,
+    bubbleRecvSender: recvContrast.sender,
+    bubbleRecvTime: recvContrast.time,
+    headerBg: headerBg,
+    headerText: headerContrast.text
+  };
 };
 
 // Stylized Butterfly SVG Paths for different colors
@@ -342,42 +422,106 @@ export const getFontFamilyCSS = (option: FontFamilyOption): string => {
 export const applyThemeToDOM = (theme: AppThemeConfig) => {
   if (typeof document === 'undefined') return;
   const root = document.documentElement;
-  const { colors, typography } = theme;
+  const rawColors = theme?.colors || DEFAULT_COLORS;
+  const typography = theme?.typography || DEFAULT_TYPOGRAPHY;
+  const wallpaper = theme?.wallpaper || DEFAULT_WALLPAPER;
+
+  // Compute adaptive high-contrast colors
+  const colors = autoAdaptColorsToContrast(rawColors);
 
   // Header & Tabs
-  root.style.setProperty('--mk-header-bg', colors.headerBg);
-  root.style.setProperty('--mk-header-text', colors.headerText);
-  root.style.setProperty('--mk-tabs-bg', colors.tabsBg);
-  root.style.setProperty('--mk-tabs-active', colors.tabsActiveIndicator);
+  root.style.setProperty('--mk-header-bg', colors.headerBg || DEFAULT_COLORS.headerBg);
+  root.style.setProperty('--mk-header-text', colors.headerText || DEFAULT_COLORS.headerText);
+  root.style.setProperty('--mk-tabs-bg', colors.tabsBg || DEFAULT_COLORS.tabsBg);
+  root.style.setProperty('--mk-tabs-active', colors.tabsActiveIndicator || DEFAULT_COLORS.tabsActiveIndicator);
 
-  // Sent Messages
-  root.style.setProperty('--mk-bubble-sent-bg', colors.bubbleSentBg);
-  root.style.setProperty('--mk-bubble-sent-text', colors.bubbleSentText);
-  root.style.setProperty('--mk-bubble-sent-time', colors.bubbleSentTime);
-  root.style.setProperty('--mk-tick-single', colors.tickSingle);
-  root.style.setProperty('--mk-tick-delivered', colors.tickDelivered);
-  root.style.setProperty('--mk-tick-read', colors.tickRead);
+  // Sent Messages (Adaptive high-contrast text & timestamps)
+  root.style.setProperty('--mk-bubble-sent-bg', colors.bubbleSentBg || DEFAULT_COLORS.bubbleSentBg);
+  root.style.setProperty('--mk-bubble-sent-text', colors.bubbleSentText || DEFAULT_COLORS.bubbleSentText);
+  root.style.setProperty('--mk-bubble-sent-time', colors.bubbleSentTime || DEFAULT_COLORS.bubbleSentTime);
+  root.style.setProperty('--mk-tick-single', colors.tickSingle || DEFAULT_COLORS.tickSingle);
+  root.style.setProperty('--mk-tick-delivered', colors.tickDelivered || DEFAULT_COLORS.tickDelivered);
+  root.style.setProperty('--mk-tick-read', colors.tickRead || DEFAULT_COLORS.tickRead);
 
-  // Received Messages
-  root.style.setProperty('--mk-bubble-recv-bg', colors.bubbleRecvBg);
-  root.style.setProperty('--mk-bubble-recv-text', colors.bubbleRecvText);
-  root.style.setProperty('--mk-bubble-recv-sender', colors.bubbleRecvSender);
-  root.style.setProperty('--mk-bubble-recv-time', colors.bubbleRecvTime);
+  // Received Messages (Adaptive high-contrast text & timestamps)
+  root.style.setProperty('--mk-bubble-recv-bg', colors.bubbleRecvBg || DEFAULT_COLORS.bubbleRecvBg);
+  root.style.setProperty('--mk-bubble-recv-text', colors.bubbleRecvText || DEFAULT_COLORS.bubbleRecvText);
+  root.style.setProperty('--mk-bubble-recv-sender', colors.bubbleRecvSender || DEFAULT_COLORS.bubbleRecvSender);
+  root.style.setProperty('--mk-bubble-recv-time', colors.bubbleRecvTime || DEFAULT_COLORS.bubbleRecvTime);
 
   // Accent & Interface
-  root.style.setProperty('--mk-accent', colors.accentColor);
-  root.style.setProperty('--mk-input-bg', colors.inputBg);
-  root.style.setProperty('--mk-bottom-nav-bg', colors.bottomNavBg);
+  root.style.setProperty('--mk-accent', colors.accentColor || DEFAULT_COLORS.accentColor);
+  root.style.setProperty('--mk-input-bg', colors.inputBg || DEFAULT_COLORS.inputBg);
+  root.style.setProperty('--mk-bottom-nav-bg', colors.bottomNavBg || DEFAULT_COLORS.bottomNavBg);
 
   // Typography & Bubble Shape
-  root.style.setProperty('--mk-msg-font-size', `${typography.fontSize || 15}px`);
-  root.style.setProperty('--mk-msg-font-family', getFontFamilyCSS(typography.fontFamily));
-  root.style.setProperty('--mk-bubble-radius', `${typography.bubbleBorderRadius || 16}px`);
+  const fontSize = typography.fontSize || 15;
+  const fontFamily = getFontFamilyCSS(typography.fontFamily);
+  const bubbleRadius = typography.bubbleBorderRadius ?? 16;
+  root.style.setProperty('--mk-msg-font-size', `${fontSize}px`);
+  root.style.setProperty('--mk-font-size', `${fontSize}px`);
+  root.style.setProperty('--mk-msg-font-family', fontFamily);
+  root.style.setProperty('--mk-font-family', fontFamily);
+  root.style.setProperty('--mk-bubble-radius', `${bubbleRadius}px`);
+
+  // Wallpaper variables
+  root.style.setProperty('--mk-wallpaper-color', wallpaper.customColor || '#130f26');
+  root.style.setProperty('--mk-wallpaper-opacity', `${(wallpaper.opacity ?? 85) / 100}`);
+  root.style.setProperty('--mk-wallpaper-blur', `${wallpaper.blur ?? 0}px`);
+  root.style.setProperty('--mk-wallpaper-dark-overlay', `${(wallpaper.darkOverlay ?? 30) / 100}`);
+  if (wallpaper.preset === 'custom_image' && wallpaper.customImageUrl) {
+    root.style.setProperty('--mk-wallpaper-image', `url("${wallpaper.customImageUrl}")`);
+  } else {
+    root.style.setProperty('--mk-wallpaper-image', 'none');
+  }
 
   // Update Favicon based on app icon
   if (theme.appIcon) {
     generateDynamicFavicon(theme.appIcon);
   }
+};
+
+/**
+ * Compresses an image file for use as a chat wallpaper to avoid LocalStorage quota issues
+ */
+export const compressImageForWallpaper = (file: File, maxWidth = 1280, maxHeight = 1280, quality = 0.8): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Erreur de lecture du fichier image'));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Impossible de charger l\'image'));
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth || height > maxHeight) {
+          if (width > height) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(e.target?.result as string);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(dataUrl);
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
 };
 
 // ==========================================
@@ -406,7 +550,25 @@ export const getStoredThemeConfig = (): AppThemeConfig => {
 
 export const saveThemeConfig = (config: AppThemeConfig) => {
   if (typeof localStorage === 'undefined') return;
-  localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(config));
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(config));
+  } catch (err) {
+    console.warn('[themeEngine] LocalStorage save warning (falling back without heavy wallpaper):', err);
+    try {
+      // Fallback without heavy custom image if quota exceeded
+      const fallbackConfig = {
+        ...config,
+        wallpaper: {
+          ...config.wallpaper,
+          preset: config.wallpaper.preset === 'custom_image' ? 'doodle_dark' : config.wallpaper.preset,
+          customImageUrl: undefined
+        }
+      };
+      localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(fallbackConfig));
+    } catch {
+      // Ignore
+    }
+  }
   applyThemeToDOM(config);
 };
 

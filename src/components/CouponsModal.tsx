@@ -13,7 +13,8 @@ interface CouponsModalProps {
   coupons: CoupleCoupon[];
   currentUser: User;
   partnerUser: User;
-  onAddCoupon: (coupon: Omit<CoupleCoupon, 'id' | 'createdAt' | 'status'>) => void;
+  onAddCoupon?: (coupon: Omit<CoupleCoupon, 'id' | 'createdAt' | 'status'>) => void;
+  onCreateCoupon?: (coupon: Omit<CoupleCoupon, 'id' | 'createdAt' | 'status'>) => void;
   onClaimCoupon: (couponId: string) => void;
   onRedeemCoupon: (couponId: string) => void;
   onShareCouponToChat: (coupon: CoupleCoupon) => void;
@@ -26,10 +27,12 @@ export const CouponsModal: React.FC<CouponsModalProps> = ({
   currentUser,
   partnerUser,
   onAddCoupon,
+  onCreateCoupon,
   onClaimCoupon,
   onRedeemCoupon,
   onShareCouponToChat
 }) => {
+  const handleAddCouponCallback = onAddCoupon || onCreateCoupon;
   const [activeFilter, setActiveFilter] = useState<'all' | 'available' | 'claimed' | 'redeemed'>('all');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newTitle, setNewTitle] = useState('');
@@ -51,7 +54,7 @@ export const CouponsModal: React.FC<CouponsModalProps> = ({
     e.preventDefault();
     if (!newTitle.trim()) return;
 
-    onAddCoupon({
+    handleAddCouponCallback?.({
       title: newTitle.trim(),
       description: newDescription.trim() || 'Bon d\'amour exclusif valable sans condition.',
       category: newCategory,

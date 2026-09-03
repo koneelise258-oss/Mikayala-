@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Lock, 
   Image as ImageIcon, 
@@ -12,9 +12,19 @@ import {
   Upload, 
   FolderHeart, 
   ShieldCheck,
-  Tag
+  Tag,
+  User as UserIcon,
+  Send,
+  Download,
+  Search,
+  Grid,
+  Filter,
+  Layers,
+  Heart,
+  Calendar,
+  MessageSquare
 } from 'lucide-react';
-import { VaultItem, User } from '../types';
+import { VaultItem, User, Message } from '../types';
 import { triggerHaptic } from '../utils/security';
 import { soundEffects } from '../utils/audio';
 
@@ -23,11 +33,14 @@ interface VaultModalProps {
   onClose: () => void;
   vaultItems: VaultItem[];
   currentUser: User;
+  partnerUser?: User;
+  messages?: Message[];
   onAddVaultItem?: (item: Omit<VaultItem, 'id' | 'dateAdded'>) => void;
   onAddItem?: (item: Omit<VaultItem, 'id' | 'dateAdded'>) => void;
   onDeleteVaultItem?: (id: string) => void;
   onDeleteItem?: (id: string) => void;
-  onViewOnceBurned: (id: string) => void;
+  onViewOnceBurned?: (id: string) => void;
+  onShareToChat?: (text: string, mediaUrl?: string) => void;
   onLock?: () => void;
 }
 
@@ -36,17 +49,26 @@ export const VaultModal: React.FC<VaultModalProps> = ({
   onClose,
   vaultItems,
   currentUser,
+  partnerUser,
+  messages = [],
   onAddVaultItem,
   onAddItem,
   onDeleteVaultItem,
   onDeleteItem,
   onViewOnceBurned,
+  onShareToChat,
   onLock
 }) => {
   const handleAddItemCallback = onAddVaultItem || onAddItem;
   const handleDeleteItemCallback = onDeleteVaultItem || onDeleteItem;
+  
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'intime' | 'souvenirs' | 'voyages' | 'capsule'>('all');
+  const [authorFilter, setAuthorFilter] = useState<'all' | 'me' | 'partner'>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [showAddForm, setShowAddForm] = useState<boolean>(false);
+  const [showChatImportModal, setShowChatImportModal] = useState<boolean>(false);
+  
+  // New item form state
   const [newTitle, setNewTitle] = useState<string>('');
   const [newCategory, setNewCategory] = useState<'intime' | 'souvenirs' | 'voyages' | 'capsule'>('intime');
   const [newMediaUrl, setNewMediaUrl] = useState<string>('');
@@ -54,11 +76,38 @@ export const VaultModal: React.FC<VaultModalProps> = ({
   const [isViewOnceOption, setIsViewOnceOption] = useState<boolean>(false);
   const [activeViewingItem, setActiveViewingItem] = useState<VaultItem | null>(null);
 
+  // Extract all chat images/media available for import
+  const chatMediaMessages = useMemo(() => {
+    return messages.filter(m => 
+      (m.type === 'image' || m.type === 'video' || m.type === 'view_once') && 
+      (m.mediaUrl || m.storagePath) && 
+      !m.isDeletedForEveryone
+    );
+  }, [messages]);
+
   if (!isOpen) return null;
 
   const filteredItems = vaultItems.filter(item => {
-    if (selectedCategory === 'all') return true;
-    return item.category === selectedCategory;
+    // 1. Category Filter
+    if (selectedCategory !== 'all' && item.category !== selectedCategory) {
+      return false;
+    }
+    // 2. Author Filter
+    if (authorFilter === 'me' && item.addedBy !== currentUser.id) {
+      return false;
+    }
+    if (authorFilter === 'partner' && item.addedBy === currentUser.id) {
+      return false;
+    }
+    // 3. Search Query
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matchTitle = item.title?.toLowerCase().includes(q);
+      const matchCaption = item.caption?.toLowerCase().includes(q);
+      const matchAuthor = item.addedByName?.toLowerCase().includes(q);
+      if (!matchTitle && !matchCaption && !matchAuthor) return false;
+    }
+    return true;
   });
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -87,9 +136,12 @@ export const VaultModal: React.FC<VaultModalProps> = ({
       mediaUrl: newMediaUrl,
       category: newCategory,
       addedBy: currentUser.id,
+      addedByName: currentUser.name,
+      addedByAvatar: currentUser.avatar,
       caption: newCaption.trim(),
       isViewOnce: isViewOnceOption,
       isViewed: false,
+      source: 'upload',
       tags: [newCategory]
     });
 
@@ -102,6 +154,30 @@ export const VaultModal: React.FC<VaultModalProps> = ({
     setShowAddForm(false);
   };
 
+  const handleImportFromChat = (msg: Message) => {
+    const mediaSrc = msg.mediaUrl || '';
+    if (!mediaSrc) return;
+
+    handleAddItemCallback?.({
+      title: msg.fileName || `Photo du chat (${new Date(msg.timestamp).toLocaleDateString('fr-FR')})`,
+      type: msg.type === 'video' ? 'video' : 'photo',
+      mediaUrl: mediaSrc,
+      category: newCategory,
+      addedBy: currentUser.id,
+      addedByName: currentUser.name,
+      addedByAvatar: currentUser.avatar,
+      caption: msg.content || 'Importé depuis notre discussion',
+      isViewOnce: false,
+      isViewed: false,
+      source: 'chat',
+      tags: ['chat', newCategory]
+    });
+
+    triggerHaptic([60, 40, 100]);
+    soundEffects.playSent();
+    setShowChatImportModal(false);
+  };
+
   const handleOpenItem = (item: VaultItem) => {
     if (item.isViewOnce && item.isViewed) {
       return; // Already burned
@@ -111,18 +187,31 @@ export const VaultModal: React.FC<VaultModalProps> = ({
   };
 
   const handleCloseViewer = () => {
-    if (activeViewingItem?.isViewOnce) {
+    if (activeViewingItem?.isViewOnce && onViewOnceBurned) {
       onViewOnceBurned(activeViewingItem.id);
       triggerHaptic([100, 100]);
     }
     setActiveViewingItem(null);
   };
 
+  const handleShareItemToChat = (item: VaultItem) => {
+    if (onShareToChat) {
+      const shareText = `🔒 *Média partagé depuis notre Coffre-Fort* : "${item.title}" ${item.caption ? `\n💬 "${item.caption}"` : ''}`;
+      onShareToChat(shareText, item.mediaUrl);
+      triggerHaptic(50);
+      soundEffects.playSent();
+      onClose();
+    }
+  };
+
+  const partnerName = partnerUser?.name || 'Votre partenaire';
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0e0b1c]/90 backdrop-blur-md p-2 sm:p-4 animate-in fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0e0b1c]/90 backdrop-blur-md p-2 sm:p-4 animate-in fade-in select-none">
       {/* Full-screen View Once / HD Lightbox */}
       {activeViewingItem && (
-        <div className="fixed inset-0 z-60 bg-black/98 flex flex-col justify-between p-4 animate-in fade-in">
+        <div className="fixed inset-0 z-60 bg-black/98 flex flex-col justify-between p-3 sm:p-5 animate-in fade-in">
+          {/* Viewer Top Header */}
           <div className="flex items-center justify-between z-10">
             <div className="flex items-center gap-2">
               {activeViewingItem.isViewOnce ? (
@@ -131,60 +220,155 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                   Vue Unique HD (S'autodétruit à la fermeture)
                 </span>
               ) : (
-                <span className="flex items-center gap-1.5 bg-[#00b894]/20 text-[#00b894] border border-[#00b894]/40 text-xs font-semibold px-3 py-1 rounded-full">
-                  <ShieldCheck size={14} />
-                  Coffre-Fort Sécurisé
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="flex items-center gap-1.5 bg-[#00b894]/20 text-[#00b894] border border-[#00b894]/40 text-xs font-semibold px-3 py-1 rounded-full">
+                    <ShieldCheck size={14} />
+                    Coffre-Fort Partagé
+                  </span>
+                  <span className="text-xs text-[#a29bfe] bg-[#1b1435] px-2.5 py-1 rounded-full border border-[#2d2254]">
+                    {activeViewingItem.addedBy === currentUser.id 
+                      ? 'Ajouté par Vous' 
+                      : `Ajouté par ${activeViewingItem.addedByName || partnerName}`}
+                  </span>
+                </div>
               )}
             </div>
-            <button
-              onClick={handleCloseViewer}
-              className="p-2 bg-[#2d2254]/80 hover:bg-[#ff7675]/80 text-white rounded-full transition-colors cursor-pointer"
-            >
-              <X size={22} />
-            </button>
+
+            <div className="flex items-center gap-2">
+              {onShareToChat && !activeViewingItem.isViewOnce && (
+                <button
+                  onClick={() => handleShareItemToChat(activeViewingItem)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[#6c5ce7] hover:bg-[#5b4bc4] text-white text-xs font-bold rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
+                  title="Partager dans le chat"
+                >
+                  <Send size={13} />
+                  <span className="hidden sm:inline">Partager dans le chat</span>
+                </button>
+              )}
+              <button
+                onClick={handleCloseViewer}
+                className="p-2 bg-[#2d2254]/80 hover:bg-[#ff7675]/80 text-white rounded-full transition-colors cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
           </div>
 
+          {/* Viewer Media */}
           <div className="flex-1 flex flex-col items-center justify-center relative p-2 my-auto">
             <img
               src={activeViewingItem.mediaUrl}
               alt={activeViewingItem.title}
-              className="max-h-[75vh] max-w-full rounded-2xl object-contain shadow-2xl border border-[#6c5ce7]/30 select-none"
+              className="max-h-[72vh] max-w-full rounded-2xl object-contain shadow-2xl border border-[#6c5ce7]/30 select-none"
               onContextMenu={e => e.preventDefault()}
             />
             {activeViewingItem.caption && (
-              <p className="mt-4 text-center text-sm font-medium text-[#f1f2f6] max-w-md bg-[#1b1435]/90 px-4 py-2 rounded-xl border border-[#372863]">
+              <p className="mt-3 text-center text-xs sm:text-sm font-medium text-[#f1f2f6] max-w-lg bg-[#1b1435]/90 px-4 py-2.5 rounded-xl border border-[#372863] shadow-lg">
                 {activeViewingItem.caption}
               </p>
             )}
+            <div className="mt-2 text-[11px] text-[#a29bfe]/80 flex items-center gap-2">
+              <span>{activeViewingItem.title}</span>
+              <span>•</span>
+              <span>
+                {new Date(activeViewingItem.dateAdded || activeViewingItem.createdAt || Date.now()).toLocaleDateString('fr-FR', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric'
+                })}
+              </span>
+            </div>
           </div>
 
           <div className="text-center text-xs text-[#a29bfe]/70 pb-2">
-            Protégé par Mikayla Biometrics • Capture d'écran désactivée
+            Protégé par Mikayla Biometrics • Vue privée partagée entre partenaires
+          </div>
+        </div>
+      )}
+
+      {/* Chat Media Import Modal */}
+      {showChatImportModal && (
+        <div className="fixed inset-0 z-60 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 animate-in zoom-in-95">
+          <div className="bg-[#171230] border border-[#2d2254] rounded-3xl w-full max-w-md p-5 shadow-2xl flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between pb-3 border-b border-[#2d2254] mb-3">
+              <div className="flex items-center gap-2">
+                <MessageSquare size={18} className="text-[#00b894]" />
+                <h4 className="font-bold text-sm text-white">Importer une photo du Chat</h4>
+              </div>
+              <button
+                onClick={() => setShowChatImportModal(false)}
+                className="p-1.5 text-[#a29bfe] hover:text-white rounded-full"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="text-xs text-[#a29bfe] mb-3">
+              Sélectionnez une photo échangée dans votre discussion pour l'ajouter instantanément au coffre-fort partagé.
+            </p>
+
+            <div className="flex-1 overflow-y-auto pr-1">
+              {chatMediaMessages.length === 0 ? (
+                <div className="text-center py-10">
+                  <ImageIcon size={36} className="mx-auto text-[#6c5ce7]/40 mb-2" />
+                  <p className="text-xs text-[#a29bfe]">Aucune photo disponible dans la discussion actuelle.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-2">
+                  {chatMediaMessages.map(msg => (
+                    <div
+                      key={msg.id}
+                      onClick={() => handleImportFromChat(msg)}
+                      className="aspect-square rounded-xl overflow-hidden border border-[#2d2254] hover:border-[#00b894] relative group cursor-pointer transition-all hover:scale-105"
+                    >
+                      <img
+                        src={msg.mediaUrl || ''}
+                        alt="Chat media"
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                        <span className="p-1 rounded-full bg-[#00b894] text-[#130f26]">
+                          <Plus size={16} />
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
 
       {/* Main Vault Modal Box */}
-      <div className="w-full max-w-2xl bg-[#171230] border border-[#2d2254] rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="w-full max-w-2xl bg-[#171230] border border-[#2d2254] rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
-        <div className="h-[64px] bg-[#1f1742] px-5 flex items-center justify-between border-b border-[#2d2254] shrink-0">
+        <div className="p-4 sm:p-5 bg-[#1f1742] flex items-center justify-between border-b border-[#2d2254] shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#6c5ce7] to-[#00b894] flex items-center justify-center shadow-[0_0_15px_rgba(0,184,148,0.3)]">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#6c5ce7] to-[#00b894] flex items-center justify-center shadow-[0_0_15px_rgba(0,184,148,0.3)] shrink-0">
               <Lock size={20} className="text-white" />
             </div>
             <div>
               <h2 className="text-base font-bold text-[#f1f2f6] flex items-center gap-2">
-                <span>Coffre-Fort Intime</span>
+                <span>Coffre-Fort Partagé</span>
                 <span className="text-[10px] bg-[#00b894]/20 text-[#00b894] border border-[#00b894]/40 px-2 py-0.5 rounded-full font-semibold">
-                  Chiffré WebAuthn
+                  Synchro Complice 🔒
                 </span>
               </h2>
-              <p className="text-xs text-[#a29bfe]">Vos photos, vidéos et secrets exclusifs à deux</p>
+              <p className="text-xs text-[#a29bfe]">Vos photos secrètes et souvenirs exclusifs à deux</p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowChatImportModal(true)}
+              className="hidden sm:flex items-center gap-1.5 bg-[#281e4b] hover:bg-[#342861] text-[#55efc4] border border-[#372863] font-bold text-xs px-3 py-2 rounded-xl transition-all cursor-pointer"
+              title="Importer depuis le Chat"
+            >
+              <MessageSquare size={14} />
+              <span>Depuis le Chat</span>
+            </button>
+
             <button
               onClick={() => setShowAddForm(!showAddForm)}
               className="flex items-center gap-1.5 bg-[#00b894] hover:bg-[#00a884] text-[#130f26] font-bold text-xs px-3 py-2 rounded-xl transition-all active:scale-95 shadow-md cursor-pointer"
@@ -192,6 +376,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
               <Plus size={16} />
               <span>{showAddForm ? 'Fermer' : 'Ajouter'}</span>
             </button>
+
             {onLock && (
               <button
                 onClick={() => {
@@ -214,39 +399,96 @@ export const VaultModal: React.FC<VaultModalProps> = ({
           </div>
         </div>
 
+        {/* Search & Author Filters */}
+        <div className="px-5 py-2.5 bg-[#130f26] border-b border-[#2d2254] flex flex-col sm:flex-row items-center justify-between gap-2.5">
+          {/* Author segmented pills */}
+          <div className="flex items-center gap-1.5 bg-[#1b1435] p-1 rounded-xl border border-[#2d2254] w-full sm:w-auto text-xs">
+            <button
+              onClick={() => setAuthorFilter('all')}
+              className={`flex-1 sm:flex-initial px-3 py-1 rounded-lg font-medium transition-all ${
+                authorFilter === 'all'
+                  ? 'bg-[#6c5ce7] text-white shadow-sm'
+                  : 'text-[#a29bfe] hover:text-white'
+              }`}
+            >
+              Tous ({vaultItems.length})
+            </button>
+            <button
+              onClick={() => setAuthorFilter('me')}
+              className={`flex-1 sm:flex-initial px-3 py-1 rounded-lg font-medium transition-all ${
+                authorFilter === 'me'
+                  ? 'bg-[#6c5ce7] text-white shadow-sm'
+                  : 'text-[#a29bfe] hover:text-white'
+              }`}
+            >
+              Par Vous ({vaultItems.filter(i => i.addedBy === currentUser.id).length})
+            </button>
+            <button
+              onClick={() => setAuthorFilter('partner')}
+              className={`flex-1 sm:flex-initial px-3 py-1 rounded-lg font-medium transition-all ${
+                authorFilter === 'partner'
+                  ? 'bg-[#6c5ce7] text-white shadow-sm'
+                  : 'text-[#a29bfe] hover:text-white'
+              }`}
+            >
+              Par {partnerName} ({vaultItems.filter(i => i.addedBy !== currentUser.id).length})
+            </button>
+          </div>
+
+          {/* Quick Search */}
+          <div className="relative w-full sm:w-48">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#a29bfe]" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Rechercher..."
+              className="w-full bg-[#1b1435] border border-[#2d2254] rounded-xl pl-8 pr-3 py-1.5 text-xs text-[#f1f2f6] placeholder-[#a29bfe]/60 focus:outline-none focus:border-[#00b894]"
+            />
+          </div>
+        </div>
+
         {/* Categories Bar */}
-        <div className="flex items-center gap-2 px-5 py-3 bg-[#130f26] border-b border-[#2d2254] overflow-x-auto text-xs">
+        <div className="flex items-center gap-2 px-5 py-2.5 bg-[#171230] border-b border-[#2d2254] overflow-x-auto text-xs scrollbar-none">
           {[
-            { id: 'all', label: 'Tout voir', count: vaultItems.length },
-            { id: 'intime', label: '🔥 Intime & Privé', count: vaultItems.filter(i => i.category === 'intime').length },
-            { id: 'souvenirs', label: '💜 Souvenirs d\'amour', count: vaultItems.filter(i => i.category === 'souvenirs').length },
-            { id: 'voyages', label: '✨ Escapades', count: vaultItems.filter(i => i.category === 'voyages').length },
+            { id: 'all', label: 'Toutes Catégories' },
+            { id: 'intime', label: '🔥 Intime & Privé' },
+            { id: 'souvenirs', label: '💜 Souvenirs d\'amour' },
+            { id: 'voyages', label: '✨ Escapades' },
+            { id: 'capsule', label: '⏳ Capsule' },
           ].map(cat => (
             <button
               key={cat.id}
               onClick={() => setSelectedCategory(cat.id as any)}
               className={`px-3 py-1.5 rounded-xl font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${
                 selectedCategory === cat.id
-                  ? 'bg-[#6c5ce7] text-white shadow-md'
-                  : 'bg-[#1e173e] text-[#a29bfe] hover:text-white'
+                  ? 'bg-[#00b894] text-[#130f26] font-bold shadow-md'
+                  : 'bg-[#1b1435] text-[#a29bfe] hover:text-white border border-[#2d2254]'
               }`}
             >
               <span>{cat.label}</span>
-              <span className="text-[10px] opacity-75 bg-black/20 px-1.5 py-0.2 rounded-full">
-                {cat.count}
-              </span>
             </button>
           ))}
         </div>
 
         {/* Content Body */}
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5">
           {/* Add New Item Form */}
           {showAddForm && (
-            <form onSubmit={handleSaveItem} className="bg-[#1e173e] border border-[#372863] rounded-2xl p-4 mb-6 animate-in slide-in-from-top-2">
-              <h3 className="text-sm font-bold text-[#f1f2f6] mb-3 flex items-center gap-2">
-                <FolderHeart size={16} className="text-[#00b894]" />
-                Ajouter un média secret dans le coffre
+            <form onSubmit={handleSaveItem} className="bg-[#1e173e] border border-[#372863] rounded-2xl p-4 mb-5 animate-in slide-in-from-top-2 shadow-xl">
+              <h3 className="text-sm font-bold text-[#f1f2f6] mb-3 flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <FolderHeart size={16} className="text-[#00b894]" />
+                  Ajouter un média secret partagé
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowChatImportModal(true)}
+                  className="text-xs text-[#55efc4] hover:underline flex items-center gap-1"
+                >
+                  <MessageSquare size={12} />
+                  <span>Importer du chat</span>
+                </button>
               </h3>
 
               <div className="space-y-3 text-xs">
@@ -298,7 +540,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                   <div className="flex items-center gap-3">
                     <label className="flex-1 flex items-center justify-center gap-2 border border-dashed border-[#6c5ce7]/60 hover:border-[#00b894] bg-[#130f26] hover:bg-[#1a1435] rounded-xl p-3 cursor-pointer transition-colors text-[#55efc4]">
                       <Upload size={16} />
-                      <span className="font-semibold">Parcourir ou Déposer</span>
+                      <span className="font-semibold">Parcourir ou Déposer une photo</span>
                       <input
                         type="file"
                         accept="image/*"
@@ -310,7 +552,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                   {newMediaUrl && (
                     <div className="mt-2 flex items-center gap-3 bg-[#130f26] p-2 rounded-xl border border-[#2d2254]">
                       <img src={newMediaUrl} alt="Preview" className="w-12 h-12 rounded-lg object-cover" />
-                      <span className="text-xs text-[#00b894] font-medium">Image chargée prête à être chiffrée</span>
+                      <span className="text-xs text-[#00b894] font-medium">Image prête à être chiffrée & partagée</span>
                     </div>
                   )}
                 </div>
@@ -337,7 +579,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                   <button
                     type="submit"
                     disabled={!newMediaUrl}
-                    className="px-4 py-2 rounded-xl bg-[#00b894] hover:bg-[#00a884] disabled:opacity-50 text-[#130f26] font-bold shadow-md transition-transform active:scale-95"
+                    className="px-4 py-2 rounded-xl bg-[#00b894] hover:bg-[#00a884] disabled:opacity-50 text-[#130f26] font-bold shadow-md transition-transform active:scale-95 cursor-pointer"
                   >
                     Enregistrer au coffre 🔒
                   </button>
@@ -350,13 +592,22 @@ export const VaultModal: React.FC<VaultModalProps> = ({
           {filteredItems.length === 0 ? (
             <div className="text-center py-12">
               <FolderHeart size={48} className="mx-auto text-[#6c5ce7]/40 mb-3" />
-              <p className="text-sm font-semibold text-[#f1f2f6]">Aucun média dans cette catégorie</p>
-              <p className="text-xs text-[#a29bfe] mt-1">Ajoutez votre première photo ou vidéo intime protégée.</p>
+              <p className="text-sm font-semibold text-[#f1f2f6]">Aucun média dans cette sélection</p>
+              <p className="text-xs text-[#a29bfe] mt-1">Ajoutez votre première photo ou importez-en depuis votre discussion.</p>
+              <button
+                onClick={() => setShowAddForm(true)}
+                className="mt-4 px-4 py-2 rounded-xl bg-[#6c5ce7] hover:bg-[#5b4bc4] text-white text-xs font-bold transition-all shadow-md"
+              >
+                Ajouter une photo maintenant
+              </button>
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {filteredItems.map(item => {
                 const isBurned = item.isViewOnce && item.isViewed;
+                const isMe = item.addedBy === currentUser.id;
+                const adderDisplayName = isMe ? 'Vous' : (item.addedByName || partnerName);
+
                 return (
                   <div
                     key={item.id}
@@ -379,10 +630,10 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                           alt={item.title}
                           className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-[#130f26] via-[#130f26]/20 to-transparent" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-[#130f26] via-[#130f26]/30 to-transparent" />
 
                         {/* Top Badges */}
-                        <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
+                        <div className="absolute top-2 left-2 right-2 flex items-center justify-between z-10">
                           {item.isViewOnce ? (
                             <span className="bg-[#ff7675] text-white text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-md">
                               <Flame size={10} /> 1x HD
@@ -393,28 +644,52 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                             </span>
                           )}
 
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (confirm('Supprimer cet élément du coffre ?')) {
-                                handleDeleteItemCallback?.(item.id);
-                              }
-                            }}
-                            className="opacity-0 group-hover:opacity-100 p-1 rounded-lg bg-black/60 hover:bg-[#ff7675] text-white transition-all cursor-pointer"
-                            title="Supprimer"
-                          >
-                            <Trash2 size={12} />
-                          </button>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {onShareToChat && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleShareItemToChat(item);
+                                }}
+                                className="p-1 rounded-lg bg-black/60 hover:bg-[#6c5ce7] text-white transition-all cursor-pointer"
+                                title="Partager au chat"
+                              >
+                                <Send size={12} />
+                              </button>
+                            )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm('Supprimer cet élément du coffre partagé ?')) {
+                                  handleDeleteItemCallback?.(item.id);
+                                }
+                              }}
+                              className="p-1 rounded-lg bg-black/60 hover:bg-[#ff7675] text-white transition-all cursor-pointer"
+                              title="Supprimer"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
                         </div>
 
-                        {/* Bottom Title */}
+                        {/* Bottom Title & Author Attribution */}
                         <div className="relative z-10">
                           <p className="text-xs font-semibold text-white truncate drop-shadow-md">
                             {item.title}
                           </p>
-                          <span className="text-[10px] text-[#55efc4] font-medium">
-                            {item.addedBy === currentUser.id ? 'Ajouté par vous' : 'Partagé avec vous'}
-                          </span>
+                          <div className="flex items-center justify-between mt-0.5">
+                            <span className={`text-[10px] font-medium flex items-center gap-1 ${
+                              isMe ? 'text-[#55efc4]' : 'text-[#fd79a8]'
+                            }`}>
+                              <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                              <span>{isMe ? 'Ajouté par Vous' : `Ajouté par ${adderDisplayName}`}</span>
+                            </span>
+                            {item.source === 'chat' && (
+                              <span className="text-[9px] text-[#a29bfe] bg-black/40 px-1.5 py-0.2 rounded">
+                                Chat
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </>
                     )}
@@ -430,7 +705,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5">
               <ShieldCheck size={14} className="text-[#00b894]" />
-              <span>Stockage chiffré</span>
+              <span>Coffre Chiffré Partagé</span>
             </div>
             {onLock && (
               <button
@@ -447,7 +722,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
             )}
           </div>
           <span className="font-semibold text-[#55efc4]">
-            {vaultItems.length} souvenirs protégés
+            {vaultItems.length} souvenir{vaultItems.length > 1 ? 's' : ''} partagé{vaultItems.length > 1 ? 's' : ''}
           </span>
         </div>
       </div>

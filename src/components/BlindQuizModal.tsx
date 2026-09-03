@@ -10,25 +10,37 @@ import { soundEffects } from '../utils/audio';
 interface BlindQuizModalProps {
   isOpen: boolean;
   onClose: () => void;
-  questions: BlindQuizQuestion[];
+  questions?: BlindQuizQuestion[];
+  quizzes?: BlindQuizQuestion[];
   currentUser: User;
   partnerUser: User;
-  onAnswerQuestion: (questionId: string, answerText: string) => void;
-  onAddCustomQuestion: (question: string, category: BlindQuizQuestion['category'], suggestedOptions?: string[]) => void;
-  onShareResultToChat: (question: BlindQuizQuestion) => void;
+  onAnswerQuestion?: (questionId: string, answerText: string) => void;
+  onAnswerQuiz?: (questionId: string, answerText: string) => void;
+  onAddCustomQuestion?: (question: string, category: BlindQuizQuestion['category'], suggestedOptions?: string[]) => void;
+  onCreateQuiz?: (quiz: Omit<BlindQuizQuestion, 'id' | 'createdAt' | 'answers' | 'isRevealed'>) => void;
+  onShareResultToChat?: (question: BlindQuizQuestion) => void;
+  onShareToChat?: (text: string) => void;
 }
 
 export const BlindQuizModal: React.FC<BlindQuizModalProps> = ({
   isOpen,
   onClose,
   questions,
+  quizzes,
   currentUser,
   partnerUser,
   onAnswerQuestion,
+  onAnswerQuiz,
   onAddCustomQuestion,
-  onShareResultToChat
+  onCreateQuiz,
+  onShareResultToChat,
+  onShareToChat
 }) => {
-  const [selectedQuestionId, setSelectedQuestionId] = useState<string>(questions[0]?.id || '');
+  const activeQuestions = quizzes || questions || [];
+  const handleAnswerCallback = onAnswerQuiz || onAnswerQuestion;
+  const handleCreateCallback = onAddCustomQuestion || ((q, cat, opts) => onCreateQuiz?.({ question: q, category: cat, suggestedOptions: opts }));
+  
+  const [selectedQuestionId, setSelectedQuestionId] = useState<string>(activeQuestions[0]?.id || '');
   const [typedAnswer, setTypedAnswer] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
   const [newQuestionText, setNewQuestionText] = useState('');
@@ -37,14 +49,14 @@ export const BlindQuizModal: React.FC<BlindQuizModalProps> = ({
 
   if (!isOpen) return null;
 
-  const currentQ = questions.find(q => q.id === selectedQuestionId) || questions[0];
-  const myAnswer = currentQ?.answers[currentUser.id];
-  const partnerAnswer = currentQ?.answers[partnerUser.id];
+  const currentQ = activeQuestions.find(q => q.id === selectedQuestionId) || activeQuestions[0];
+  const myAnswer = currentQ?.answers?.[currentUser.id];
+  const partnerAnswer = currentQ?.answers?.[partnerUser.id];
   const isBothAnswered = Boolean(myAnswer && partnerAnswer);
 
   const handleSendAnswer = (answer: string) => {
     if (!answer.trim() || !currentQ) return;
-    onAnswerQuestion(currentQ.id, answer.trim());
+    handleAnswerCallback?.(currentQ.id, answer.trim());
     triggerHaptic(40);
     soundEffects.playSent();
     setTypedAnswer('');
@@ -58,7 +70,7 @@ export const BlindQuizModal: React.FC<BlindQuizModalProps> = ({
       ? newOptionsText.split('\n').map(o => o.trim()).filter(Boolean)
       : undefined;
 
-    onAddCustomQuestion(newQuestionText.trim(), newCategory, options);
+    handleCreateCallback(newQuestionText.trim(), newCategory, options);
     triggerHaptic(40);
     soundEffects.playSent();
     setNewQuestionText('');
@@ -93,9 +105,9 @@ export const BlindQuizModal: React.FC<BlindQuizModalProps> = ({
 
         {/* Question Selector Carousel / Badges */}
         <div className="p-3 bg-[#130f26] border-b border-[#2d2254] flex items-center gap-2 overflow-x-auto">
-          {questions.map((q, idx) => {
-            const hasMine = Boolean(q.answers[currentUser.id]);
-            const hasPartner = Boolean(q.answers[partnerUser.id]);
+          {activeQuestions.map((q, idx) => {
+            const hasMine = Boolean(q.answers?.[currentUser.id]);
+            const hasPartner = Boolean(q.answers?.[partnerUser.id]);
             const isUnlocked = hasMine && hasPartner;
             const isSelected = q.id === currentQ?.id;
 
@@ -280,7 +292,15 @@ export const BlindQuizModal: React.FC<BlindQuizModalProps> = ({
 
                     <div className="mt-4 pt-3 border-t border-[#2d2254] flex justify-end">
                       <button
-                        onClick={() => onShareResultToChat(currentQ)}
+                        onClick={() => {
+                          if (onShareResultToChat) {
+                            onShareResultToChat(currentQ);
+                          } else if (onShareToChat) {
+                            onShareToChat(`✨ *Résultats de notre Quiz Double Aveugle* :\n❓ "${currentQ.question}"\n👤 ${currentUser.name} : "${myAnswer?.answerText}"\n❤️ ${partnerUser.name} : "${partnerAnswer?.answerText}"`);
+                          }
+                          triggerHaptic(40);
+                          soundEffects.playSent();
+                        }}
                         className="px-4 py-2 bg-[#00b894] hover:bg-[#00a884] text-[#130f26] text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md transition-transform active:scale-95 cursor-pointer"
                       >
                         <MessageSquare size={14} />

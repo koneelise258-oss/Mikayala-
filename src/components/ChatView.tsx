@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   ArrowLeft, Phone, Video, Search, MoreVertical, Paperclip, Smile,
   Mic, Send, Check, CheckCheck, Star, Pin, CornerUpLeft, Trash2, Edit3,
@@ -6,11 +6,11 @@ import {
   Play, Pause, X, ChevronDown, Sparkles, Plus, Compass, Heart, Lock,
   Dices, HeartHandshake, Flame, Volume2, Ticket, EyeOff, Zap, Award, Gift,
   Globe, MessageSquare, Radio, Bluetooth, Wifi, ArrowDownToLine, AlertCircle, Loader2,
-  Image as ImageIcon, Camera, PhoneMissed, VideoOff
+  Image as ImageIcon, Camera, PhoneMissed, VideoOff, Palette
 } from 'lucide-react';
 import { audioRecorder } from '../services/audioRecorder';
 import { videoRecorder } from '../services/videoRecorder';
-import { User, Message, ChatSettings, PollData, EventData, LocationData, CallType, CoupleCoupon, NetworkState, UserProfile } from '../types';
+import { User, Message, ChatSettings, PollData, EventData, LocationData, CallType, CoupleCoupon, NetworkState, UserProfile, AppThemeConfig } from '../types';
 import { formatTime, formatDateDivider, formatDuration, renderFormattedText } from '../utils/formatters';
 import { soundEffects } from '../utils/audio';
 import { triggerHaptic } from '../utils/security';
@@ -21,6 +21,7 @@ import { MediaBubble } from './MediaBubble';
 import { PhotoPreviewModal } from './PhotoPreviewModal';
 import { DirectCameraModal } from './DirectCameraModal';
 import { PhotoEditor } from './photo/PhotoEditor';
+import { ChatThemeDrawer } from './ChatThemeDrawer';
 import { getStoredPairingState, initAnonymousAuth, fetchActiveCoupleFromSupabase } from '../services/authService';
 import { 
   envoyerMessageTexte, 
@@ -96,6 +97,9 @@ interface ChatViewProps {
   setIsPhotoPreviewOpen?: (val: boolean) => void;
   selectedPhotoFile?: File | null;
   setSelectedPhotoFile?: (file: File | null) => void;
+  // Dynamic theme & chat personalization
+  themeConfig?: AppThemeConfig;
+  onThemeChange?: (newTheme: AppThemeConfig) => void;
 }
 
 export const ChatView: React.FC<ChatViewProps> = ({
@@ -144,7 +148,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
   isPhotoPreviewOpen = false,
   setIsPhotoPreviewOpen = (_val: boolean) => {},
   selectedPhotoFile = null,
-  setSelectedPhotoFile = (_file: File | null) => {}
+  setSelectedPhotoFile = (_file: File | null) => {},
+  themeConfig,
+  onThemeChange
 }) => {
   const [inputText, setInputText] = useState('');
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -152,6 +158,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showChatMenu, setShowChatMenu] = useState(false);
+  const [isThemeDrawerOpen, setIsThemeDrawerOpen] = useState(false);
   const [activeReactionMsgId, setActiveReactionMsgId] = useState<string | null>(null);
   const [activeContextMenuMsgId, setActiveContextMenuMsgId] = useState<string | null>(null);
   const [searchInChat, setSearchInChat] = useState(false);
@@ -465,6 +472,16 @@ export const ChatView: React.FC<ChatViewProps> = ({
   }, [pairingState?.coupleId, isChatActive, isPhotoPreviewOpen, isDirectCameraOpen, currentAuthUserId]);
 
   const activeMessages = (pairingState?.isPaired && pairingState?.coupleId) ? realMessages : parentMessages;
+
+  // Optimized O(1) Map for high-performance reply and reference resolution on low-end CPUs
+  const messagesByIdMap = useMemo(() => {
+    const map = new Map<string, Message>();
+    for (let i = 0; i < activeMessages.length; i++) {
+      map.set(activeMessages[i].id, activeMessages[i]);
+    }
+    return map;
+  }, [activeMessages]);
+
   const partnerLastSeenText = formatLastSeen(partnerLastSeen);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -924,6 +941,24 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }
   };
 
+  // Dynamic wallpaper and bubble styles
+  const activeWallpaperPreset = themeConfig?.wallpaper?.preset || 'doodle_dark';
+  const wallpaperPresetClass = 
+    activeWallpaperPreset === 'doodle_dark' ? 'wallpaper-doodle-dark' :
+    activeWallpaperPreset === 'doodle_light' ? 'wallpaper-doodle-light' :
+    activeWallpaperPreset === 'gradient_neon' ? 'wallpaper-gradient-neon' :
+    activeWallpaperPreset === 'gradient_rose' ? 'wallpaper-gradient-rose' :
+    activeWallpaperPreset === 'gradient_emerald' ? 'wallpaper-gradient-emerald' :
+    activeWallpaperPreset === 'gradient_slate' ? 'wallpaper-gradient-slate' : '';
+
+  const bubbleShape = themeConfig?.typography?.bubbleShape || 'classic';
+  const getBubbleShapeClass = (isMe: boolean) => {
+    if (bubbleShape === 'capsule') return 'rounded-full px-4';
+    if (bubbleShape === 'comic') return isMe ? 'bubble-shape-comic-sent rounded-xl' : 'bubble-shape-comic-recv rounded-xl';
+    if (bubbleShape === 'modern') return 'rounded-2xl';
+    return isMe ? 'rounded-2xl rounded-tr-xs' : 'rounded-2xl rounded-tl-xs border border-[#2d2254]';
+  };
+
   return (
     <div 
       ref={chatContainerRef}
@@ -932,17 +967,20 @@ export const ChatView: React.FC<ChatViewProps> = ({
     >
       {/* Dynamic Wallpaper Layer */}
       <div 
-        className="absolute inset-0 pointer-events-none transition-all z-0"
+        className={`absolute inset-0 pointer-events-none transition-all duration-300 z-0 ${wallpaperPresetClass}`}
         style={{
           opacity: 'var(--mk-wallpaper-opacity, 0.85)',
-          filter: 'blur(var(--mk-wallpaper-blur, 0px))',
-          backgroundImage: 'var(--mk-wallpaper-image, none)',
+          filter: themeConfig?.wallpaper?.blur ? `blur(${themeConfig.wallpaper.blur}px)` : undefined,
+          backgroundImage: themeConfig?.wallpaper?.preset === 'custom_image' && themeConfig?.wallpaper?.customImageUrl
+            ? `url("${themeConfig.wallpaper.customImageUrl}")`
+            : undefined,
           backgroundSize: 'cover',
-          backgroundPosition: 'center'
+          backgroundPosition: 'center',
+          backgroundColor: themeConfig?.wallpaper?.customColor || 'var(--mk-wallpaper-color, #130f26)'
         }}
       />
       <div 
-        className="absolute inset-0 pointer-events-none bg-black z-0"
+        className="absolute inset-0 pointer-events-none bg-black z-0 transition-opacity duration-300"
         style={{ opacity: 'var(--mk-wallpaper-dark-overlay, 0.3)' }}
       />
 
@@ -1075,6 +1113,20 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 <Search size={18} />
               </button>
 
+              {/* Quick Chat Theme Customization */}
+              {onThemeChange && (
+                <button
+                  onClick={() => {
+                    setIsThemeDrawerOpen(true);
+                    triggerHaptic(25);
+                  }}
+                  className="p-2 text-[#a29bfe] hover:text-[#00b894] hover:bg-[#281e4b] rounded-xl transition-colors cursor-pointer"
+                  title="Personnaliser le chat & thème"
+                >
+                  <Palette size={18} />
+                </button>
+              )}
+
               {/* 3-dots Chat Menu */}
               <div className="relative" ref={chatMenuRef}>
                 <button
@@ -1087,6 +1139,20 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
                 {showChatMenu && (
                   <div className="absolute right-0 top-full mt-2 w-64 bg-[#1b1435] rounded-2xl shadow-2xl py-2 z-50 border border-[#372863] text-sm animate-in fade-in zoom-in-95">
+                    {onThemeChange && (
+                      <button
+                        onClick={() => {
+                          setIsThemeDrawerOpen(true);
+                          setShowChatMenu(false);
+                          triggerHaptic(25);
+                        }}
+                        className="w-full text-left px-4 py-2.5 hover:bg-[#281e4b] flex items-center space-x-3 text-white border-b border-[#2d2254]"
+                      >
+                        <Palette size={16} className="text-[#00b894]" />
+                        <span className="font-semibold text-[#55efc4]">Personnaliser le chat & thème</span>
+                      </button>
+                    )}
+
                     <button
                       onClick={() => {
                         onOpenContactInfo();
@@ -1290,7 +1356,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
             new Date(msg.timestamp).toDateString() !== new Date(filteredMessages[index - 1].timestamp).toDateString();
           
           const isPlayingThis = playingAudioId === msg.id;
-          const quotedMsg = msg.replyToId ? activeMessages.find(m => m.id === msg.replyToId) : null;
+          const quotedMsg = msg.replyToId ? messagesByIdMap.get(msg.replyToId) : null;
 
           return (
             <React.Fragment key={msg.id}>
@@ -1306,7 +1372,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
               {/* Message Row */}
               <div
                 id={`msg-${msg.id}`}
-                className={`flex flex-col group ${isMe ? 'items-end' : 'items-start'} relative my-0.5`}
+                className={`message-item-container flex flex-col group ${isMe ? 'items-end' : 'items-start'} relative my-0.5`}
               >
                 {/* Floating Reaction Bar */}
                 {activeReactionMsgId === msg.id && (
@@ -1342,15 +1408,11 @@ export const ChatView: React.FC<ChatViewProps> = ({
                   onClick={() => {
                     setActiveReactionMsgId(activeReactionMsgId === msg.id ? null : msg.id);
                   }}
-                  className={`message-bubble relative max-w-[85%] sm:max-w-[65%] p-3 shadow-md cursor-pointer transition-all ${
-                    isMe
-                      ? 'rounded-2xl rounded-tr-xs'
-                      : 'rounded-2xl rounded-tl-xs border border-[#2d2254]'
-                  }`}
+                  className={`message-bubble relative max-w-[85%] sm:max-w-[65%] p-3 shadow-md cursor-pointer transition-all ${getBubbleShapeClass(isMe)}`}
                   style={{
                     backgroundColor: isMe ? 'var(--mk-bubble-sent-bg)' : 'var(--mk-bubble-recv-bg)',
                     color: isMe ? 'var(--mk-bubble-sent-text)' : 'var(--mk-bubble-recv-text)',
-                    borderRadius: 'var(--mk-bubble-radius, 16px)',
+                    borderRadius: bubbleShape === 'capsule' ? '9999px' : 'var(--mk-bubble-radius, 16px)',
                     fontFamily: 'var(--mk-font-family)'
                   }}
                 >
@@ -2376,6 +2438,18 @@ export const ChatView: React.FC<ChatViewProps> = ({
         isSending={isOptimizingPhoto}
         errorMessage={photoError}
       />
+
+      {/* Direct In-Chat Theme & Personalization Drawer */}
+      {themeConfig && onThemeChange && (
+        <ChatThemeDrawer
+          isOpen={isThemeDrawerOpen}
+          onClose={() => setIsThemeDrawerOpen(false)}
+          themeConfig={themeConfig}
+          onThemeChange={onThemeChange}
+          partnerName={partnerNickname || partnerProfile?.display_name || partnerUser.name}
+          partnerAvatar={partnerUser.avatar}
+        />
+      )}
     </div>
   );
 };

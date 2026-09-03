@@ -1,6 +1,5 @@
 import React from 'react';
 import { MessageSquareHeart, PhoneCall } from 'lucide-react';
-import { AppIcon } from './AppIcon';
 
 export type ActiveTab = 'discussions' | 'appels';
 
@@ -31,18 +30,22 @@ export const TabsNav: React.FC<TabsNavProps> = ({
           borderBottomColor: activeTab === 'discussions' ? 'var(--mk-tabs-active, #00b894)' : 'transparent',
           color: activeTab === 'discussions' ? 'var(--mk-tabs-active, #00b894)' : undefined
         }}
-        className={`flex-1 flex items-center justify-center gap-2 border-b-2 transition-all cursor-pointer ${
+        className={`flex-1 flex items-center justify-center gap-2 border-b-2 transition-all cursor-pointer group ${
           activeTab === 'discussions'
-            ? 'bg-[#1a1435]/60'
+            ? 'bg-[#1a1435]/60 font-black'
             : 'border-transparent text-[#a29bfe]/70 hover:text-[#f1f2f6]'
         }`}
       >
-        <AppIcon icon={MessageSquareHeart} name="MessageSquareHeart" iosEmoji="💌" size={16} />
+        <MessageSquareHeart 
+          size={16} 
+          strokeWidth={activeTab === 'discussions' ? 2.4 : 1.8}
+          className={`transition-transform duration-200 ${activeTab === 'discussions' ? 'scale-110' : ''}`}
+        />
         <span>Discussions</span>
         {unreadCount > 0 && (
           <span 
             style={{ backgroundColor: 'var(--mk-accent, #00b894)' }}
-            className="text-[#130f26] font-extrabold text-[10px] px-1.5 py-0.5 rounded-full min-w-4 h-4 flex items-center justify-center shadow-sm"
+            className="text-[#130f26] font-extrabold text-[10px] px-1.5 py-0.5 rounded-full min-w-4 h-4 flex items-center justify-center shadow-sm animate-pulse"
           >
             {unreadCount}
           </span>
@@ -56,16 +59,20 @@ export const TabsNav: React.FC<TabsNavProps> = ({
           borderBottomColor: activeTab === 'appels' ? 'var(--mk-tabs-active, #00b894)' : 'transparent',
           color: activeTab === 'appels' ? 'var(--mk-tabs-active, #00b894)' : undefined
         }}
-        className={`flex-1 flex items-center justify-center gap-2 border-b-2 transition-all cursor-pointer ${
+        className={`flex-1 flex items-center justify-center gap-2 border-b-2 transition-all cursor-pointer group ${
           activeTab === 'appels'
-            ? 'bg-[#1a1435]/60'
+            ? 'bg-[#1a1435]/60 font-black'
             : 'border-transparent text-[#a29bfe]/70 hover:text-[#f1f2f6]'
         }`}
       >
-        <AppIcon icon={PhoneCall} name="PhoneCall" iosEmoji="📞" size={16} />
+        <PhoneCall 
+          size={16} 
+          strokeWidth={activeTab === 'appels' ? 2.4 : 1.8}
+          className={`transition-transform duration-200 ${activeTab === 'appels' ? 'scale-110' : ''}`}
+        />
         <span>Appels Intimes</span>
         {missedCallsCount > 0 && (
-          <span className="bg-[#ff7675] text-white font-extrabold text-[10px] px-1.5 py-0.5 rounded-full min-w-4 h-4 flex items-center justify-center shadow-sm">
+          <span className="bg-[#ff7675] text-white font-extrabold text-[10px] px-1.5 py-0.5 rounded-full min-w-4 h-4 flex items-center justify-center shadow-sm animate-bounce">
             {missedCallsCount}
           </span>
         )}
@@ -73,3 +80,4 @@ export const TabsNav: React.FC<TabsNavProps> = ({
     </nav>
   );
 };
+

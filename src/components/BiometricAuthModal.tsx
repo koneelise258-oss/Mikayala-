@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Fingerprint, Lock, ShieldCheck, KeyRound, AlertCircle, X } from 'lucide-react';
-import { authenticateWithBiometrics, triggerHaptic } from '../utils/security';
+import { authenticateWithBiometrics, hasRegisteredBiometrics, triggerHaptic } from '../utils/security';
 import { soundEffects } from '../utils/audio';
 
 interface BiometricAuthModalProps {
@@ -32,13 +32,20 @@ export const BiometricAuthModal: React.FC<BiometricAuthModalProps> = ({
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
   const [mode, setMode] = useState<'biometric' | 'pin'>('biometric');
+  const [hasRegistered, setHasRegistered] = useState<boolean>(false);
 
   useEffect(() => {
     if (isOpen) {
       setPinInput('');
       setAuthError(null);
-      // Auto-trigger biometric prompt on open
-      handleBiometricPrompt();
+      const isEnrolled = hasRegisteredBiometrics();
+      setHasRegistered(isEnrolled);
+
+      // Only auto-trigger if biometrics have already been enrolled on this device,
+      // avoiding annoying "Créer une clé d'accès" popups on startup
+      if (isEnrolled) {
+        handleBiometricPrompt();
+      }
     }
   }, [isOpen]);
 
@@ -50,12 +57,16 @@ export const BiometricAuthModal: React.FC<BiometricAuthModalProps> = ({
     try {
       const result = await authenticateWithBiometrics(title);
       if (result.success) {
+        setHasRegistered(true);
         triggerHaptic([50, 50, 100]);
         soundEffects.playSent();
         onSuccess();
       } else {
         triggerHaptic([100, 100]);
-        setAuthError("Validation biométrique annulée. Entrez votre code PIN.");
+        // Do not force error message if user just cancelled
+        if (result.error && !result.error.includes('annulée')) {
+          setAuthError(result.error);
+        }
         setMode('pin');
       }
     } catch {
@@ -81,7 +92,9 @@ export const BiometricAuthModal: React.FC<BiometricAuthModalProps> = ({
           }, 150);
         } else {
           triggerHaptic([150, 80, 150]);
-          setAuthError(`Code PIN incorrect (par défaut : ${effectiveExpectedPin})`);
+          soundEffects.playBiometricFail();
+          // SECURE: Never leak user's code or default PIN
+          setAuthError("Code PIN incorrect. Veuillez réessayer.");
           setTimeout(() => {
             setPinInput('');
           }, 600);
@@ -96,7 +109,7 @@ export const BiometricAuthModal: React.FC<BiometricAuthModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0e0b1c]/95 backdrop-blur-xl p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0e0b1c]/95 backdrop-blur-md p-4 animate-in fade-in duration-200">
       <div className="w-full max-w-sm bg-[#1b1435] border border-[#2d2254] rounded-3xl p-6 shadow-2xl relative flex flex-col items-center text-center">
         {canCancel && handleDismiss && (
           <button
@@ -108,7 +121,7 @@ export const BiometricAuthModal: React.FC<BiometricAuthModalProps> = ({
         )}
 
         {/* Security Shield Icon with Emerald Glow */}
-        <div className="w-18 h-18 rounded-full bg-gradient-to-tr from-[#130f26] to-[#2d2254] border-2 border-[#00b894]/40 flex items-center justify-center mb-4 shadow-[0_0_25px_rgba(0,184,148,0.25)]">
+        <div className="w-18 h-18 rounded-full bg-gradient-to-tr from-[#130f26] to-[#2d2254] border-2 border-[#00b894]/40 flex items-center justify-center mb-4 shadow-[0_0_20px_rgba(0,184,148,0.2)]">
           <ShieldCheck size={36} className="text-[#00b894]" />
         </div>
 
@@ -125,7 +138,7 @@ export const BiometricAuthModal: React.FC<BiometricAuthModalProps> = ({
             <button
               onClick={handleBiometricPrompt}
               disabled={isAuthenticating}
-              className="group w-28 h-28 rounded-full bg-gradient-to-b from-[#281e4b] to-[#171230] border border-[#6c5ce7]/50 hover:border-[#00b894] flex flex-col items-center justify-center shadow-lg transition-all active:scale-95 mb-6 relative overflow-hidden"
+              className="group w-28 h-28 rounded-full bg-gradient-to-b from-[#281e4b] to-[#171230] border border-[#6c5ce7]/50 hover:border-[#00b894] flex flex-col items-center justify-center shadow-lg transition-all active:scale-95 mb-6 relative overflow-hidden cursor-pointer"
             >
               <div className="absolute inset-0 bg-[#00b894]/10 opacity-0 group-hover:opacity-100 transition-opacity rounded-full" />
               <Fingerprint
@@ -133,12 +146,12 @@ export const BiometricAuthModal: React.FC<BiometricAuthModalProps> = ({
                 className={`text-[#00b894] transition-transform ${isAuthenticating ? 'animate-pulse scale-110' : 'group-hover:scale-110'}`}
               />
               <span className="text-[10px] text-[#55efc4] font-medium mt-1">
-                Toucher / FaceID
+                {hasRegistered ? 'Toucher / FaceID' : 'Toucher le capteur'}
               </span>
             </button>
 
             {authError && (
-              <div className="flex items-center gap-1.5 text-xs text-[#ff7675] mb-4 bg-[#ff7675]/10 px-3 py-1.5 rounded-lg border border-[#ff7675]/20">
+              <div className="flex items-center gap-1.5 text-xs text-[#ff7675] mb-4 bg-[#ff7675]/10 px-3 py-1.5 rounded-lg border border-[#ff7675]/20 animate-in fade-in">
                 <AlertCircle size={14} className="shrink-0" />
                 <span>{authError}</span>
               </div>
@@ -149,7 +162,7 @@ export const BiometricAuthModal: React.FC<BiometricAuthModalProps> = ({
                 setMode('pin');
                 setAuthError(null);
               }}
-              className="flex items-center gap-2 text-xs font-semibold text-[#a29bfe] hover:text-[#00b894] transition-colors py-2 px-4 rounded-xl hover:bg-[#281e4b]"
+              className="flex items-center gap-2 text-xs font-semibold text-[#a29bfe] hover:text-[#00b894] transition-colors py-2 px-4 rounded-xl hover:bg-[#281e4b] cursor-pointer"
             >
               <KeyRound size={15} />
               <span>Utiliser le code PIN de secours</span>
@@ -175,7 +188,7 @@ export const BiometricAuthModal: React.FC<BiometricAuthModalProps> = ({
             </div>
 
             {authError && (
-              <div className="flex items-center gap-1.5 text-xs text-[#ff7675] mb-4 bg-[#ff7675]/10 px-3 py-1.5 rounded-lg border border-[#ff7675]/20">
+              <div className="flex items-center gap-1.5 text-xs text-[#ff7675] mb-4 bg-[#ff7675]/10 px-3 py-1.5 rounded-lg border border-[#ff7675]/20 animate-in fade-in">
                 <AlertCircle size={14} className="shrink-0" />
                 <span>{authError}</span>
               </div>
@@ -187,7 +200,7 @@ export const BiometricAuthModal: React.FC<BiometricAuthModalProps> = ({
                 <button
                   key={num}
                   onClick={() => handlePinDigit(num)}
-                  className="h-14 rounded-2xl bg-[#231a44] hover:bg-[#2f225c] active:bg-[#00b894]/20 border border-[#372863] text-lg font-semibold text-[#f1f2f6] flex items-center justify-center transition-all active:scale-95 shadow-sm"
+                  className="h-14 rounded-2xl bg-[#231a44] hover:bg-[#2f225c] active:bg-[#00b894]/20 border border-[#372863] text-lg font-semibold text-[#f1f2f6] flex items-center justify-center transition-all active:scale-95 shadow-sm cursor-pointer"
                 >
                   {num}
                 </button>
@@ -197,20 +210,20 @@ export const BiometricAuthModal: React.FC<BiometricAuthModalProps> = ({
                   setMode('biometric');
                   setAuthError(null);
                 }}
-                className="h-14 rounded-2xl bg-[#1b1435] text-xs text-[#a29bfe] flex flex-col items-center justify-center border border-transparent hover:border-[#372863]"
+                className="h-14 rounded-2xl bg-[#1b1435] text-xs text-[#a29bfe] flex flex-col items-center justify-center border border-transparent hover:border-[#372863] cursor-pointer"
                 title="Retour biométrie"
               >
                 <Fingerprint size={18} className="text-[#00b894]" />
               </button>
               <button
                 onClick={() => handlePinDigit('0')}
-                className="h-14 rounded-2xl bg-[#231a44] hover:bg-[#2f225c] active:bg-[#00b894]/20 border border-[#372863] text-lg font-semibold text-[#f1f2f6] flex items-center justify-center transition-all active:scale-95 shadow-sm"
+                className="h-14 rounded-2xl bg-[#231a44] hover:bg-[#2f225c] active:bg-[#00b894]/20 border border-[#372863] text-lg font-semibold text-[#f1f2f6] flex items-center justify-center transition-all active:scale-95 shadow-sm cursor-pointer"
               >
                 0
               </button>
               <button
                 onClick={handlePinDelete}
-                className="h-14 rounded-2xl bg-[#1b1435] text-xs text-[#ff7675] hover:bg-[#ff7675]/10 flex items-center justify-center font-medium transition-colors"
+                className="h-14 rounded-2xl bg-[#1b1435] text-xs text-[#ff7675] hover:bg-[#ff7675]/10 flex items-center justify-center font-medium transition-colors cursor-pointer"
                 title="Effacer"
               >
                 Effacer

@@ -83,19 +83,20 @@
 .mikayala-chat-bg,
 .wallpaper-doodle-dark {
   background-image: 
-    radial-gradient(rgba(108, 92, 231, 0.16) 1.2px, transparent 1.2px),
-    radial-gradient(rgba(0, 184, 148, 0.12) 1.2px, transparent 1.2px);
-  background-size: 28px 28px;
-  background-position: 0 0, 14px 14px;
+    radial-gradient(rgba(108, 92, 231, 0.35) 1.5px, transparent 1.5px),
+    radial-gradient(rgba(0, 184, 148, 0.3) 1.5px, transparent 1.5px);
+  background-size: 24px 24px;
+  background-position: 0 0, 12px 12px;
 }
 
 /* Light WhatsApp Doodle */
 .wallpaper-doodle-light {
+  background-color: #e5ddd5;
   background-image: 
-    radial-gradient(rgba(0, 0, 0, 0.08) 1.2px, transparent 1.2px),
-    radial-gradient(rgba(0, 92, 75, 0.07) 1.2px, transparent 1.2px);
-  background-size: 28px 28px;
-  background-position: 0 0, 14px 14px;
+    radial-gradient(rgba(0, 0, 0, 0.15) 1.5px, transparent 1.5px),
+    radial-gradient(rgba(0, 92, 75, 0.14) 1.5px, transparent 1.5px);
+  background-size: 24px 24px;
+  background-position: 0 0, 12px 12px;
 }
 
 /* Romantic & Dark Gradients */
@@ -221,4 +222,38 @@
 
 .animate-pulse-record {
   animation: pulse-record 1.2s infinite ease-in-out;
+}
+
+/* ==========================================================================
+   LOW-END DEVICE & MOBILE PERFORMANCE OPTIMIZATIONS
+   ========================================================================== */
+
+/* Fast touch scrolling and overscroll behavior */
+.overflow-y-auto,
+.overflow-x-auto,
+.overflow-auto {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+/* GPU hardware acceleration and isolation for chat bubbles */
+.message-bubble {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  contain: layout style;
+}
+
+/* Skip layout calculation of off-screen message cards for buttery 60fps scrolling */
+.message-item-container {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 54px;
+}
+
+/* Relieve low-end GPU fill-rate on mobile screens */
+@media (max-width: 768px) {
+  .backdrop-blur-2xl,
+  .backdrop-blur-xl {
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+  }
 }
