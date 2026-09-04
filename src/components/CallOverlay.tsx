@@ -37,12 +37,14 @@ export const CallOverlay: React.FC<CallOverlayProps> = ({
 
   useEffect(() => {
     if (localVideoRef.current && localStream) {
+      console.log('[CallOverlay] Attaching local stream to <video>. Video tracks:', localStream.getVideoTracks().length);
       localVideoRef.current.srcObject = localStream;
     }
   }, [localStream, isOpen]);
 
   useEffect(() => {
     if (remoteVideoRef.current && remoteStream) {
+      console.log('[CallOverlay] Attaching remote stream to <video>. Video tracks:', remoteStream.getVideoTracks().length);
       remoteVideoRef.current.srcObject = remoteStream;
     }
   }, [remoteStream, isOpen]);
@@ -123,7 +125,7 @@ export const CallOverlay: React.FC<CallOverlayProps> = ({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[200] bg-[#0a0714] flex flex-col items-center justify-center overflow-hidden"
+      className="always-dark fixed inset-0 z-[200] bg-[#0a0714] flex flex-col items-center justify-center overflow-hidden"
     >
       {/* Audio Element for Remote Stream */}
       <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />

@@ -38,7 +38,8 @@ export function mapDbRecordToMessage(row: any): Message {
     'digital_touch': 'digital_touch',
     'couple_coupon': 'couple_coupon',
     'blind_quiz': 'blind_quiz',
-    'system': 'system'
+    'system': 'system',
+    'game': 'game'
   };
 
   const mappedType: MessageType = typeMap[rawType] || 'text';
@@ -465,6 +466,7 @@ export async function envoyerMessagePhoto(
 
   const cleanCaption = (caption || '').trim();
   const insertPayload: Record<string, any> = {
+    id: crypto.randomUUID(),
     couple_id: targetCoupleId,
     sender_id: currentUserId,
     message_type: 'image',
@@ -486,12 +488,13 @@ export async function envoyerMessagePhoto(
       if (errLower.includes('media_url') || errLower.includes('schema cache') || errLower.includes('column') || insertError.code === 'PGRST204') {
         console.warn('[messageService] Deuxième tentative insertion photo sans media_url...');
         const fallbackPayload = {
-          couple_id: targetCoupleId,
-          sender_id: currentUserId,
-          message_type: 'image',
-          content: cleanCaption,
-          storage_path: storagePath
-        };
+    id: crypto.randomUUID(),
+    couple_id: targetCoupleId,
+    sender_id: currentUserId,
+    message_type: 'image',
+    content: cleanCaption,
+    storage_path: storagePath
+  };
         const retryRes = await supabase
           .from('messages')
           .insert(fallbackPayload)
@@ -543,6 +546,7 @@ export async function envoyerMessageTexte(coupleId: string, contenu: string): Pr
   const currentUserId = await getCurrentUserId();
 
   const insertPayload = {
+    id: crypto.randomUUID(),
     couple_id: targetCoupleId,
     sender_id: currentUserId,
     content: cleanContent,
@@ -649,77 +653,46 @@ export function sAbonnerAuxMessages(
     return () => {};
   }
 
-  let isStopped = false;
-  let retryCount = 0;
-  let activeChannel: any = null;
+  const channelName = `msgs-${targetCoupleId}-${crypto.randomUUID()}`;
+  const channel = supabase.channel(channelName);
 
-  const subscribe = (attempt = 0) => {
-    if (isStopped) return;
-
-    // Nettoyage préventif du canal précédent si existant
-    if (activeChannel) {
-      supabase.removeChannel(activeChannel);
-      activeChannel = null;
-    }
-
-    const channelName = `msgs-${targetCoupleId}-${Date.now()}-${attempt}`;
-    const channel = supabase.channel(channelName);
-
-    channel
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages', filter: `couple_id=eq.${targetCoupleId}` },
-        (payload) => {
-          if (payload.new) onNewMessage(mapDbRecordToMessage(payload.new));
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'messages', filter: `couple_id=eq.${targetCoupleId}` },
-        (payload) => {
-          if (payload.new) onNewMessage(mapDbRecordToMessage(payload.new));
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'messages', filter: `couple_id=eq.${targetCoupleId}` },
-        (payload) => {
-          if (payload.old?.id && onDeleteMessage) onDeleteMessage(payload.old.id);
-        }
-      )
-      .subscribe((status, err) => {
-        if (isStopped) return;
-
-        if (status === 'SUBSCRIBED') {
-          console.log(`[Realtime] Connecté au canal: ${channelName}`);
-          retryCount = 0; // Reset on success
-        } else if (status === 'CHANNEL_ERROR' || status === 'CLOSED') {
-          const errorMsg = err?.message || 'Transport failure or socket closed';
-          console.warn(`[Realtime] Problème (${status}): ${errorMsg}`);
-          
-          if (!isStopped && retryCount < 10) {
-            const delay = Math.min(1000 * Math.pow(2, retryCount), 15000);
-            retryCount++;
-            console.log(`[Realtime] Tentative de reconnexion ${retryCount}/10 dans ${delay}ms...`);
-            setTimeout(() => subscribe(retryCount), delay);
-          } else if (retryCount >= 10 && onError) {
-            onError(new Error("Impossible de maintenir la connexion temps réel après plusieurs tentatives."));
-          }
-        }
-      });
-
-    activeChannel = channel;
-  };
-
-  subscribe();
+  channel
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages', filter: `couple_id=eq.${targetCoupleId}` },
+      (payload) => {
+        if (payload.new) onNewMessage(mapDbRecordToMessage(payload.new));
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'messages', filter: `couple_id=eq.${targetCoupleId}` },
+      (payload) => {
+        if (payload.new) onNewMessage(mapDbRecordToMessage(payload.new));
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: 'DELETE', schema: 'public', table: 'messages', filter: `couple_id=eq.${targetCoupleId}` },
+      (payload) => {
+        if (payload.old?.id && onDeleteMessage) onDeleteMessage(payload.old.id);
+      }
+    )
+    .subscribe((status, err) => {
+      if (status === 'SUBSCRIBED') {
+        console.log(`[Realtime] Connecté au canal: ${channelName}`);
+      } else if (status === 'CHANNEL_ERROR') {
+        console.warn(`[Realtime] Problème de canal (${status}):`, err);
+        // Supabase Realtime se reconnecte automatiquement en cas de perte réseau.
+        // Inutile de lancer un setTimeout manuel.
+      } else if (status === 'CLOSED') {
+        console.log(`[Realtime] Canal fermé (${status}).`);
+      }
+    });
 
   return () => {
     console.log('[Realtime] Désabonnement demandé.');
-    isStopped = true;
-    if (activeChannel) {
-      supabase.removeChannel(activeChannel);
-      activeChannel = null;
-    }
+    supabase.removeChannel(channel);
   };
 }
 
@@ -1038,11 +1011,12 @@ export const sendMessage = async (payload: SendMessagePayload): Promise<Message>
     return await envoyerMessageTexte(coupleId, payload.content);
   }
 
-  // Generic insertion for other features (heartbeat, etc.)
+  // Generic insertion for other features (games, scratch card, heartbeat, etc.)
   if (isSupabaseConfigured() && coupleId) {
     try {
       const senderId = payload.senderId || (await getCurrentUserId());
       const basePayload: Record<string, any> = {
+        id: crypto.randomUUID(),
         couple_id: coupleId,
         sender_id: senderId,
         message_type: payload.type || 'text',
@@ -1055,15 +1029,65 @@ export const sendMessage = async (payload: SendMessagePayload): Promise<Message>
       if (payload.waveform) basePayload.waveform = payload.waveform;
       if (payload.replyToId) basePayload.reply_to_id = payload.replyToId;
       if (payload.isViewOnce) basePayload.is_view_once = payload.isViewOnce;
+      if (payload.scratchCardData) basePayload.scratch_card_data = payload.scratchCardData;
+      if (payload.blindQuizData) basePayload.blind_quiz_data = payload.blindQuizData;
+      if (payload.digitalTouchData) basePayload.digital_touch_data = payload.digitalTouchData;
+      if (payload.couponData) basePayload.coupon_data = payload.couponData;
+      if (payload.pollData) basePayload.poll_data = payload.pollData;
+      if (payload.eventData) basePayload.event_data = payload.eventData;
 
-      const { data } = await supabase
+      let insertRes = await supabase
         .from('messages')
         .insert(basePayload)
         .select()
         .single();
 
-      if (data) {
-        return mapDbRecordToMessage(data);
+      if (insertRes.error) {
+        console.warn('[messageService] Standard insert warning, attempting fallback text payload:', insertRes.error.message);
+        // Fallback with minimal safe columns
+        insertRes = await supabase
+          .from('messages')
+          .insert({
+            id: basePayload.id,
+            couple_id: coupleId,
+            sender_id: senderId,
+            receiver_id: basePayload.receiver_id,
+            message_type: 'text',
+            content: payload.content || ''
+          })
+          .select()
+          .single();
+      }
+
+      if (insertRes.data) {
+        // Send push notification to partner
+        try {
+          const partnerId = getStoredPairingState().partnerId || payload.receiverId;
+          if (partnerId) {
+            let notifTitle = 'Nouveau message 💌';
+            let notifBody = 'Votre partenaire vous a envoyé un message complice.';
+            if (payload.type === 'game') {
+              notifTitle = '🎮 Défi ou Jeu partagé';
+              notifBody = 'Votre partenaire vous a lancé un jeu dans le chat !';
+            } else if (payload.type === 'scratch_card') {
+              notifTitle = '🎫 Message à Gratter';
+              notifBody = 'Une surprise secrète à gratter vous attend...';
+            }
+
+            NotificationService.sendPushViaEdgeFunction({
+              recipientId: partnerId,
+              coupleId: coupleId,
+              title: notifTitle,
+              body: notifBody,
+              data: {
+                senderName: 'Votre amour',
+                messageId: insertRes.data.id
+              }
+            }).catch(() => {});
+          }
+        } catch (e) {}
+
+        return mapDbRecordToMessage(insertRes.data);
       }
     } catch (e) {
       console.warn('[messageService] Non-critical sendMessage generic insert error:', e);

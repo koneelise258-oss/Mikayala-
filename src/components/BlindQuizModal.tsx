@@ -4,6 +4,7 @@ import {
   Send, Plus, Flame, HelpCircle, MessageSquare, ChevronRight
 } from 'lucide-react';
 import { User, BlindQuizQuestion } from '../types';
+import { QuizSession } from '../services/quizService';
 import { triggerHaptic } from '../utils/security';
 import { soundEffects } from '../utils/audio';
 
@@ -14,8 +15,10 @@ interface BlindQuizModalProps {
   quizzes?: BlindQuizQuestion[];
   currentUser: User;
   partnerUser: User;
+  activeSession?: QuizSession | null;
   onAnswerQuestion?: (questionId: string, answerText: string) => void;
   onAnswerQuiz?: (questionId: string, answerText: string) => void;
+  onAnswerSessionQuestion?: (sessionId: string, questionId: string, answerText: string) => void;
   onAddCustomQuestion?: (question: string, category: BlindQuizQuestion['category'], suggestedOptions?: string[]) => void;
   onCreateQuiz?: (quiz: Omit<BlindQuizQuestion, 'id' | 'createdAt' | 'answers' | 'isRevealed'>) => void;
   onShareResultToChat?: (question: BlindQuizQuestion) => void;
@@ -29,14 +32,29 @@ export const BlindQuizModal: React.FC<BlindQuizModalProps> = ({
   quizzes,
   currentUser,
   partnerUser,
+  activeSession,
   onAnswerQuestion,
   onAnswerQuiz,
+  onAnswerSessionQuestion,
   onAddCustomQuestion,
   onCreateQuiz,
   onShareResultToChat,
   onShareToChat
 }) => {
-  const activeQuestions = quizzes || questions || [];
+  const sessionQuestions: BlindQuizQuestion[] = activeSession
+    ? activeSession.state.questions.map(q => {
+        const qAnswers = activeSession.state.answers?.[q.id] || {};
+        const answersCount = Object.keys(qAnswers).length;
+        const bothAnswered = answersCount >= 2;
+        return {
+          ...q,
+          answers: qAnswers,
+          isRevealed: bothAnswered || activeSession.state.status === 'finished'
+        };
+      })
+    : [];
+
+  const activeQuestions = sessionQuestions.length > 0 ? sessionQuestions : (quizzes || questions || []);
   const handleAnswerCallback = onAnswerQuiz || onAnswerQuestion;
   const handleCreateCallback = onAddCustomQuestion || ((q, cat, opts) => onCreateQuiz?.({ question: q, category: cat, suggestedOptions: opts }));
   
@@ -56,7 +74,11 @@ export const BlindQuizModal: React.FC<BlindQuizModalProps> = ({
 
   const handleSendAnswer = (answer: string) => {
     if (!answer.trim() || !currentQ) return;
-    handleAnswerCallback?.(currentQ.id, answer.trim());
+    if (activeSession && onAnswerSessionQuestion) {
+      onAnswerSessionQuestion(activeSession.id, currentQ.id, answer.trim());
+    } else {
+      handleAnswerCallback?.(currentQ.id, answer.trim());
+    }
     triggerHaptic(40);
     soundEffects.playSent();
     setTypedAnswer('');

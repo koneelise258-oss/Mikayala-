@@ -99,7 +99,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black flex flex-col justify-between select-none animate-in fade-in">
+    <div className="always-dark fixed inset-0 z-50 bg-black flex flex-col justify-between select-none animate-in fade-in">
       {/* Top Overlay Controls */}
       <div className="p-4 flex items-center justify-between text-white z-20 bg-gradient-to-b from-black/80 to-transparent">
         <button

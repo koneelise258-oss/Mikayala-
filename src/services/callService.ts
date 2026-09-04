@@ -381,10 +381,20 @@ class CallService {
     this.callState = 'connecting';
     this.isCallActive = true;
 
-    this.localStream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: type === 'video'
-    });
+    try {
+      this.localStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: type === 'video' ? {
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          frameRate: { ideal: 20 },
+          facingMode: 'user'
+        } : false
+      });
+    } catch (error: any) {
+      console.error(`[CallService] getUserMedia error: ${error.name} - ${error.message}`);
+      throw error;
+    }
 
     const audioTracks = this.localStream.getAudioTracks();
     console.log('[CallService startCall] Local audio tracks count:', audioTracks.length);
@@ -418,10 +428,20 @@ class CallService {
     this.callState = 'connecting';
 
     if (!this.localStream) {
+      try {
       this.localStream = await navigator.mediaDevices.getUserMedia({
         audio: true,
-        video: type === 'video'
+        video: type === 'video' ? {
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          frameRate: { ideal: 20 },
+          facingMode: 'user'
+        } : false
       });
+    } catch (error: any) {
+      console.error(`[CallService] getUserMedia error: ${error.name} - ${error.message}`);
+      throw error;
+    }
     }
 
     const audioTracks = this.localStream.getAudioTracks();

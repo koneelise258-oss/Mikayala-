@@ -19,7 +19,8 @@ import {
   RefreshCw,
   Eye,
   Shield,
-  Shuffle
+  Shuffle,
+  Settings
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { gameService } from '../services/gameService';
@@ -42,6 +43,8 @@ interface CoupleGameModalProps {
   partnerUser: User;
   coupleId: string;
   onShareChallengeToChat: (text: string) => void;
+  onShareGameResultToChat?: (payload: any) => void;
+  initialTab?: 'truth_or_dare' | 'wheel' | 'dice' | 'customizer';
 }
 
 export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
@@ -50,9 +53,17 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
   currentUser,
   partnerUser,
   onShareChallengeToChat,
-  coupleId
+  onShareGameResultToChat,
+  coupleId,
+  initialTab = 'wheel'
 }) => {
-  const [activeTab, setActiveTab] = useState<'truth_or_dare' | 'wheel' | 'dice' | 'customizer'>('truth_or_dare');
+  const [activeTab, setActiveTab] = useState<'truth_or_dare' | 'wheel' | 'dice' | 'customizer'>(initialTab);
+
+  useEffect(() => {
+    if (isOpen && initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
   
   // Game Challenges State
   const [challenges, setChallenges] = useState<GameChallenge[]>(() => getStoredGameChallenges());
@@ -61,7 +72,18 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
   // Real-time synchronization
   useEffect(() => {
     if (isOpen && coupleId && currentUser.id) {
-      gameService.setup(coupleId, currentUser.id);
+      gameService.setup(coupleId, currentUser.id, (session) => {
+        // Handle incoming database session updates
+        if (session.game_type === 'challenge_wheel' && session.state?.challenge) {
+          if (session.state.targetAngle) setRotationDegree(session.state.targetAngle);
+          setSelectedWheelChallenge(session.state.challenge);
+        } else if (session.game_type === 'intimate_dice' && session.state?.result) {
+          setDiceResult(session.state.result);
+        } else if (session.game_type === 'truth_or_dare' && session.state?.challenge) {
+          setCurrentTodChallenge(session.state.challenge);
+        }
+      });
+
       gameService.setOnGameEvent((payload) => {
         if (payload.type === 'spin_wheel') {
           // Sync wheel spin
@@ -188,7 +210,12 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
       soundEffects.playReaction();
       triggerHaptic([80, 40, 120]);
 
-      // Sync with partner
+      // Sync with partner & game_sessions
+      gameService.createSession(coupleId, 'truth_or_dare', {
+        challenge: chosen,
+        intensity: chosen.intensity,
+        status: 'finished'
+      });
       gameService.sendEvent(coupleId, currentUser.id, 'draw_tod', { challenge: chosen });
 
       if (chosen.intensity === 3) {
@@ -236,7 +263,12 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
 
       setSelectedWheelChallenge(chosen);
       
-      // Sync with partner
+      // Sync with partner & game_sessions
+      gameService.createSession(coupleId, 'challenge_wheel', {
+        challenge: chosen,
+        targetAngle,
+        status: 'finished'
+      });
       gameService.sendEvent(coupleId, currentUser.id, 'spin_wheel', { targetAngle, challenge: chosen });
 
       soundEffects.playMatchSound();
@@ -283,7 +315,11 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
         soundEffects.playReaction();
         triggerHaptic([100, 100]);
 
-        // Sync with partner
+        // Sync with partner & game_sessions
+        gameService.createSession(coupleId, 'intimate_dice', {
+          result,
+          status: 'finished'
+        });
         gameService.sendEvent(coupleId, currentUser.id, 'roll_dice', { result });
       }
     }, 120);
@@ -412,338 +448,267 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
 
           <button
             onClick={onClose}
-            className="p-2 text-[#a29bfe] hover:text-white rounded-full hover:bg-[#281e4b] transition-colors cursor-pointer"
+            className="w-10 h-10 flex items-center justify-center bg-[#2d2254] hover:bg-[#ff7675]/20 text-[#a29bfe] hover:text-[#ff7675] rounded-xl transition-colors shrink-0"
           >
-            <X size={20} />
+            <X size={18} />
           </button>
         </div>
 
-        {/* 4 Mode Selector Tabs */}
-        <div className="grid grid-cols-4 bg-[#130f26] p-1.5 border-b border-[#2d2254] text-xs font-bold gap-1">
+        {/* Tab Navigation */}
+        <div className="flex items-center gap-1 p-2 bg-[#171230] border-b border-[#2d2254] overflow-x-auto shrink-0 custom-scrollbar">
           <button
             onClick={() => setActiveTab('truth_or_dare')}
-            className={`py-2 px-1 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-              activeTab === 'truth_or_dare'
-                ? 'bg-gradient-to-r from-[#6c5ce7] to-[#fd79a8] text-white shadow-md'
-                : 'text-[#a29bfe] hover:text-white'
+            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+              activeTab === 'truth_or_dare' ? 'bg-[#ff7675] text-[#130f26]' : 'text-[#a29bfe] hover:bg-[#2d2254]'
             }`}
           >
-            <Zap size={14} />
-            <span className="truncate">Action / Vérité</span>
+            Action ou Vérité
           </button>
-
           <button
             onClick={() => setActiveTab('wheel')}
-            className={`py-2 px-1 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-              activeTab === 'wheel'
-                ? 'bg-[#6c5ce7] text-white shadow-md'
-                : 'text-[#a29bfe] hover:text-white'
+            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+              activeTab === 'wheel' ? 'bg-[#e056fd] text-white' : 'text-[#a29bfe] hover:bg-[#2d2254]'
             }`}
           >
-            <RotateCw size={14} />
-            <span className="truncate">Roue</span>
+            Roue Romantique
           </button>
-
           <button
             onClick={() => setActiveTab('dice')}
-            className={`py-2 px-1 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-              activeTab === 'dice'
-                ? 'bg-[#6c5ce7] text-white shadow-md'
-                : 'text-[#a29bfe] hover:text-white'
+            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+              activeTab === 'dice' ? 'bg-[#00b894] text-[#130f26]' : 'text-[#a29bfe] hover:bg-[#2d2254]'
             }`}
           >
-            <Dices size={14} />
-            <span className="truncate">Dés Intimes</span>
+            Dés Intimes
           </button>
-
           <button
             onClick={() => setActiveTab('customizer')}
-            className={`py-2 px-1 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-              activeTab === 'customizer'
-                ? 'bg-[#00b894] text-[#130f26] shadow-md font-black'
-                : 'text-[#55efc4] hover:bg-[#00b894]/10'
+            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ml-auto flex items-center gap-1 ${
+              activeTab === 'customizer' ? 'bg-[#1b1435] text-white border border-[#2d2254]' : 'text-[#a29bfe] hover:bg-[#2d2254]'
             }`}
           >
-            <Sliders size={14} />
-            <span className="truncate">Studio / Éditeur</span>
+            <Settings size={14} />
+            Studio
           </button>
         </div>
 
-        {/* Content Body */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5">
-          {/* ========================================================
-              TAB 1: ACTION OU VÉRITÉ (TRUTH OR DARE)
-             ======================================================== */}
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-5">
+          
+          {/* TAB 1: TRUTH OR DARE */}
           {activeTab === 'truth_or_dare' && (
-            <div className="flex flex-col items-center space-y-4 max-w-lg mx-auto">
-              {/* Turn & Intensity Controls */}
-              <div className="w-full flex flex-col sm:flex-row items-center justify-between gap-3 bg-[#1e173e] p-3 rounded-2xl border border-[#2d2254]">
-                {/* Intensity selector */}
-                <div className="flex items-center gap-1.5 text-xs">
-                  <span className="text-[#a29bfe] font-semibold">Intensité :</span>
-                  {[
-                    { level: 1, label: '🌸 Doux', color: 'text-[#55efc4]' },
-                    { level: 2, label: '🔥 Complice', color: 'text-[#fd79a8]' },
-                    { level: 3, label: '🌶️ Torride', color: 'text-[#ff7675]' },
-                  ].map(lvl => (
+            <div className="flex flex-col items-center justify-center min-h-[300px] gap-4">
+              <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
+                <span className="text-2xl">🔥</span> Action ou Vérité
+              </h3>
+              {currentTodChallenge ? (
+                <div className="flex flex-col items-center gap-3 w-full max-w-md animate-in zoom-in-95">
+                  <div className="bg-[#1b1435] border border-[#ff7675]/40 p-5 rounded-3xl w-full text-center shadow-xl">
+                    <span className="text-2xl mb-1 block">
+                      {currentTodChallenge.type === 'truth' ? '🤫' : '🔥'}
+                    </span>
+                    <h4 className="text-[#ff7675] font-bold text-base mb-1">{currentTodChallenge.title}</h4>
+                    <p className="text-white text-xs sm:text-sm leading-relaxed font-medium">{currentTodChallenge.description}</p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-center gap-2.5 w-full">
                     <button
-                      key={lvl.level}
                       onClick={() => {
-                        setTodIntensity(lvl.level as 1 | 2 | 3);
-                        triggerHaptic(30);
+                        const tods = challenges.filter(c => c.type !== 'wheel');
+                        if (tods.length) setCurrentTodChallenge(tods[Math.floor(Math.random() * tods.length)]);
+                        soundEffects.playBiometricSuccess();
                       }}
-                      className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
-                        todIntensity === lvl.level
-                          ? 'bg-[#130f26] border border-[#6c5ce7] shadow-inner ' + lvl.color
-                          : 'text-[#a29bfe]/60 hover:text-white'
-                      }`}
+                      className="px-4 py-2.5 rounded-xl bg-[#2d2254] hover:bg-[#3d2f6f] text-white text-xs font-bold transition-all cursor-pointer"
                     >
-                      {lvl.label}
+                      Tirer une autre carte 🔄
                     </button>
-                  ))}
-                </div>
 
-                {/* Turn selector */}
-                <div className="flex items-center gap-1 text-[11px] bg-[#130f26] p-1 rounded-xl border border-[#2d2254]">
-                  <button
-                    onClick={() => setActivePlayerTurn(currentUser.id)}
-                    className={`px-2 py-0.5 rounded-lg font-semibold transition-colors cursor-pointer ${
-                      activePlayerTurn === currentUser.id ? 'bg-[#6c5ce7] text-white' : 'text-[#a29bfe]'
-                    }`}
-                  >
-                    Pour moi
-                  </button>
-                  <button
-                    onClick={() => setActivePlayerTurn(partnerUser.id)}
-                    className={`px-2 py-0.5 rounded-lg font-semibold transition-colors cursor-pointer ${
-                      activePlayerTurn === partnerUser.id ? 'bg-[#fd79a8] text-white' : 'text-[#a29bfe]'
-                    }`}
-                  >
-                    Pour {partnerUser.name}
-                  </button>
-                  <button
-                    onClick={() => setActivePlayerTurn('random')}
-                    className={`px-2 py-0.5 rounded-lg font-semibold transition-colors cursor-pointer ${
-                      activePlayerTurn === 'random' ? 'bg-[#00b894] text-[#130f26]' : 'text-[#a29bfe]'
-                    }`}
-                  >
-                    🎲 Aléatoire
-                  </button>
-                </div>
-              </div>
-
-              {/* 3 Main Choice Buttons */}
-              <div className="grid grid-cols-3 gap-3 w-full">
-                <button
-                  onClick={() => handleDrawTruthOrDare('truth')}
-                  className="py-4 px-3 rounded-2xl bg-gradient-to-b from-[#6c5ce7] to-[#4834d4] hover:from-[#5b4bc4] hover:to-[#3826ba] text-white font-extrabold text-xs sm:text-sm flex flex-col items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 cursor-pointer border border-[#6c5ce7]/50"
-                >
-                  <div className="w-9 h-9 rounded-full bg-white/15 flex items-center justify-center">
-                    💬
-                  </div>
-                  <span>VÉRITÉ</span>
-                  <span className="text-[10px] text-white/70 font-normal">Aveu & Secret</span>
-                </button>
-
-                <button
-                  onClick={() => handleDrawTruthOrDare('dare')}
-                  className="py-4 px-3 rounded-2xl bg-gradient-to-b from-[#ff7675] to-[#d63031] hover:from-[#e66767] hover:to-[#b71540] text-white font-extrabold text-xs sm:text-sm flex flex-col items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 cursor-pointer border border-[#ff7675]/50"
-                >
-                  <div className="w-9 h-9 rounded-full bg-white/15 flex items-center justify-center">
-                    ⚡
-                  </div>
-                  <span>ACTION</span>
-                  <span className="text-[10px] text-white/70 font-normal">Gage & Frisson</span>
-                </button>
-
-                <button
-                  onClick={() => handleDrawTruthOrDare('random')}
-                  className="py-4 px-3 rounded-2xl bg-gradient-to-b from-[#00b894] to-[#008f6b] hover:from-[#00a884] hover:to-[#007355] text-[#130f26] font-black text-xs sm:text-sm flex flex-col items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 cursor-pointer border border-[#00b894]/50"
-                >
-                  <div className="w-9 h-9 rounded-full bg-black/15 flex items-center justify-center">
-                    <Shuffle size={18} className="text-[#130f26]" />
-                  </div>
-                  <span>MYSTÈRE</span>
-                  <span className="text-[10px] text-[#130f26]/80 font-bold">Le destin choisit</span>
-                </button>
-              </div>
-
-              {/* Challenge Result Display Card */}
-              {currentTodChallenge && (
-                <div className="w-full bg-gradient-to-b from-[#1f1742] to-[#171230] border-2 border-[#6c5ce7] rounded-3xl p-5 shadow-[0_0_30px_rgba(108,92,231,0.25)] animate-in zoom-in-95 text-center relative overflow-hidden">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-full bg-[#130f26] text-[#55efc4] border border-[#2d2254]">
-                      {currentTodChallenge.type === 'truth' || currentTodChallenge.category === 'vérité' ? '💬 VÉRITÉ' : '⚡ ACTION'}
-                    </span>
-                    <span className="text-[11px] font-bold text-[#fd79a8] flex items-center gap-1">
-                      {currentTodChallenge.intensity === 1 ? '🌸 Doux' : currentTodChallenge.intensity === 2 ? '🔥 Complice' : '🌶️ Torride'}
-                    </span>
-                  </div>
-
-                  <h3 className="text-base sm:text-lg font-black text-white my-2">
-                    {currentTodChallenge.title}
-                  </h3>
-
-                  <p className="text-xs sm:text-sm text-[#f1f2f6] leading-relaxed bg-[#130f26]/80 p-4 rounded-2xl border border-[#2d2254] my-3">
-                    {currentTodChallenge.description}
-                  </p>
-
-                  <div className="space-y-2 mt-4">
                     <button
                       onClick={() => {
-                        const typeLabel = currentTodChallenge.type === 'truth' || currentTodChallenge.category === 'vérité' ? '💬 VÉRITÉ' : '⚡ ACTION';
-                        onShareChallengeToChat(`🎲 *Action ou Vérité Mikayla :*\n👉 *${typeLabel} : ${currentTodChallenge.title}*\n${currentTodChallenge.description} ✨`);
+                        console.log('[Game] Message action ou vérité créé dans le chat');
+                        const challengeText = currentTodChallenge.description || currentTodChallenge.title;
+                        if (onShareGameResultToChat) {
+                          onShareGameResultToChat({
+                            gameType: "truth_or_dare",
+                            result: {
+                              type: currentTodChallenge.type,
+                              title: currentTodChallenge.title,
+                              description: currentTodChallenge.description
+                            }
+                          });
+                        } else {
+                          onShareChallengeToChat(`🔥 *Action ou Vérité Mikayla :*\n👉 *${currentTodChallenge.title} :* ${challengeText}`);
+                        }
                         onClose();
                       }}
-                      className="w-full py-3 px-4 rounded-xl bg-[#00b894] hover:bg-[#00a884] text-[#130f26] font-extrabold text-xs flex items-center justify-center gap-2 shadow-md transition-transform active:scale-95 cursor-pointer"
+                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#ff7675] to-[#fd79a8] hover:from-[#d63031] hover:to-[#e84393] text-[#130f26] font-extrabold text-xs flex items-center gap-2 shadow-lg transition-transform active:scale-95 cursor-pointer"
                     >
-                      <Send size={15} />
-                      <span>Envoyer ce gage dans notre chat</span>
-                    </button>
-
-                    <button
-                      onClick={() => handleDrawTruthOrDare('random')}
-                      className="w-full py-2 text-xs text-[#a29bfe] hover:text-white transition-colors cursor-pointer"
-                    >
-                      Tirer un autre gage 🎲
+                      <Send size={14} />
+                      <span>Partager ce gage dans le chat</span>
                     </button>
                   </div>
                 </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    const tods = challenges.filter(c => c.type !== 'wheel');
+                    if (tods.length) setCurrentTodChallenge(tods[Math.floor(Math.random() * tods.length)]);
+                    soundEffects.playBiometricSuccess();
+                  }}
+                  className="px-8 py-3.5 bg-gradient-to-r from-[#ff7675] to-[#fd79a8] text-[#130f26] rounded-2xl font-extrabold text-sm shadow-xl hover:shadow-[0_0_20px_rgba(255,118,117,0.4)] transition-all active:scale-95 cursor-pointer"
+                >
+                  Tirer une carte 🔥
+                </button>
               )}
-
-              {/* Quick link to customize */}
-              <button
-                onClick={() => {
-                  setActiveTab('customizer');
-                  setShowNewChallengeForm(true);
-                }}
-                className="text-xs text-[#55efc4] hover:underline flex items-center gap-1 font-semibold pt-2 cursor-pointer"
-              >
-                <Plus size={14} />
-                <span>Ajouter vos propres questions et actions personnalisées</span>
-              </button>
             </div>
           )}
 
-          {/* ========================================================
-              TAB 2: ROUE ROMANTIQUE
-             ======================================================== */}
+          {/* TAB 2: WHEEL */}
           {activeTab === 'wheel' && (
-            <div className="w-full flex flex-col items-center">
-              <div className="relative w-64 h-64 sm:w-72 sm:h-72 my-2 flex items-center justify-center">
-                {/* Pointer */}
-                <div className="absolute -top-3 z-30 w-0 h-0 border-l-[12px] border-l-transparent border-r-[12px] border-r-transparent border-t-[20px] border-t-[#00b894] drop-shadow-[0_4px_8px_rgba(0,184,148,0.6)]" />
+            <div className="flex flex-col items-center justify-center min-h-[360px] gap-5 py-2">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <span className="text-2xl">🎡</span> Roue de défis
+              </h3>
 
-                {/* Spinning Wheel */}
+              {/* Visual Spinning Wheel Container */}
+              <div className="relative w-60 h-60 sm:w-64 sm:h-64 flex items-center justify-center my-1">
+                {/* Top Pointer Indicator */}
+                <div className="absolute -top-3 z-20 w-0 h-0 border-l-[10px] border-l-transparent border-r-[10px] border-r-transparent border-t-[18px] border-t-[#ff7675] filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]" />
+
+                {/* Outer Glow Ring */}
+                <div className="absolute inset-0 rounded-full border-4 border-[#e056fd]/30 shadow-[0_0_25px_rgba(224,86,253,0.3)] pointer-events-none" />
+
+                {/* Spinning SVG Wheel */}
                 <div
-                  className="w-full h-full rounded-full border-4 border-[#2d2254] shadow-[0_0_30px_rgba(108,92,231,0.25)] transition-transform duration-[3800ms] ease-out relative overflow-hidden"
-                  style={{ transform: `rotate(${rotationDegree}deg)` }}
+                  className="w-full h-full rounded-full overflow-hidden shadow-2xl relative"
+                  style={{
+                    transform: `rotate(${rotationDegree}deg)`,
+                    transition: isSpinning ? 'transform 3.8s cubic-bezier(0.15, 0.9, 0.2, 1)' : 'none'
+                  }}
                 >
                   <svg viewBox="0 0 100 100" className="w-full h-full">
-                    {wheelSlices.map((slice, idx) => {
-                      const startAngle = (idx * 360) / wheelSlices.length;
-                      const endAngle = ((idx + 1) * 360) / wheelSlices.length;
-                      const x1 = 50 + 50 * Math.cos((Math.PI * (startAngle - 90)) / 180);
-                      const y1 = 50 + 50 * Math.sin((Math.PI * (startAngle - 90)) / 180);
-                      const x2 = 50 + 50 * Math.cos((Math.PI * (endAngle - 90)) / 180);
-                      const y2 = 50 + 50 * Math.sin((Math.PI * (endAngle - 90)) / 180);
-                      const path = `M 50 50 L ${x1} ${y1} A 50 50 0 0 1 ${x2} ${y2} Z`;
+                    {wheelSlices.map((slice, i) => {
+                      const angle = 360 / wheelSlices.length;
+                      const startAngle = i * angle;
+                      const endAngle = (i + 1) * angle;
 
-                      const midAngle = startAngle + (endAngle - startAngle) / 2;
-                      const tx = 50 + 32 * Math.cos((Math.PI * (midAngle - 90)) / 180);
-                      const ty = 50 + 32 * Math.sin((Math.PI * (midAngle - 90)) / 180);
+                      const x1 = 50 + 50 * Math.cos((Math.PI * startAngle) / 180);
+                      const y1 = 50 + 50 * Math.sin((Math.PI * startAngle) / 180);
+                      const x2 = 50 + 50 * Math.cos((Math.PI * endAngle) / 180);
+                      const y2 = 50 + 50 * Math.sin((Math.PI * endAngle) / 180);
+
+                      const pathData = `M 50 50 L ${x1} ${y1} A 50 50 0 0 1 ${x2} ${y2} Z`;
+
+                      const textAngle = startAngle + angle / 2;
+                      const textX = 50 + 32 * Math.cos((Math.PI * textAngle) / 180);
+                      const textY = 50 + 32 * Math.sin((Math.PI * textAngle) / 180);
 
                       return (
-                        <g key={idx}>
-                          <path d={path} fill={slice.color} opacity={0.9} stroke="#171230" strokeWidth="0.8" />
+                        <g key={i}>
+                          <path d={pathData} fill={slice.color} stroke="#130f26" strokeWidth="1" />
                           <text
-                            x={tx}
-                            y={ty}
+                            x={textX}
+                            y={textY}
                             fill="#ffffff"
-                            fontSize="5.5"
+                            fontSize="4.5"
                             fontWeight="bold"
                             textAnchor="middle"
-                            dominantBaseline="central"
-                            transform={`rotate(${midAngle}, ${tx}, ${ty})`}
+                            dominantBaseline="middle"
+                            transform={`rotate(${textAngle + 90}, ${textX}, ${textY})`}
                           >
-                            {slice.icon}
+                            {slice.icon} {slice.label.split(' ')[0]}
                           </text>
                         </g>
                       );
                     })}
                   </svg>
-                </div>
 
-                {/* Center Spin Button */}
+                  {/* Center Knob */}
+                  <div className="absolute inset-0 m-auto w-10 h-10 rounded-full bg-[#130f26] border-2 border-[#e056fd] flex items-center justify-center text-lg shadow-lg">
+                    💖
+                  </div>
+                </div>
+              </div>
+
+              {/* Result or Spin Button */}
+              {selectedWheelChallenge ? (
+                <div className="flex flex-col items-center gap-3 w-full max-w-md animate-in zoom-in-95">
+                  <div className="bg-[#1b1435] border border-[#e056fd]/40 p-5 rounded-3xl w-full text-center shadow-xl">
+                    <span className="text-2xl mb-1 block">✨</span>
+                    <h4 className="text-[#e056fd] font-bold text-base mb-1">{selectedWheelChallenge.title}</h4>
+                    <p className="text-white text-xs sm:text-sm leading-relaxed font-medium">{selectedWheelChallenge.description}</p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-center gap-2.5 w-full">
+                    <button
+                      onClick={handleSpinWheel}
+                      disabled={isSpinning}
+                      className="px-4 py-2.5 rounded-xl bg-[#2d2254] hover:bg-[#3d2f6f] text-white text-xs font-bold transition-all cursor-pointer"
+                    >
+                      Tourner à nouveau 🔄
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        console.log('[Game] Message roue créé dans le chat');
+                        const challengeText = selectedWheelChallenge.description || selectedWheelChallenge.title;
+                        if (onShareGameResultToChat) {
+                          onShareGameResultToChat({
+                            gameType: "challenge_wheel",
+                            result: {
+                              challenge: challengeText
+                            }
+                          });
+                        } else {
+                          onShareChallengeToChat(`🎡 *Roue de défis Mikayla :*\n👉 *Défi :* ${challengeText}`);
+                        }
+                        onClose();
+                      }}
+                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#e056fd] to-[#fd79a8] hover:from-[#be2edd] hover:to-[#e84393] text-white font-extrabold text-xs flex items-center gap-2 shadow-lg transition-transform active:scale-95 cursor-pointer"
+                    >
+                      <Send size={14} />
+                      <span>Partager ce défi dans le chat</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
                 <button
                   onClick={handleSpinWheel}
                   disabled={isSpinning}
-                  className="absolute z-20 w-16 h-16 rounded-full bg-[#130f26] border-4 border-[#00b894] text-white font-bold text-xs flex flex-col items-center justify-center shadow-xl hover:scale-105 active:scale-95 transition-transform disabled:opacity-75 cursor-pointer"
+                  className="px-8 py-3.5 bg-gradient-to-r from-[#e056fd] to-[#fd79a8] hover:from-[#be2edd] hover:to-[#e84393] text-white text-xs sm:text-sm font-extrabold rounded-2xl shadow-xl hover:shadow-[0_0_20px_rgba(224,86,253,0.4)] transition-all active:scale-95 disabled:opacity-50 cursor-pointer flex items-center gap-2"
                 >
-                  <Sparkles size={16} className="text-[#00b894] mb-0.5" />
-                  <span className="text-[10px] uppercase font-black text-[#55efc4]">
-                    {isSpinning ? '...' : 'Tourner'}
-                  </span>
+                  <span className={isSpinning ? 'animate-spin text-base' : 'text-base'}>🎡</span>
+                  <span>{isSpinning ? 'La roue tourne...' : 'Tourner la roue de défis'}</span>
                 </button>
-              </div>
-
-              {selectedWheelChallenge && (
-                <div className="w-full bg-[#1e173e] border border-[#00b894]/60 rounded-2xl p-4 mt-4 animate-in zoom-in-95 shadow-[0_0_20px_rgba(0,184,148,0.2)] text-center">
-                  <div className="flex items-center justify-center gap-1.5 text-xs text-[#55efc4] font-bold mb-1">
-                    <Flame size={14} className="text-[#00b894]" />
-                    <span className="uppercase tracking-wider">Défi Tiré au Sort</span>
-                  </div>
-                  <h4 className="text-base font-bold text-white mb-1.5">
-                    {selectedWheelChallenge.title}
-                  </h4>
-                  <p className="text-xs text-[#f1f2f6] leading-relaxed mb-3">
-                    {selectedWheelChallenge.description}
-                  </p>
-
-                  <button
-                    onClick={() => {
-                      onShareChallengeToChat(`🎲 *Défi Roue Mikayla :* \n*${selectedWheelChallenge.title}* : ${selectedWheelChallenge.description} ✨`);
-                      onClose();
-                    }}
-                    className="w-full py-2.5 px-4 rounded-xl bg-[#00b894] hover:bg-[#00a884] text-[#130f26] font-bold text-xs flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-md cursor-pointer"
-                  >
-                    <Send size={14} />
-                    <span>Envoyer ce défi dans la discussion</span>
-                  </button>
-                </div>
               )}
             </div>
           )}
 
-          {/* ========================================================
-              TAB 3: DÉS INTIMES (SENSUSAL DICE)
-             ======================================================== */}
+          {/* TAB 3: DICE */}
           {activeTab === 'dice' && (
-            <div className="w-full flex flex-col items-center py-2 max-w-lg mx-auto">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full mb-6">
+            <div className="flex flex-col items-center justify-center min-h-[300px] gap-6">
+              
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-lg">
                 <div className="bg-[#1e173e] border border-[#2d2254] rounded-2xl p-4 text-center shadow-md">
                   <span className="text-[10px] uppercase font-bold text-[#a29bfe] tracking-wider block mb-1">
-                    🎲 Action
+                    🎯 Action
                   </span>
-                  <div className="text-sm font-bold text-[#55efc4] min-h-11 flex items-center justify-center">
+                  <div className="text-sm font-bold text-[#55efc4] min-h-[44px] flex items-center justify-center">
                     {diceResult ? diceResult.action : 'Action ?'}
                   </div>
                 </div>
-
                 <div className="bg-[#1e173e] border border-[#2d2254] rounded-2xl p-4 text-center shadow-md">
                   <span className="text-[10px] uppercase font-bold text-[#a29bfe] tracking-wider block mb-1">
                     💋 Zone / Contact
                   </span>
-                  <div className="text-sm font-bold text-[#fd79a8] min-h-11 flex items-center justify-center">
+                  <div className="text-sm font-bold text-[#fd79a8] min-h-[44px] flex items-center justify-center">
                     {diceResult ? diceResult.zone : 'Zone ?'}
                   </div>
                 </div>
-
                 <div className="bg-[#1e173e] border border-[#2d2254] rounded-2xl p-4 text-center shadow-md">
                   <span className="text-[10px] uppercase font-bold text-[#a29bfe] tracking-wider block mb-1">
                     ⏳ Durée / Condition
                   </span>
-                  <div className="text-sm font-bold text-[#ffeaa7] min-h-11 flex items-center justify-center">
+                  <div className="text-sm font-bold text-[#ffeaa7] min-h-[44px] flex items-center justify-center">
                     {diceResult ? diceResult.duration : 'Durée ?'}
                   </div>
                 </div>
@@ -757,11 +722,19 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
                 <Dices size={20} className={isRollingDice ? 'animate-spin' : ''} />
                 <span>{isRollingDice ? 'Lancement des dés...' : 'Lancer les 3 Dés Intimes'}</span>
               </button>
-
+              
               {diceResult && (
                 <button
                   onClick={() => {
-                    onShareChallengeToChat(`🎲 *Dés Intimes Mikayla :* \n👉 *Action :* ${diceResult.action}\n👉 *Zone :* ${diceResult.zone}\n👉 *Condition :* ${diceResult.duration} 🔥`);
+                    console.log('[Game] Message dés créé dans le chat');
+                    if (onShareGameResultToChat) {
+                      onShareGameResultToChat({
+                        gameType: "intimate_dice",
+                        result: diceResult
+                      });
+                    } else {
+                      onShareChallengeToChat(`🎲 *Dés Intimes Mikayla :* \n👉 *Action :* ${diceResult.action}\n👉 *Zone :* ${diceResult.zone}\n👉 *Condition :* ${diceResult.duration} 🔥`);
+                    }
                     onClose();
                   }}
                   className="mt-4 text-xs font-bold text-[#55efc4] hover:underline flex items-center gap-1.5 cursor-pointer"

@@ -67,7 +67,7 @@ export const PhotoPreviewModal: React.FC<PhotoPreviewModalProps> = ({
   const currentError = validationError || errorMessage;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col justify-between select-none animate-in fade-in duration-150">
+    <div className="always-dark fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col justify-between select-none animate-in fade-in duration-150">
       {/* Top Bar */}
       <div className="h-16 px-4 flex items-center justify-between z-20 bg-gradient-to-b from-black/80 to-transparent">
         <button

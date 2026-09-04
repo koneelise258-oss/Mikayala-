@@ -1,14 +1,28 @@
-const CACHE_NAME = 'mikayala-pwa-v2';
+// Prevent vite-plugin-pwa injectManifest error by referencing the manifest
+const MANIFEST_ASSETS = self.__WB_MANIFEST || [];
+
+const CACHE_NAME = 'mikayala-pwa-v4';
+
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
-  '/manifest.json'
+  ...MANIFEST_ASSETS.map(entry => {
+    if (typeof entry === 'string') return entry;
+    if (entry && entry.url) return entry.url;
+    return null;
+  }).filter(Boolean)
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
+      console.log('[SW] Precaching assets:', ASSETS_TO_CACHE);
+      // Fallback on individual caching so one missing file doesn't crash the whole install
+      return Promise.all(
+        ASSETS_TO_CACHE.map(url => 
+          cache.add(url).catch(err => console.warn(`[SW] Failed to cache ${url}:`, err))
+        )
+      );
     })
   );
   self.skipWaiting();
@@ -101,12 +115,15 @@ self.addEventListener('notificationclick', (event) => {
 // Network-First with Cache fallback for seamless updates between User 1 & User 2
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-  
-  // Ignore Supabase and external API requests from Service Worker cache
+      
   const url = new URL(event.request.url);
-  if (url.hostname.includes('supabase.co') || url.pathname.startsWith('/api/')) {
+  
+  // Limiter au même domaine et ignorer Supabase et l'API
+  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) {
     return;
   }
+  
+  console.log(`SW: handling fetch for ${event.request.url}`);
 
   event.respondWith(
     fetch(event.request)
@@ -119,14 +136,21 @@ self.addEventListener('fetch', (event) => {
         }
         return networkResponse;
       })
-      .catch(() => {
+      .catch((err) => {
+        console.log(`SW: error while serving ${event.request.url}: ${err.message}`);
         return caches.match(event.request).then((cachedResponse) => {
           if (cachedResponse) {
+            console.log(`SW: cache hit for ${event.request.url}`);
             return cachedResponse;
           }
-          if (event.request.headers.get('accept')?.includes('text/html')) {
+          console.log(`SW: cache miss for ${event.request.url}`);
+          
+          if (event.request.mode === 'navigate' || (event.request.headers.get('accept') && event.request.headers.get('accept').includes('text/html'))) {
             return caches.match('/index.html');
           }
+          
+          // Return empty response instead of undefined which breaks the page
+          return new Response('', { status: 404, statusText: 'Not Found' });
         });
       })
   );

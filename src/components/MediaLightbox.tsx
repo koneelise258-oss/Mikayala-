@@ -107,7 +107,7 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({
   };
 
   return (
-    <div id="media-lightbox-modal" className="fixed inset-0 z-50 bg-black/95 flex flex-col justify-between select-none animate-in fade-in duration-150">
+    <div id="media-lightbox-modal" className="always-dark fixed inset-0 z-50 bg-black/95 flex flex-col justify-between select-none animate-in fade-in duration-150">
       {/* Top bar */}
       <div className="p-4 flex items-center justify-between text-[#e9edef] z-20 bg-gradient-to-b from-black/80 to-transparent">
         <div className="flex items-center gap-3">

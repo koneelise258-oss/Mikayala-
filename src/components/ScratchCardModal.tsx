@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, Sparkles, Image, Send, Lock, Eye, Palette } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { X, Sparkles, Image as ImageIcon, Send, Lock, Eye, Palette, Upload, Trash2, Camera } from 'lucide-react';
 import { triggerHaptic } from '../utils/security';
 import { soundEffects } from '../utils/audio';
 
@@ -23,8 +23,45 @@ export const ScratchCardModal: React.FC<ScratchCardModalProps> = ({
   const [secretContent, setSecretContent] = useState('');
   const [secretMediaUrl, setSecretMediaUrl] = useState('');
   const [scratchColor, setScratchColor] = useState<'gold' | 'silver' | 'ruby' | 'emerald'>('gold');
+  const [imageFileName, setImageFileName] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   if (!isOpen) return null;
+
+  const handleFileChange = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      alert('Veuillez sélectionner un fichier image valide.');
+      return;
+    }
+
+    setImageFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      if (e.target?.result) {
+        setSecretMediaUrl(e.target.result as string);
+        triggerHaptic(30);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFileChange(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setSecretMediaUrl('');
+    setImageFileName('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    triggerHaptic(20);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,7 +112,7 @@ export const ScratchCardModal: React.FC<ScratchCardModalProps> = ({
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 space-y-3.5">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 space-y-3.5 custom-scrollbar">
           
           <div>
             <label className="text-[11px] font-semibold text-[#a29bfe] block mb-1">Titre de la carte</label>
@@ -118,15 +155,60 @@ export const ScratchCardModal: React.FC<ScratchCardModalProps> = ({
             </div>
           </div>
 
+          {/* Image Import Section */}
           <div>
-            <label className="text-[11px] font-semibold text-[#a29bfe] block mb-1">Photo secrète cachée (facultatif)</label>
-            <input
-              type="url"
-              value={secretMediaUrl}
-              onChange={(e) => setSecretMediaUrl(e.target.value)}
-              placeholder="URL de l'image (https://...)"
-              className="w-full bg-[#130f26] border border-[#2d2254] rounded-xl px-3 py-2 text-xs text-white placeholder-[#a29bfe]/50 focus:outline-none focus:border-[#00b894]"
-            />
+            <label className="text-[11px] font-semibold text-[#a29bfe] block mb-1">
+              Photo secrète cachée (facultatif)
+            </label>
+
+            {secretMediaUrl ? (
+              <div className="relative rounded-2xl overflow-hidden border border-[#00b894]/50 bg-[#130f26] p-2 flex items-center gap-3">
+                <img
+                  src={secretMediaUrl}
+                  alt="Aperçu secret"
+                  className="w-16 h-16 rounded-xl object-cover border border-[#2d2254] shadow-md"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-white truncate">{imageFileName || 'Image secrète importée'}</p>
+                  <p className="text-[10px] text-[#55efc4]">Prête à être dissimulée ✨</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRemoveImage}
+                  className="p-2 rounded-xl bg-[#2d2254] hover:bg-[#ff7675]/20 text-[#ff7675] transition-colors cursor-pointer"
+                  title="Supprimer la photo"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ) : (
+              <div
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-2xl p-4 text-center cursor-pointer transition-all ${
+                  isDragging
+                    ? 'border-[#00b894] bg-[#00b894]/10'
+                    : 'border-[#2d2254] bg-[#130f26]/60 hover:border-[#a29bfe]/50 hover:bg-[#1b1435]'
+                }`}
+              >
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={(e) => e.target.files?.[0] && handleFileChange(e.target.files[0])}
+                  accept="image/*"
+                  className="hidden"
+                />
+                <div className="flex flex-col items-center gap-1.5">
+                  <div className="w-10 h-10 rounded-full bg-[#1b1435] border border-[#2d2254] flex items-center justify-center text-[#ffeaa7]">
+                    <Upload size={18} />
+                  </div>
+                  <span className="text-xs font-bold text-white">Importer une photo depuis l'appareil</span>
+                  <span className="text-[10px] text-[#a29bfe]">Glissez-déposez ou cliquez pour parcourir</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Foil Color Selection */}

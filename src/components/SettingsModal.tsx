@@ -442,13 +442,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <p className="font-bold text-sm text-white">Apparence & Style (Design System)</p>
+                      <p className="font-bold text-sm text-white">Apparence & Thème (Mode Sombre / Clair)</p>
                       <span className="text-[10px] bg-[#00b894]/20 text-[#55efc4] px-1.5 py-0.2 rounded-full font-extrabold">
-                        Complet
+                        Nouveau
                       </span>
                     </div>
                     <p className="text-xs text-[#a29bfe] truncate">
-                      Couleurs CSS :root, Fond d'écran, Bulles, Typographie & Icône PWA
+                      Mode Sombre/Clair, Couleurs :root, Fond d'écran, Bulles, Typographie & Icônes
                     </p>
                   </div>
                 </button>

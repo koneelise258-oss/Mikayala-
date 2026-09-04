@@ -152,7 +152,7 @@ export const Header: React.FC<HeaderProps> = ({
               title="Tapez 3 fois rapidement pour activer le mode Camouflage Fausse Calculatrice"
               className="flex items-center gap-1.5 cursor-pointer active:opacity-80 shrink-0"
             >
-              <span className="font-extrabold text-base tracking-tight bg-gradient-to-r from-white via-[#f1f2f6] to-[#a29bfe] bg-clip-text text-transparent">
+              <span className="font-extrabold text-base tracking-tight text-[var(--mk-header-text,#f1f2f6)]">
                 Mikayla
               </span>
             </div>

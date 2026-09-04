@@ -126,10 +126,21 @@ export const CallModal: React.FC<CallModalProps> = ({
   const startCamera = async () => {
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: isFrontCamera ? 'user' : 'environment' },
-          audio: true
-        });
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { 
+              facingMode: isFrontCamera ? 'user' : 'environment',
+              width: { ideal: 640 },
+              height: { ideal: 480 },
+              frameRate: { ideal: 20 }
+            },
+            audio: true
+          });
+        } catch (error: any) {
+          console.error(`[CallModal] getUserMedia error: ${error.name} - ${error.message}`);
+          throw error;
+        }
         cameraStreamRef.current = stream;
         if (localVideoRef.current && !isScreenSharing) {
           localVideoRef.current.srcObject = stream;
@@ -234,7 +245,7 @@ export const CallModal: React.FC<CallModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#0f0c20] flex flex-col justify-between select-none overflow-hidden animate-in fade-in duration-200">
+    <div className="always-dark fixed inset-0 z-50 bg-[#0f0c20] flex flex-col justify-between select-none overflow-hidden animate-in fade-in duration-200">
       {/* Background for Video Call vs Audio Call vs Screen Share */}
       {callType === 'video' || isScreenSharing ? (
         <div className="absolute inset-0 z-0 bg-[#0a0717]">

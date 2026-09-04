@@ -301,7 +301,7 @@ export const DirectCameraModal: React.FC<DirectCameraModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-label="Appareil photo / caméra direct"
-      className="fixed inset-0 z-50 bg-black flex flex-col justify-between select-none animate-in fade-in duration-200"
+      className="always-dark fixed inset-0 z-50 bg-black flex flex-col justify-between select-none animate-in fade-in duration-200"
     >
       {/* Top Header Bar */}
       <div className="h-16 px-4 flex items-center justify-between z-20 bg-gradient-to-b from-black/90 to-transparent">

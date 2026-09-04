@@ -48,13 +48,16 @@ import {
   clearPairingState
 } from './services/authService';
 import { profileService } from './services/profileService';
+import { quizService, QuizSession } from './services/quizService';
+import { scratchCardService, ScratchCardSession } from './services/scratchCardService';
 import { 
   getMessages,
   obtenirMessages, 
   sAbonnerAuxMessages, 
   envoyerMessageTexte,
   clearSignedUrlCache,
-  deleteMessage
+  deleteMessage,
+  sendMessage
 } from './services/messageService';
 import { 
   formatLastSeen,
@@ -1054,10 +1057,112 @@ export default function App() {
   const [isVaultOpen, setIsVaultOpen] = useState(false);
   const [isWishlistOpen, setIsWishlistOpen] = useState(false);
   const [isGamesOpen, setIsGamesOpen] = useState(false);
+  const [gamesInitialTab, setGamesInitialTab] = useState<'truth_or_dare' | 'wheel' | 'dice' | 'customizer'>('wheel');
   const [isCycleCareOpen, setIsCycleCareOpen] = useState(false);
   const [isHeartbeatOpen, setIsHeartbeatOpen] = useState(false);
   const [isCouponsOpen, setIsCouponsOpen] = useState(false);
   const [isBlindQuizOpen, setIsBlindQuizOpen] = useState(false);
+  const [activeQuizSession, setActiveQuizSession] = useState<QuizSession | null>(null);
+
+  // Setup Quiz Realtime channel & session updates
+  useEffect(() => {
+    const coupleId = pairingState?.coupleId || '';
+    quizService.setup(coupleId, (updatedSession) => {
+      setActiveQuizSession(updatedSession);
+      if (updatedSession.state.status === 'finished') {
+        soundEffects.playReaction();
+        triggerHaptic([150, 80, 250]);
+      }
+    });
+
+    return () => {
+      quizService.cleanup();
+    };
+  }, [pairingState?.coupleId]);
+
+  const [activeScratchSessions, setActiveScratchSessions] = useState<Record<string, ScratchCardSession>>({});
+
+  // Setup Scratch Card Realtime channel & session updates
+  useEffect(() => {
+    const coupleId = pairingState?.coupleId || '';
+    scratchCardService.setup(coupleId, (updatedSession) => {
+      console.log('[Scratch] Session mise à jour reçue:', updatedSession);
+      setActiveScratchSessions((prev) => ({
+        ...prev,
+        [updatedSession.id]: updatedSession
+      }));
+
+      // Update message state in messages list if scratch card game message exists
+      setMessages((prevMsgs) =>
+        prevMsgs.map((msg) => {
+          if (msg.type === 'game') {
+            try {
+              const gameData = typeof msg.content === 'string' ? JSON.parse(msg.content) : msg.content;
+              if (gameData?.gameType === 'scratch_card' && gameData?.sessionId === updatedSession.id) {
+                return {
+                  ...msg,
+                  content: JSON.stringify({
+                    ...gameData,
+                    status: updatedSession.state.status,
+                    scratchedBy: updatedSession.state.scratchedBy,
+                    content: updatedSession.state.content
+                  })
+                };
+              }
+            } catch (e) {}
+          }
+          return msg;
+        })
+      );
+
+      if (updatedSession.state.status === 'scratched') {
+        soundEffects.playReaction();
+        triggerHaptic([100, 50, 150]);
+      }
+    });
+
+    return () => {
+      scratchCardService.cleanup();
+    };
+  }, [pairingState?.coupleId]);
+
+  const handleScratchCardSession = async (sessionId: string) => {
+    const coupleId = pairingState?.coupleId || 'local_couple';
+    console.log('[Scratch] Action grattage pour la session:', sessionId);
+    const updatedSession = await scratchCardService.markCardAsScratched(
+      sessionId,
+      coupleId,
+      currentUser.id
+    );
+
+    setActiveScratchSessions((prev) => ({
+      ...prev,
+      [sessionId]: updatedSession
+    }));
+
+    // Update local messages state
+    setMessages((prevMsgs) =>
+      prevMsgs.map((msg) => {
+        if (msg.type === 'game') {
+          try {
+            const gameData = typeof msg.content === 'string' ? JSON.parse(msg.content) : msg.content;
+            if (gameData?.gameType === 'scratch_card' && gameData?.sessionId === sessionId) {
+              return {
+                ...msg,
+                content: JSON.stringify({
+                  ...gameData,
+                  status: 'scratched',
+                  scratchedBy: currentUser.id,
+                  content: updatedSession.state.content
+                })
+              };
+            }
+          } catch (e) {}
+        }
+        return msg;
+      })
+    );
+  };
   const [isDigitalTouchOpen, setIsDigitalTouchOpen] = useState(false);
   const [isScratchCardOpen, setIsScratchCardOpen] = useState(false);
   const [isLoveTimerOpen, setIsLoveTimerOpen] = useState(false);
@@ -1180,6 +1285,12 @@ export default function App() {
     isCouponsOpen, isBlindQuizOpen, isDigitalTouchOpen, isScratchCardOpen,
     isLoveTimerOpen, isCalendarOpen
   ]);
+
+  const handleOpenGames = (initialTab?: 'truth_or_dare' | 'wheel' | 'dice' | 'customizer') => {
+    setGamesInitialTab(initialTab || 'wheel');
+    setIsGamesOpen(true);
+    openView('games-modal');
+  };
 
   // Helper to push history state when opening a view
   const openView = useCallback((viewName: string) => {
@@ -1378,14 +1489,38 @@ export default function App() {
       return [...prev, newMsg];
     });
 
+    // Notify ChatView immediately so it renders without delay
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('mikayla_new_message_sent', { detail: newMsg }));
+    }
+
     // If offline, increment pending counter
     if (!isOnline) {
       setPendingSyncCount(prev => prev + 1);
     }
 
-    // Simulation dynamique du cycle des coches (Envoyé -> Reçu -> Lu) en mode démo/local
     const isPaired = pairingState?.isPaired && pairingState?.coupleId && isSupabaseConfigured();
-    if (!isPaired) {
+    if (isPaired && (!msgData.id || msgData.id.startsWith('msg_'))) {
+      // Asynchronously persist to Supabase
+      (async () => {
+        try {
+          const persisted = await sendMessage({
+            ...newMsg,
+            senderId: newMsg.senderId || currentUser.id,
+            receiverId: newMsg.receiverId || partnerUser.id
+          });
+          if (persisted && persisted.id && persisted.id !== msgId) {
+            setMessages(prev =>
+              prev.map(m => (m.id === msgId ? { ...persisted, status: 'sent' } : m))
+            );
+            window.dispatchEvent(new CustomEvent('mikayla_new_message_sent', { detail: persisted }));
+          }
+        } catch (err) {
+          console.warn('[App] Non-critical background message sync warning:', err);
+        }
+      })();
+    } else if (!isPaired) {
+      // Simulation dynamique du cycle des coches (Envoyé -> Reçu -> Lu) en mode démo/local
       // Étape 1 : Distribué / Reçu sur l'appareil (2 coches grises) après 800ms
       setTimeout(() => {
         setMessages(prev =>
@@ -1651,6 +1786,120 @@ export default function App() {
     });
   };
 
+  // Realtime Session Quiz Handlers
+  const handleOpenBlindQuizSession = async (existingSessionId?: string) => {
+    if (existingSessionId && activeQuizSession?.id === existingSessionId) {
+      setIsBlindQuizOpen(true);
+      openView('quiz');
+      return;
+    }
+
+    // Create a new session in game_sessions
+    const coupleId = pairingState?.coupleId || 'local_couple';
+    const session = await quizService.createQuizSession(coupleId);
+    setActiveQuizSession(session);
+
+    // Send "❓ Quiz lancé" message in chat
+    const quizPayload = {
+      gameType: 'blind_quiz',
+      sessionId: session.id,
+      status: 'waiting',
+      title: 'Quiz Double Aveugle',
+      question: session.state.questions[0]?.question
+    };
+
+    if (pairingState?.isPaired && pairingState?.coupleId && isSupabaseConfigured()) {
+      try {
+        const sentMsg = await sendMessage({
+          type: 'game',
+          content: JSON.stringify(quizPayload),
+          senderId: currentUser.id,
+          receiverId: partnerUser.id
+        });
+        handleSendMessage(sentMsg);
+      } catch(e) {
+        handleSendMessage({
+          type: 'game',
+          content: JSON.stringify(quizPayload),
+          senderId: currentUser.id,
+          receiverId: partnerUser.id
+        });
+      }
+    } else {
+      handleSendMessage({
+        type: 'game',
+        content: JSON.stringify(quizPayload),
+        senderId: currentUser.id,
+        receiverId: partnerUser.id
+      });
+    }
+
+    setIsBlindQuizOpen(true);
+    openView('quiz');
+  };
+
+  const handleAnswerSessionQuestion = async (sessionId: string, questionId: string, answerText: string) => {
+    const coupleId = pairingState?.coupleId || 'local_couple';
+    const updatedSession = await quizService.saveAnswerToSession(
+      sessionId,
+      coupleId,
+      currentUser.id,
+      questionId,
+      answerText
+    );
+    setActiveQuizSession(updatedSession);
+
+    if (updatedSession.state.status === 'finished') {
+      const q = updatedSession.state.questions.find(x => x.id === questionId) || updatedSession.state.questions[0];
+      const qAnswers = updatedSession.state.answers?.[q.id] || {};
+      const myAns = qAnswers[currentUser.id]?.answerText || answerText;
+      const partnerAns = qAnswers[partnerUser.id]?.answerText || '';
+
+      const completionPayload = {
+        gameType: 'blind_quiz',
+        sessionId,
+        status: 'finished',
+        title: 'Quiz Double Aveugle - Terminé',
+        question: q?.question,
+        summary: {
+          user1Name: currentUser.name,
+          user1Answer: myAns,
+          user2Name: partnerUser.name,
+          user2Answer: partnerAns
+        }
+      };
+
+      if (pairingState?.isPaired && pairingState?.coupleId && isSupabaseConfigured()) {
+        try {
+          const sentMsg = await sendMessage({
+            type: 'game',
+            content: JSON.stringify(completionPayload),
+            senderId: currentUser.id,
+            receiverId: partnerUser.id
+          });
+          handleSendMessage(sentMsg);
+        } catch(e) {
+          handleSendMessage({
+            type: 'game',
+            content: JSON.stringify(completionPayload),
+            senderId: currentUser.id,
+            receiverId: partnerUser.id
+          });
+        }
+      } else {
+        handleSendMessage({
+          type: 'game',
+          content: JSON.stringify(completionPayload),
+          senderId: currentUser.id,
+          receiverId: partnerUser.id
+        });
+      }
+
+      soundEffects.playReaction();
+      triggerHaptic([150, 80, 250]);
+    }
+  };
+
   // Digital Touch Handler
   const handleSendDigitalTouch = (previewUrl: string, strokes: any[], hasHeartbeat: boolean) => {
     const digitalTouchData: DigitalTouchData = {
@@ -1671,19 +1920,35 @@ export default function App() {
   };
 
   // Scratch Card Handler
-  const handleSendScratchCard = (cardData: Omit<ScratchCardData, 'id' | 'isScratched' | 'scratchProgress'>) => {
-    const scratchCardData: ScratchCardData = {
-      ...cardData,
-      id: `scratch_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-      isScratched: false,
-      scratchProgress: 0
+  const handleSendScratchCard = async (cardData: Omit<ScratchCardData, 'id' | 'isScratched' | 'scratchProgress'>) => {
+    const coupleId = pairingState?.coupleId || 'local_couple';
+    const contentPayload = {
+      title: cardData.title,
+      secretContent: cardData.secretContent,
+      secretMediaUrl: cardData.secretMediaUrl,
+      scratchColor: cardData.scratchColor
+    };
+
+    const session = await scratchCardService.createScratchSession(
+      coupleId,
+      currentUser.id,
+      contentPayload
+    );
+
+    const scratchGamePayload = {
+      gameType: 'scratch_card',
+      sessionId: session.id,
+      status: 'created',
+      content: contentPayload,
+      createdBy: currentUser.id,
+      scratchedBy: null
     };
 
     handleSendMessage({
-      type: 'scratch_card',
-      content: 'Message Secret à Gratter 🎁',
-      scratchCardData
+      type: 'game',
+      content: JSON.stringify(scratchGamePayload)
     });
+
     soundEffects.playSent();
     triggerHaptic(50);
   };
@@ -1803,9 +2068,10 @@ export default function App() {
                 onOpenCycleCare={() => setIsCycleCareOpen(true)}
                 onOpenHeartbeat={() => setIsHeartbeatOpen(true)}
                 onOpenCoupons={() => setIsCouponsOpen(true)}
-                onOpenBlindQuiz={() => setIsBlindQuizOpen(true)}
+                onOpenBlindQuiz={(sessionId) => handleOpenBlindQuizSession(sessionId)}
                 onOpenDigitalTouch={() => setIsDigitalTouchOpen(true)}
                 onOpenScratchCard={() => setIsScratchCardOpen(true)}
+                onScratchCardSession={handleScratchCardSession}
                 onClaimCoupon={handleClaimCoupon}
                 onRedeemCoupon={handleRedeemCoupon}
                 coupleId={pairingState?.coupleId || ''}
@@ -1892,6 +2158,7 @@ export default function App() {
                         partnerProfile={partnerProfile}
                         partnerNickname={partnerNickname}
                         messages={messages}
+                        isPartnerOnline={isPartnerOnline}
                         onSelectChat={() => setIsChatOpen(true)}
                         onOpenNewChat={() => setIsQRCodeOpen(true)}
                         onOpenVault={handleOpenVault}
@@ -1996,11 +2263,12 @@ export default function App() {
                       partnerProfile={partnerProfile}
                       partnerNickname={partnerNickname}
                       messages={messages}
+                      isPartnerOnline={isPartnerOnline}
                       onSelectChat={() => { setIsChatOpen(true); openView('chat'); }}
                       onOpenNewChat={() => { setIsQRCodeOpen(true); openView('qr'); }}
                       onOpenVault={handleOpenVault}
                       onOpenWishlist={() => { setIsWishlistOpen(true); openView('wishlist'); }}
-                      onOpenGames={() => { setIsGamesOpen(true); openView('games'); }}
+                      onOpenGames={(tab) => handleOpenGames(tab)}
                       onOpenLoveTimer={() => { setIsLoveTimerOpen(true); openView('timer'); }}
                       onOpenCalendar={() => { setIsCalendarOpen(true); openView('calendar'); }}
                       onOpenCoupons={() => { setIsCouponsOpen(true); openView('coupons'); }}
@@ -2056,13 +2324,14 @@ export default function App() {
               onOpenLocationModal={() => { setIsLocationModalOpen(true); openView('location'); }}
               onOpenVault={handleOpenVault}
               onOpenWishlist={() => { setIsWishlistOpen(true); openView('wishlist'); }}
-              onOpenGames={() => { setIsGamesOpen(true); openView('games-modal'); }}
+              onOpenGames={(tab) => handleOpenGames(tab)}
               onOpenCycleCare={() => { setIsCycleCareOpen(true); openView('cycle'); }}
               onOpenHeartbeat={() => { setIsHeartbeatOpen(true); openView('heartbeat'); }}
               onOpenCoupons={() => { setIsCouponsOpen(true); openView('coupons'); }}
-              onOpenBlindQuiz={() => { setIsBlindQuizOpen(true); openView('quiz'); }}
+              onOpenBlindQuiz={(sessionId) => handleOpenBlindQuizSession(sessionId)}
               onOpenDigitalTouch={() => { setIsDigitalTouchOpen(true); openView('touch'); }}
               onOpenScratchCard={() => { setIsScratchCardOpen(true); openView('scratch'); }}
+              onScratchCardSession={handleScratchCardSession}
               onClaimCoupon={handleClaimCoupon}
               onRedeemCoupon={handleRedeemCoupon}
               coupleId={pairingState?.coupleId || ''}
@@ -2216,6 +2485,8 @@ export default function App() {
           quizzes={quizzes}
           currentUser={currentUser}
           partnerUser={partnerUser}
+          activeSession={activeQuizSession}
+          onAnswerSessionQuestion={handleAnswerSessionQuestion}
           onAnswerQuiz={handleAnswerQuiz}
           onCreateQuiz={handleCreateQuiz}
           onShareResultToChat={(question) => {
@@ -2305,11 +2576,42 @@ export default function App() {
           currentUser={currentUser}
           partnerUser={partnerUser}
           coupleId={pairingState?.coupleId || ''}
+          initialTab={gamesInitialTab}
           onShareChallengeToChat={(text) => {
             handleSendMessage({
               type: 'text',
               content: text
             });
+            setIsChatOpen(true);
+          }}
+          onShareGameResultToChat={async (payload) => {
+            console.log('[Game] Message roue créé dans le chat');
+            const isPaired = pairingState?.isPaired && pairingState?.coupleId && isSupabaseConfigured();
+            if (isPaired) {
+              try {
+                const sentMessage = await sendMessage({
+                  type: 'game',
+                  content: JSON.stringify(payload),
+                  senderId: currentUser.id,
+                  receiverId: partnerUser.id
+                });
+                handleSendMessage(sentMessage);
+              } catch (e) {
+                handleSendMessage({
+                  type: 'game',
+                  content: JSON.stringify(payload),
+                  senderId: currentUser.id,
+                  receiverId: partnerUser.id
+                });
+              }
+            } else {
+              handleSendMessage({
+                type: 'game',
+                content: JSON.stringify(payload),
+                senderId: currentUser.id,
+                receiverId: partnerUser.id
+              });
+            }
             setIsChatOpen(true);
           }}
         />
@@ -2394,6 +2696,8 @@ export default function App() {
           partnerUser={partnerUser}
           partnerProfile={partnerProfile}
           partnerNickname={partnerNickname}
+          isPartnerOnline={isPartnerOnline}
+          partnerLastSeen={partnerLastSeen}
           coupleId={pairingState.coupleId || undefined}
           onNicknameUpdated={async () => {
             if (pairingState.partnerId && pairingState.coupleId) {

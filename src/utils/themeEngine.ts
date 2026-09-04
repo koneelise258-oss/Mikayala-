@@ -4,7 +4,8 @@ import {
   WallpaperConfig, 
   TypographyConfig, 
   AppIconPreset,
-  FontFamilyOption
+  FontFamilyOption,
+  ThemeMode
 } from '../types';
 
 export const THEME_STORAGE_KEY = 'mikayla_theme_config';
@@ -36,12 +37,47 @@ export const DEFAULT_COLORS: CustomColors = {
   bottomNavBg: '#130f26'
 };
 
+export const DEFAULT_LIGHT_COLORS: CustomColors = {
+  // 1. EN-TÊTE & NAVIGATION
+  headerBg: '#ffffff',
+  headerText: '#1e1b4b',
+  tabsBg: '#f8fafc',
+  tabsActiveIndicator: '#00b894',
+
+  // 2. BULLES DE MESSAGES ENVOYÉS (Moi)
+  bubbleSentBg: '#d9fdd3',
+  bubbleSentText: '#111b21',
+  bubbleSentTime: '#667781',
+  tickSingle: '#8696a0',
+  tickDelivered: '#8696a0',
+  tickRead: '#53bdeb',
+
+  // 3. BULLES DE MESSAGES REÇUS (Partenaire)
+  bubbleRecvBg: '#ffffff',
+  bubbleRecvText: '#111b21',
+  bubbleRecvSender: '#0984e3',
+  bubbleRecvTime: '#667781',
+
+  // 4. ÉLÉMENTS D'ACCENTUATION ET INTERFACE
+  accentColor: '#00b894',
+  inputBg: '#f0f2f5',
+  bottomNavBg: '#ffffff'
+};
+
 export const DEFAULT_WALLPAPER: WallpaperConfig = {
   preset: 'doodle_dark',
   customColor: '#130f26',
   opacity: 85,
   blur: 0,
   darkOverlay: 35
+};
+
+export const DEFAULT_LIGHT_WALLPAPER: WallpaperConfig = {
+  preset: 'doodle_light',
+  customColor: '#efeae2',
+  opacity: 85,
+  blur: 0,
+  darkOverlay: 0
 };
 
 export const DEFAULT_TYPOGRAPHY: TypographyConfig = {
@@ -204,21 +240,25 @@ export const DEFAULT_THEME_CONFIG: AppThemeConfig = {
 };
 
 // ==========================================
-// PRE-INTEGRATED THEME PRESETS
+// PRE-INTEGRATED THEME PRESETS (Dark & Light)
 // ==========================================
 export const PRESET_THEMES: Array<{
   id: string;
   name: string;
+  mode: 'dark' | 'light';
   description: string;
   previewColors: string[];
   config: Partial<AppThemeConfig>;
 }> = [
+  // --- SOMBRES (DARK) ---
   {
     id: 'mikayla_default',
-    name: 'Mikayla Intime',
+    name: 'Mikayla Nuit Émeraude',
+    mode: 'dark',
     description: 'Dark Violet & Émeraude étincelant avec motifs nocturnes',
     previewColors: ['#130f26', '#00b894', '#6c5ce7', '#005c4b'],
     config: {
+      mode: 'dark',
       colors: { ...DEFAULT_COLORS },
       wallpaper: {
         preset: 'doodle_dark',
@@ -232,9 +272,11 @@ export const PRESET_THEMES: Array<{
   {
     id: 'whatsapp_dark',
     name: 'WhatsApp Dark Classic',
+    mode: 'dark',
     description: 'Style officiel WhatsApp sombre avec coches cyan & doodle',
     previewColors: ['#111b21', '#005c4b', '#202c33', '#53bdeb'],
     config: {
+      mode: 'dark',
       colors: {
         headerBg: '#202c33',
         headerText: '#e9edef',
@@ -266,9 +308,11 @@ export const PRESET_THEMES: Array<{
   {
     id: 'rose_nuit',
     name: 'Rose Nuit Romantique',
+    mode: 'dark',
     description: 'Ambiance intime douce, framboise velours et rose passion',
     previewColors: ['#1d0e1c', '#fd79a8', '#ff7675', '#2d142c'],
     config: {
+      mode: 'dark',
       colors: {
         headerBg: '#261226',
         headerText: '#fff0f5',
@@ -300,9 +344,11 @@ export const PRESET_THEMES: Array<{
   {
     id: 'cyber_neon',
     name: 'Cyber Neon Purple',
+    mode: 'dark',
     description: 'Contraste cyberpunk électrique, violet néon & touches cyan',
     previewColors: ['#0d081e', '#a855f7', '#06b6d4', '#4c1d95'],
     config: {
+      mode: 'dark',
       colors: {
         headerBg: '#140c30',
         headerText: '#f3e8ff',
@@ -334,9 +380,11 @@ export const PRESET_THEMES: Array<{
   {
     id: 'emerald_abyss',
     name: 'Vert Émeraude Profond',
+    mode: 'dark',
     description: 'Ardoise sombre minérale et vert émeraude pur apaisant',
     previewColors: ['#0a1413', '#10b981', '#064e3b', '#34d399'],
     config: {
+      mode: 'dark',
       colors: {
         headerBg: '#0e1f1e',
         headerText: '#ecfdf5',
@@ -368,9 +416,11 @@ export const PRESET_THEMES: Array<{
   {
     id: 'slate_midnight',
     name: 'Dark Slate & Indigo',
+    mode: 'dark',
     description: 'Sobriété et élégance moderne en nuances ardoise & indigo',
     previewColors: ['#0b1120', '#6366f1', '#1e293b', '#38bdf8'],
     config: {
+      mode: 'dark',
       colors: {
         headerBg: '#111827',
         headerText: '#f8fafc',
@@ -396,6 +446,152 @@ export const PRESET_THEMES: Array<{
         opacity: 90,
         blur: 0,
         darkOverlay: 25
+      }
+    }
+  },
+
+  // --- CLAIRS (LIGHT) ---
+  {
+    id: 'whatsapp_light',
+    name: 'WhatsApp Clair Officiel',
+    mode: 'light',
+    description: 'Style officiel WhatsApp clair, fond beige chaud & bulles vertes',
+    previewColors: ['#efeae2', '#008069', '#d9fdd3', '#53bdeb'],
+    config: {
+      mode: 'light',
+      colors: {
+        headerBg: '#008069',
+        headerText: '#ffffff',
+        tabsBg: '#008069',
+        tabsActiveIndicator: '#ffffff',
+        bubbleSentBg: '#d9fdd3',
+        bubbleSentText: '#111b21',
+        bubbleSentTime: '#667781',
+        tickSingle: '#8696a0',
+        tickDelivered: '#8696a0',
+        tickRead: '#53bdeb',
+        bubbleRecvBg: '#ffffff',
+        bubbleRecvText: '#111b21',
+        bubbleRecvSender: '#008069',
+        bubbleRecvTime: '#667781',
+        accentColor: '#008069',
+        inputBg: '#f0f2f5',
+        bottomNavBg: '#ffffff'
+      },
+      wallpaper: {
+        preset: 'doodle_light',
+        customColor: '#efeae2',
+        opacity: 90,
+        blur: 0,
+        darkOverlay: 0
+      }
+    }
+  },
+  {
+    id: 'mikayla_light_pure',
+    name: 'Mikayla Blanc Pur & Lavande',
+    mode: 'light',
+    description: 'Interface claire, douce et lumineuse avec accents lilas & émeraude',
+    previewColors: ['#f8fafc', '#6c5ce7', '#00b894', '#ede9fe'],
+    config: {
+      mode: 'light',
+      colors: {
+        headerBg: '#ffffff',
+        headerText: '#1e1b4b',
+        tabsBg: '#f8fafc',
+        tabsActiveIndicator: '#6c5ce7',
+        bubbleSentBg: '#ede9fe',
+        bubbleSentText: '#2e1065',
+        bubbleSentTime: '#6d28d9',
+        tickSingle: '#8b5cf6',
+        tickDelivered: '#8b5cf6',
+        tickRead: '#00b894',
+        bubbleRecvBg: '#ffffff',
+        bubbleRecvText: '#1e293b',
+        bubbleRecvSender: '#6c5ce7',
+        bubbleRecvTime: '#64748b',
+        accentColor: '#6c5ce7',
+        inputBg: '#f1f5f9',
+        bottomNavBg: '#ffffff'
+      },
+      wallpaper: {
+        preset: 'doodle_light',
+        customColor: '#f1f5f9',
+        opacity: 75,
+        blur: 0,
+        darkOverlay: 0
+      }
+    }
+  },
+  {
+    id: 'rose_poudre_light',
+    name: 'Rose Poudré & Pêche',
+    mode: 'light',
+    description: 'Clair romantique, teintes pétales de rose, pêche et blanc satiné',
+    previewColors: ['#fff1f2', '#f43f5e', '#ffe4e6', '#fda4af'],
+    config: {
+      mode: 'light',
+      colors: {
+        headerBg: '#ffffff',
+        headerText: '#881337',
+        tabsBg: '#fff1f2',
+        tabsActiveIndicator: '#f43f5e',
+        bubbleSentBg: '#ffe4e6',
+        bubbleSentText: '#881337',
+        bubbleSentTime: '#be123c',
+        tickSingle: '#fb7185',
+        tickDelivered: '#fb7185',
+        tickRead: '#e11d48',
+        bubbleRecvBg: '#ffffff',
+        bubbleRecvText: '#1c1917',
+        bubbleRecvSender: '#e11d48',
+        bubbleRecvTime: '#78716c',
+        accentColor: '#f43f5e',
+        inputBg: '#ffe4e6',
+        bottomNavBg: '#ffffff'
+      },
+      wallpaper: {
+        preset: 'doodle_light',
+        customColor: '#fff1f2',
+        opacity: 80,
+        blur: 0,
+        darkOverlay: 0
+      }
+    }
+  },
+  {
+    id: 'mint_light',
+    name: 'Menthe Fraîche & Azur',
+    mode: 'light',
+    description: 'Atmosphère zen et claire, vert menthe pur et ciel doux',
+    previewColors: ['#f0fdf4', '#059669', '#dcfce7', '#0284c7'],
+    config: {
+      mode: 'light',
+      colors: {
+        headerBg: '#ffffff',
+        headerText: '#064e3b',
+        tabsBg: '#f0fdf4',
+        tabsActiveIndicator: '#059669',
+        bubbleSentBg: '#dcfce7',
+        bubbleSentText: '#064e3b',
+        bubbleSentTime: '#047857',
+        tickSingle: '#34d399',
+        tickDelivered: '#34d399',
+        tickRead: '#0284c7',
+        bubbleRecvBg: '#ffffff',
+        bubbleRecvText: '#0f172a',
+        bubbleRecvSender: '#059669',
+        bubbleRecvTime: '#64748b',
+        accentColor: '#059669',
+        inputBg: '#f0fdf4',
+        bottomNavBg: '#ffffff'
+      },
+      wallpaper: {
+        preset: 'doodle_light',
+        customColor: '#f0fdf4',
+        opacity: 85,
+        blur: 0,
+        darkOverlay: 0
       }
     }
   }
@@ -426,33 +622,50 @@ export const applyThemeToDOM = (theme: AppThemeConfig) => {
   const typography = theme?.typography || DEFAULT_TYPOGRAPHY;
   const wallpaper = theme?.wallpaper || DEFAULT_WALLPAPER;
 
+  // Determine mode (auto-detect if missing based on wallpaper/header background luminance)
+  const headerLum = getLuminance(rawColors.headerBg || '#171230');
+  const wallLum = getLuminance(wallpaper.customColor || '#130f26');
+  const isLightMode = theme.mode === 'light' || (theme.mode !== 'dark' && (headerLum > 0.45 || wallLum > 0.45));
+
+  if (isLightMode) {
+    root.classList.remove('dark');
+    root.classList.add('light');
+    root.style.colorScheme = 'light';
+    root.setAttribute('data-theme-mode', 'light');
+  } else {
+    root.classList.remove('light');
+    root.classList.add('dark');
+    root.style.colorScheme = 'dark';
+    root.setAttribute('data-theme-mode', 'dark');
+  }
+
   // Compute adaptive high-contrast colors
   const colors = autoAdaptColorsToContrast(rawColors);
 
   // Header & Tabs
-  root.style.setProperty('--mk-header-bg', colors.headerBg || DEFAULT_COLORS.headerBg);
-  root.style.setProperty('--mk-header-text', colors.headerText || DEFAULT_COLORS.headerText);
-  root.style.setProperty('--mk-tabs-bg', colors.tabsBg || DEFAULT_COLORS.tabsBg);
+  root.style.setProperty('--mk-header-bg', colors.headerBg || (isLightMode ? DEFAULT_LIGHT_COLORS.headerBg : DEFAULT_COLORS.headerBg));
+  root.style.setProperty('--mk-header-text', colors.headerText || (isLightMode ? DEFAULT_LIGHT_COLORS.headerText : DEFAULT_COLORS.headerText));
+  root.style.setProperty('--mk-tabs-bg', colors.tabsBg || (isLightMode ? DEFAULT_LIGHT_COLORS.tabsBg : DEFAULT_COLORS.tabsBg));
   root.style.setProperty('--mk-tabs-active', colors.tabsActiveIndicator || DEFAULT_COLORS.tabsActiveIndicator);
 
   // Sent Messages (Adaptive high-contrast text & timestamps)
-  root.style.setProperty('--mk-bubble-sent-bg', colors.bubbleSentBg || DEFAULT_COLORS.bubbleSentBg);
-  root.style.setProperty('--mk-bubble-sent-text', colors.bubbleSentText || DEFAULT_COLORS.bubbleSentText);
-  root.style.setProperty('--mk-bubble-sent-time', colors.bubbleSentTime || DEFAULT_COLORS.bubbleSentTime);
+  root.style.setProperty('--mk-bubble-sent-bg', colors.bubbleSentBg || (isLightMode ? DEFAULT_LIGHT_COLORS.bubbleSentBg : DEFAULT_COLORS.bubbleSentBg));
+  root.style.setProperty('--mk-bubble-sent-text', colors.bubbleSentText || (isLightMode ? DEFAULT_LIGHT_COLORS.bubbleSentText : DEFAULT_COLORS.bubbleSentText));
+  root.style.setProperty('--mk-bubble-sent-time', colors.bubbleSentTime || (isLightMode ? DEFAULT_LIGHT_COLORS.bubbleSentTime : DEFAULT_COLORS.bubbleSentTime));
   root.style.setProperty('--mk-tick-single', colors.tickSingle || DEFAULT_COLORS.tickSingle);
   root.style.setProperty('--mk-tick-delivered', colors.tickDelivered || DEFAULT_COLORS.tickDelivered);
   root.style.setProperty('--mk-tick-read', colors.tickRead || DEFAULT_COLORS.tickRead);
 
   // Received Messages (Adaptive high-contrast text & timestamps)
-  root.style.setProperty('--mk-bubble-recv-bg', colors.bubbleRecvBg || DEFAULT_COLORS.bubbleRecvBg);
-  root.style.setProperty('--mk-bubble-recv-text', colors.bubbleRecvText || DEFAULT_COLORS.bubbleRecvText);
-  root.style.setProperty('--mk-bubble-recv-sender', colors.bubbleRecvSender || DEFAULT_COLORS.bubbleRecvSender);
-  root.style.setProperty('--mk-bubble-recv-time', colors.bubbleRecvTime || DEFAULT_COLORS.bubbleRecvTime);
+  root.style.setProperty('--mk-bubble-recv-bg', colors.bubbleRecvBg || (isLightMode ? DEFAULT_LIGHT_COLORS.bubbleRecvBg : DEFAULT_COLORS.bubbleRecvBg));
+  root.style.setProperty('--mk-bubble-recv-text', colors.bubbleRecvText || (isLightMode ? DEFAULT_LIGHT_COLORS.bubbleRecvText : DEFAULT_COLORS.bubbleRecvText));
+  root.style.setProperty('--mk-bubble-recv-sender', colors.bubbleRecvSender || (isLightMode ? DEFAULT_LIGHT_COLORS.bubbleRecvSender : DEFAULT_COLORS.bubbleRecvSender));
+  root.style.setProperty('--mk-bubble-recv-time', colors.bubbleRecvTime || (isLightMode ? DEFAULT_LIGHT_COLORS.bubbleRecvTime : DEFAULT_COLORS.bubbleRecvTime));
 
   // Accent & Interface
   root.style.setProperty('--mk-accent', colors.accentColor || DEFAULT_COLORS.accentColor);
-  root.style.setProperty('--mk-input-bg', colors.inputBg || DEFAULT_COLORS.inputBg);
-  root.style.setProperty('--mk-bottom-nav-bg', colors.bottomNavBg || DEFAULT_COLORS.bottomNavBg);
+  root.style.setProperty('--mk-input-bg', colors.inputBg || (isLightMode ? DEFAULT_LIGHT_COLORS.inputBg : DEFAULT_COLORS.inputBg));
+  root.style.setProperty('--mk-bottom-nav-bg', colors.bottomNavBg || (isLightMode ? DEFAULT_LIGHT_COLORS.bottomNavBg : DEFAULT_COLORS.bottomNavBg));
 
   // Typography & Bubble Shape
   const fontSize = typography.fontSize || 15;
@@ -465,10 +678,10 @@ export const applyThemeToDOM = (theme: AppThemeConfig) => {
   root.style.setProperty('--mk-bubble-radius', `${bubbleRadius}px`);
 
   // Wallpaper variables
-  root.style.setProperty('--mk-wallpaper-color', wallpaper.customColor || '#130f26');
+  root.style.setProperty('--mk-wallpaper-color', wallpaper.customColor || (isLightMode ? '#efeae2' : '#130f26'));
   root.style.setProperty('--mk-wallpaper-opacity', `${(wallpaper.opacity ?? 85) / 100}`);
   root.style.setProperty('--mk-wallpaper-blur', `${wallpaper.blur ?? 0}px`);
-  root.style.setProperty('--mk-wallpaper-dark-overlay', `${(wallpaper.darkOverlay ?? 30) / 100}`);
+  root.style.setProperty('--mk-wallpaper-dark-overlay', `${(wallpaper.darkOverlay ?? (isLightMode ? 0 : 30)) / 100}`);
   if (wallpaper.preset === 'custom_image' && wallpaper.customImageUrl) {
     root.style.setProperty('--mk-wallpaper-image', `url("${wallpaper.customImageUrl}")`);
   } else {

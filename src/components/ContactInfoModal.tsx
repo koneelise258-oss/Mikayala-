@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Phone, Video, Search, Lock, Clock, ShieldCheck, Star, ChevronRight, Image, FileText, Link, Bell, Trash2, Edit3, Check, Loader2, User as UserIcon } from 'lucide-react';
 import { User, Message, ChatSettings, CallType, UserProfile } from '../types';
 import { profileService } from '../services/profileService';
+import { formatLastSeen } from '../services/presenceService';
 import { triggerHaptic } from '../utils/security';
 
 interface ContactInfoModalProps {
@@ -18,6 +19,8 @@ interface ContactInfoModalProps {
   onStartCall: (type: CallType) => void;
   onClearChat: () => void;
   onViewMedia: (msg: Message) => void;
+  isPartnerOnline?: boolean;
+  partnerLastSeen?: string | null;
 }
 
 export const ContactInfoModal: React.FC<ContactInfoModalProps> = ({
@@ -33,7 +36,9 @@ export const ContactInfoModal: React.FC<ContactInfoModalProps> = ({
   onUpdateSettings,
   onStartCall,
   onClearChat,
-  onViewMedia
+  onViewMedia,
+  isPartnerOnline = false,
+  partnerLastSeen = null
 }) => {
   const [activeMediaTab, setActiveMediaTab] = useState<'media' | 'docs' | 'links'>('media');
   const [showSecurityModal, setShowSecurityModal] = useState(false);
@@ -142,25 +147,34 @@ export const ContactInfoModal: React.FC<ContactInfoModalProps> = ({
 
       {/* Main Profile Info Header */}
       <div className="bg-[#111b21] p-6 flex flex-col items-center text-center border-b border-[#222e35]">
-        {partnerUser.avatar ? (
-          <img
-            src={partnerUser.avatar}
-            alt={partnerNickname || partnerProfile?.display_name || partnerUser.name}
-            className="w-32 h-32 rounded-full object-cover border-2 border-[#374248] shadow-xl mb-3"
-          />
-        ) : (
-          <div className="w-32 h-32 rounded-full bg-[#202c33] border-2 border-[#374248] shadow-xl mb-3 flex items-center justify-center text-[#8696a0]">
-            <UserIcon size={64} />
-          </div>
-        )}
+        <div className="relative mb-3">
+          {partnerUser.avatar ? (
+            <img
+              src={partnerUser.avatar}
+              alt={partnerNickname || partnerProfile?.display_name || partnerUser.name}
+              className="w-32 h-32 rounded-full object-cover border-2 border-[#374248] shadow-xl"
+            />
+          ) : (
+            <div className="w-32 h-32 rounded-full bg-[#202c33] border-2 border-[#374248] shadow-xl flex items-center justify-center text-[#8696a0]">
+              <UserIcon size={64} />
+            </div>
+          )}
+          {isPartnerOnline && (
+            <span className="absolute bottom-2 right-2 w-5 h-5 bg-[#00a884] border-2 border-[#111b21] rounded-full shadow-md animate-pulse" />
+          )}
+        </div>
         
         <h3 className="text-xl font-bold text-[#e9edef] mb-1">
           {partnerNickname || partnerProfile?.display_name || partnerUser.name}
         </h3>
 
         <p className="text-sm text-[#8696a0]">{partnerUser.phone}</p>
-        <span className="text-xs text-[#00a884] font-medium mt-1">
-          {partnerUser.isOnline ? 'En ligne' : `Vu à ${partnerUser.lastSeen}`}
+        <span className={`text-xs font-medium mt-1 ${isPartnerOnline ? 'text-[#00a884]' : 'text-[#8696a0]'}`}>
+          {isPartnerOnline 
+            ? 'En ligne' 
+            : partnerLastSeen 
+              ? formatLastSeen(partnerLastSeen) 
+              : 'Hors ligne'}
         </span>
 
         {/* Private Nickname Section */}

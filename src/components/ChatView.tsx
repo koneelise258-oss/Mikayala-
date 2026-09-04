@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { audioRecorder } from '../services/audioRecorder';
 import { videoRecorder } from '../services/videoRecorder';
-import { User, Message, ChatSettings, PollData, EventData, LocationData, CallType, CoupleCoupon, NetworkState, UserProfile, AppThemeConfig } from '../types';
+import { User, Message, ChatSettings, PollData, EventData, LocationData, CallType, CoupleCoupon, NetworkState, UserProfile, AppThemeConfig, ScratchCardData } from '../types';
 import { formatTime, formatDateDivider, formatDuration, renderFormattedText } from '../utils/formatters';
 import { soundEffects } from '../utils/audio';
 import { triggerHaptic } from '../utils/security';
@@ -74,13 +74,14 @@ interface ChatViewProps {
   onOpenLocationModal: () => void;
   onOpenVault?: () => void;
   onOpenWishlist?: () => void;
-  onOpenGames?: () => void;
+  onOpenGames?: (initialTab?: 'truth_or_dare' | 'wheel' | 'dice' | 'customizer') => void;
   onOpenCycleCare?: () => void;
   onOpenHeartbeat?: () => void;
   onOpenCoupons?: () => void;
-  onOpenBlindQuiz?: () => void;
+  onOpenBlindQuiz?: (sessionId?: string) => void;
   onOpenDigitalTouch?: () => void;
   onOpenScratchCard?: () => void;
+  onScratchCardSession?: (sessionId: string) => void;
   onClaimCoupon?: (couponId: string) => void;
   onRedeemCoupon?: (couponId: string) => void;
   coupleId: string;
@@ -133,6 +134,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   onOpenBlindQuiz,
   onOpenDigitalTouch,
   onOpenScratchCard,
+  onScratchCardSession,
   onClaimCoupon,
   onRedeemCoupon,
   coupleId,
@@ -320,8 +322,26 @@ export const ChatView: React.FC<ChatViewProps> = ({
     document.addEventListener('visibilitychange', handleWindowBlurOrHide);
     window.addEventListener('blur', handleWindowBlurOrHide);
 
+    // Listen to local optimistic message broadcasts
+    const handleNewMessageSent = (e: any) => {
+      const msg = e.detail;
+      if (msg) {
+        setRealMessages(prev => {
+          const idx = prev.findIndex(m => m.id === msg.id);
+          if (idx >= 0) {
+            const copy = [...prev];
+            copy[idx] = { ...copy[idx], ...msg };
+            return copy;
+          }
+          return [...prev, msg].sort((a, b) => a.timestamp - b.timestamp);
+        });
+      }
+    };
+    window.addEventListener('mikayla_new_message_sent', handleNewMessageSent);
+
     return () => {
       window.removeEventListener('mikayala_pairing_changed', handlePairingUpdate);
+      window.removeEventListener('mikayla_new_message_sent', handleNewMessageSent);
       authListener?.subscription?.unsubscribe();
       document.removeEventListener('visibilitychange', handleWindowBlurOrHide);
       window.removeEventListener('blur', handleWindowBlurOrHide);
@@ -1008,198 +1028,102 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 setSearchInChat(false);
                 setChatSearchQuery('');
               }}
-              className="text-xs text-[#00b894] font-medium ml-2 hover:underline cursor-pointer"
+              className="p-1.5 text-[#a29bfe] hover:text-white hover:bg-white/10 rounded-full"
             >
-              Fermer
+              <X size={16} />
             </button>
           </div>
         ) : (
           <>
-            {/* Left: Back Button & Partner Profile */}
-            <div className="flex items-center gap-2 min-w-0 flex-1">
+            <div className="flex items-center space-x-3 flex-1 overflow-hidden">
               <button
                 onClick={onBack}
-                className="p-1 text-[#a29bfe] hover:text-white rounded-full transition-colors cursor-pointer md:hidden shrink-0"
-                title="Retour aux discussions"
+                className="p-1 sm:hidden text-[#a29bfe] hover:text-white hover:bg-white/10 rounded-xl transition-all"
               >
-                <ArrowLeft size={20} />
+                <ArrowLeft size={22} />
               </button>
-
-              <div
+              
+              <div 
+                className="relative cursor-pointer group"
                 onClick={onOpenContactInfo}
-                className="flex items-center gap-2.5 cursor-pointer hover:opacity-90 transition-opacity min-w-0"
               >
-                <div className="relative shrink-0">
-                  <div className="w-10 h-10 rounded-2xl bg-[#00b894] overflow-hidden border border-[#2d2254]">
-                    <img
-                      src={partnerUser.avatar}
-                      alt={partnerUser.name}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  {isPartnerOnline && (
-                    <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[#00b894] border-2 border-[#171230] rounded-full ring-1 ring-[#00b894]/30" />
-                  )}
-                </div>
-
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <h3 className="font-bold text-sm text-white truncate max-w-[130px] sm:max-w-[200px]">
-                      {partnerNickname || partnerProfile?.display_name || partnerUser.name}
-                    </h3>
-                  </div>
-                  <p className="text-[11px] truncate flex items-center gap-1.5 transition-colors">
-                    {isPartnerTyping ? (
-                      <span className="text-[#55efc4] font-medium flex items-center gap-1">
-                        <span>En train d'écrire</span>
-                        <span className="inline-flex tracking-wider font-bold animate-pulse">…</span>
-                      </span>
-                    ) : isPartnerOnline ? (
-                      <span className="text-[#00b894] font-medium flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#00b894] inline-block animate-pulse shrink-0" />
-                        <span>En ligne</span>
-                      </span>
-                    ) : partnerLastSeenText ? (
-                      <span className="text-[#a29bfe]/80 font-normal">
-                        {partnerLastSeenText}
-                      </span>
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full overflow-hidden bg-gradient-to-br from-[#00b894] to-[#55efc4] p-[2px] shadow-lg relative">
+                  <div className="w-full h-full rounded-full overflow-hidden border-2 border-[#130f26]">
+                    {partnerProfile?.avatarUrl ? (
+                      <img src={partnerProfile.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
                     ) : (
-                      <span className="text-[#a29bfe]/60 font-normal">
-                        Hors ligne
-                      </span>
+                      <div className="w-full h-full bg-[#1b1435] flex items-center justify-center">
+                        <UserIcon size={20} className="text-[#a29bfe]" />
+                      </div>
                     )}
-                  </p>
+                  </div>
+                </div>
+                {isPartnerOnline && (
+                  <div className="absolute bottom-0 right-0 w-3 h-3 bg-[#00b894] border-2 border-[#130f26] rounded-full shadow-sm animate-pulse" />
+                )}
+              </div>
+              
+              <div 
+                className="flex flex-col min-w-0 cursor-pointer group flex-1"
+                onClick={onOpenContactInfo}
+              >
+                <div className="flex items-center gap-1.5">
+                  <h2 className="font-bold text-sm sm:text-base text-white truncate group-hover:text-[#55efc4] transition-colors">
+                    {partnerNickname || partnerUser.name}
+                  </h2>
+                </div>
+                <div className="flex items-center text-[11px] text-[#a29bfe]">
+                  {isPartnerTyping ? (
+                    <span className="text-[#55efc4] font-medium italic animate-pulse">écrit…</span>
+                  ) : isPartnerOnline ? (
+                    <span className="text-[#00b894] font-medium">En ligne</span>
+                  ) : partnerLastSeenText ? (
+                    <span className="text-[#a29bfe]/80">{partnerLastSeenText}</span>
+                  ) : (
+                    <span className="text-[#a29bfe]/60">Hors ligne</span>
+                  )}
                 </div>
               </div>
             </div>
 
-            {/* Right: Quick Action Buttons */}
-            <div className="flex items-center space-x-1 sm:space-x-2 text-[#a29bfe]">
-              {/* Quick Heartbeat trigger */}
-              {onOpenHeartbeat && (
-                <button
-                  onClick={onOpenHeartbeat}
-                  className="p-2 text-[#fd79a8] hover:bg-[#281e4b] rounded-xl transition-colors cursor-pointer"
-                  title="Envoyer un battement de cœur"
-                >
-                  <Heart size={18} className="fill-[#fd79a8] animate-pulse" />
-                </button>
-              )}
-
-              {/* Video Call */}
+            <div className="flex items-center space-x-1 sm:space-x-2 shrink-0">
               <button
                 onClick={() => onStartCall('video')}
-                className="p-2 text-[#a29bfe] hover:text-white hover:bg-[#281e4b] rounded-xl transition-colors cursor-pointer"
-                title="Appel vidéo"
+                disabled={!pairingState?.isPaired || !pairingState?.coupleId}
+                className="p-2 sm:p-2.5 text-[#a29bfe] hover:text-white hover:bg-white/10 rounded-xl transition-all disabled:opacity-50"
               >
-                <Video size={18} />
+                <Video size={20} />
               </button>
-
-              {/* Audio Call */}
               <button
                 onClick={() => onStartCall('audio')}
-                className="p-2 text-[#a29bfe] hover:text-white hover:bg-[#281e4b] rounded-xl transition-colors cursor-pointer"
-                title="Appel vocal"
+                disabled={!pairingState?.isPaired || !pairingState?.coupleId}
+                className="p-2 sm:p-2.5 text-[#a29bfe] hover:text-white hover:bg-white/10 rounded-xl transition-all disabled:opacity-50"
               >
-                <Phone size={18} />
+                <Phone size={20} />
               </button>
-
-              {/* Chat Search */}
-              <button
-                onClick={() => setSearchInChat(true)}
-                className="p-2 text-[#a29bfe] hover:text-white hover:bg-[#281e4b] rounded-xl transition-colors cursor-pointer"
-                title="Rechercher"
-              >
-                <Search size={18} />
-              </button>
-
-              {/* Quick Chat Theme Customization */}
-              {onThemeChange && (
-                <button
-                  onClick={() => {
-                    setIsThemeDrawerOpen(true);
-                    triggerHaptic(25);
-                  }}
-                  className="p-2 text-[#a29bfe] hover:text-[#00b894] hover:bg-[#281e4b] rounded-xl transition-colors cursor-pointer"
-                  title="Personnaliser le chat & thème"
-                >
-                  <Palette size={18} />
-                </button>
-              )}
-
-              {/* 3-dots Chat Menu */}
-              <div className="relative" ref={chatMenuRef}>
+              
+              <div className="relative">
                 <button
                   onClick={() => setShowChatMenu(!showChatMenu)}
-                  className="p-2 text-[#a29bfe] hover:text-white hover:bg-[#281e4b] rounded-xl transition-colors cursor-pointer"
-                  title="Plus"
+                  className="p-2 sm:p-2.5 text-[#a29bfe] hover:text-white hover:bg-white/10 rounded-xl transition-all"
                 >
-                  <MoreVertical size={18} />
+                  <MoreVertical size={20} />
                 </button>
 
                 {showChatMenu && (
-                  <div className="absolute right-0 top-full mt-2 w-64 bg-[#1b1435] rounded-2xl shadow-2xl py-2 z-50 border border-[#372863] text-sm animate-in fade-in zoom-in-95">
-                    {onThemeChange && (
+                  <div className="absolute right-0 top-12 w-56 bg-[#1b1435] border border-[#2d2254] rounded-2xl shadow-2xl overflow-hidden py-2 animate-in zoom-in-95 duration-100 origin-top-right">
+                    
+                    {onOpenGames && pairingState?.isPaired && (
                       <button
                         onClick={() => {
-                          setIsThemeDrawerOpen(true);
                           setShowChatMenu(false);
-                          triggerHaptic(25);
-                        }}
-                        className="w-full text-left px-4 py-2.5 hover:bg-[#281e4b] flex items-center space-x-3 text-white border-b border-[#2d2254]"
-                      >
-                        <Palette size={16} className="text-[#00b894]" />
-                        <span className="font-semibold text-[#55efc4]">Personnaliser le chat & thème</span>
-                      </button>
-                    )}
-
-                    <button
-                      onClick={() => {
-                        onOpenContactInfo();
-                        setShowChatMenu(false);
-                      }}
-                      className="w-full text-left px-4 py-2.5 hover:bg-[#281e4b] flex items-center space-x-3 text-white"
-                    >
-                      <UserIcon size={16} className="text-[#00b894]" />
-                      <span>Infos du profil intime</span>
-                    </button>
-
-                    {onOpenVault && (
-                      <button
-                        onClick={() => {
-                          onOpenVault();
-                          setShowChatMenu(false);
+                          console.log('[Game] Bouton roue de défis cliqué');
+                          onOpenGames('wheel');
                         }}
                         className="w-full text-left px-4 py-2.5 hover:bg-[#281e4b] flex items-center space-x-3 text-white"
                       >
-                        <Lock size={16} className="text-[#00b894]" />
-                        <span>Ouvrir le Coffre-Fort</span>
-                      </button>
-                    )}
-
-                    {onOpenWishlist && (
-                      <button
-                        onClick={() => {
-                          onOpenWishlist();
-                          setShowChatMenu(false);
-                        }}
-                        className="w-full text-left px-4 py-2.5 hover:bg-[#281e4b] flex items-center space-x-3 text-white"
-                      >
-                        <Sparkles size={16} className="text-[#fd79a8]" />
-                        <span>Wishlist & Fantasmes</span>
-                      </button>
-                    )}
-
-                    {onOpenGames && (
-                      <button
-                        onClick={() => {
-                          onOpenGames();
-                          setShowChatMenu(false);
-                        }}
-                        className="w-full text-left px-4 py-2.5 hover:bg-[#281e4b] flex items-center space-x-3 text-white"
-                      >
-                        <Dices size={16} className="text-[#ffeaa7]" />
-                        <span>Roue & Jeux de couple</span>
+                        <span className="text-base">🎡</span>
+                        <span>Roue de défis</span>
                       </button>
                     )}
 
@@ -1771,6 +1695,273 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 </>
               )}
 
+              
+                  {/* ====== JEUX & MESSAGES CACHÉS ====== */}
+                  {(msg.type === 'game' || msg.type === 'scratch_card' || msg.type === 'blind_quiz' || (msg.type === 'text' && msg.content && (msg.content.startsWith('{') || msg.content.includes('"gameType"')))) && (() => {
+                    let gameData: any = null;
+                    if (msg.type === 'scratch_card' && msg.scratchCardData) {
+                      gameData = {
+                        gameType: 'scratch_card',
+                        sessionId: msg.scratchCardData.id,
+                        status: msg.scratchCardData.isScratched ? 'scratched' : 'created',
+                        content: {
+                          title: msg.scratchCardData.title,
+                          secretContent: msg.scratchCardData.secretContent,
+                          secretMediaUrl: msg.scratchCardData.secretMediaUrl,
+                          scratchColor: msg.scratchCardData.scratchColor
+                        }
+                      };
+                    } else if (msg.type === 'blind_quiz' && msg.blindQuizData) {
+                      gameData = {
+                        gameType: 'blind_quiz',
+                        sessionId: msg.blindQuizData.sessionId,
+                        question: msg.blindQuizData.question,
+                        status: msg.blindQuizData.isRevealed ? 'finished' : 'pending'
+                      };
+                    } else {
+                      try {
+                        gameData = JSON.parse(msg.content);
+                      } catch(e) {}
+                    }
+                    
+                    if (!gameData || typeof gameData !== 'object') {
+                      return <span>{msg.content}</span>;
+                    }
+
+                    // 1. DÉS INTIMES
+                    if (gameData.gameType === 'intimate_dice' || gameData.gameType === 'dice') {
+                      console.log('[Game] Résultat affiché dans la bulle dés');
+                      return (
+                        <div className="flex flex-col gap-2.5 min-w-[220px] max-w-xs">
+                          <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                            <div className="flex items-center gap-2">
+                              <Dices size={18} className="text-[#55efc4]" />
+                              <span className="font-bold text-sm tracking-wide text-white">Dés Intimes</span>
+                            </div>
+                            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#55efc4]/20 text-[#55efc4] border border-[#55efc4]/40">
+                              🎲 Gage
+                            </span>
+                          </div>
+                          
+                          <div className="space-y-1.5 text-xs bg-white/5 p-3 rounded-2xl border border-white/10">
+                            <div>
+                              <span className="text-[#a29bfe] uppercase text-[9px] font-bold tracking-wider block">Action</span>
+                              <span className="font-bold text-[#55efc4] text-xs sm:text-sm">{gameData.result?.action || 'Caresse'}</span>
+                            </div>
+                            <div>
+                              <span className="text-[#a29bfe] uppercase text-[9px] font-bold tracking-wider block">Zone</span>
+                              <span className="font-bold text-[#fd79a8] text-xs sm:text-sm">{gameData.result?.zone || 'Dans le cou'}</span>
+                            </div>
+                            <div>
+                              <span className="text-[#a29bfe] uppercase text-[9px] font-bold tracking-wider block">Condition</span>
+                              <span className="font-bold text-[#ffeaa7] text-xs sm:text-sm">{gameData.result?.duration || 'Pendant 2 minutes'}</span>
+                            </div>
+                          </div>
+
+                          {onOpenGames && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenGames('dice');
+                              }}
+                              className="w-full py-2 rounded-xl bg-[#2d2254] hover:bg-[#3d2f6f] text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                            >
+                              <Dices size={14} className="text-[#55efc4]" />
+                              <span>Relancer les Dés Intimes 🎲</span>
+                            </button>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    // 2. ROUE DE DÉFIS
+                    if (gameData.gameType === 'challenge_wheel' || gameData.gameType === 'wheel') {
+                      console.log('[Game] Résultat affiché dans la bulle roue');
+                      const challengeText = gameData.result?.challenge || gameData.result?.description || gameData.result?.title || gameData.challenge || 'Défi tiré au sort !';
+                      return (
+                        <div className="flex flex-col gap-2.5 min-w-[220px] max-w-xs">
+                          <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                            <div className="flex items-center gap-2">
+                              <span className="text-lg leading-none">🎡</span>
+                              <span className="font-bold text-sm tracking-wide text-white">Roue de défis</span>
+                            </div>
+                            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#e056fd]/20 text-[#e056fd] border border-[#e056fd]/40">
+                              ✨ Tirage
+                            </span>
+                          </div>
+
+                          <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-1">
+                            <span className="text-[#e056fd] uppercase text-[9px] font-extrabold tracking-wider block">
+                              Défi complice :
+                            </span>
+                            <p className="text-xs sm:text-sm font-semibold text-white leading-relaxed">
+                              {challengeText}
+                            </p>
+                          </div>
+
+                          {onOpenGames && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenGames('wheel');
+                              }}
+                              className="w-full py-2 rounded-xl bg-gradient-to-r from-[#e056fd]/80 to-[#fd79a8]/80 hover:from-[#e056fd] hover:to-[#fd79a8] text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
+                            >
+                              <span>🎡 Tourner la Roue de Défis</span>
+                            </button>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    // 3. ACTION OU VÉRITÉ
+                    if (gameData.gameType === 'truth_or_dare' || gameData.gameType === 'tod' || gameData.gameType === 'action_verite') {
+                      console.log('[Game] Résultat affiché dans la bulle action ou vérité');
+                      const title = gameData.result?.title || gameData.title || 'Action ou Vérité';
+                      const desc = gameData.result?.description || gameData.description || gameData.result?.challenge || '';
+                      const isTruth = (gameData.result?.type === 'truth' || gameData.type === 'truth');
+                      return (
+                        <div className="flex flex-col gap-2.5 min-w-[220px] max-w-xs">
+                          <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                            <div className="flex items-center gap-2">
+                              <span className="text-lg leading-none">{isTruth ? '🤫' : '🔥'}</span>
+                              <span className="font-bold text-sm tracking-wide text-white">{isTruth ? 'Vérité' : 'Action'}</span>
+                            </div>
+                            <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                              isTruth 
+                                ? 'bg-[#74b9ff]/20 text-[#74b9ff] border border-[#74b9ff]/40' 
+                                : 'bg-[#ff7675]/20 text-[#ff7675] border border-[#ff7675]/40'
+                            }`}>
+                              {isTruth ? 'Confession 🤫' : 'Gage 🔥'}
+                            </span>
+                          </div>
+
+                          <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-1">
+                            <h5 className="text-[#ff7675] font-bold text-xs">{title}</h5>
+                            <p className="text-xs sm:text-sm font-medium text-white leading-relaxed">
+                              {desc}
+                            </p>
+                          </div>
+
+                          {onOpenGames && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenGames('truth_or_dare');
+                              }}
+                              className="w-full py-2 rounded-xl bg-gradient-to-r from-[#ff7675] to-[#fd79a8] text-[#130f26] font-bold text-xs flex items-center justify-center gap-1.5 transition-transform active:scale-95 cursor-pointer shadow-md"
+                            >
+                              <span>🔥 Tirer une autre carte</span>
+                            </button>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    // 4. QUIZ DOUBLE AVEUGLE
+                    if (gameData.gameType === 'blind_quiz') {
+                      console.log('[Quiz] Affichage bulle quiz dans le chat', gameData);
+                      const isFinished = gameData.status === 'finished';
+                      const questionText = gameData.question || gameData.title || "Quiz Double Aveugle";
+                      return (
+                        <div 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onOpenBlindQuiz) onOpenBlindQuiz(gameData.sessionId);
+                          }}
+                          className="flex flex-col gap-2 min-w-[240px] sm:min-w-[260px] cursor-pointer"
+                        >
+                          <div className="flex items-center justify-between pb-2 border-b border-white/10 mb-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-lg leading-none">❓</span>
+                              <span className="font-bold text-sm tracking-wide text-white">
+                                {isFinished ? "Quiz terminé ✨" : "Quiz lancé 🔒"}
+                              </span>
+                            </div>
+                            <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                              isFinished ? 'bg-[#00b894]/20 text-[#55efc4] border border-[#00b894]/40' : 'bg-[#ffeaa7]/20 text-[#ffeaa7] border border-[#ffeaa7]/40 animate-pulse'
+                            }`}>
+                              {isFinished ? 'Révélé ✨' : 'Sous Scellé 🔒'}
+                            </span>
+                          </div>
+                          
+                          <div className="p-3 rounded-2xl bg-white/5 border border-white/10 space-y-2">
+                            <p className="text-xs sm:text-sm font-semibold text-white leading-relaxed">
+                              "{questionText}"
+                            </p>
+
+                            {isFinished && gameData.summary ? (
+                              <div className="p-2.5 rounded-xl bg-black/30 border border-white/10 text-xs space-y-1">
+                                <p className="text-[#55efc4] font-medium">Vous : "{gameData.summary.user1Answer}"</p>
+                                <p className="text-[#fd79a8] font-medium">{partnerUser.name} : "{gameData.summary.user2Answer}"</p>
+                              </div>
+                            ) : null}
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (onOpenBlindQuiz) onOpenBlindQuiz(gameData.sessionId);
+                              }}
+                              className="w-full py-2 mt-1 rounded-xl bg-gradient-to-r from-[#00b894] to-[#00cec9] hover:from-[#00a884] hover:to-[#00b894] text-[#130f26] font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-md transition-transform active:scale-95 cursor-pointer"
+                            >
+                              <span>{isFinished ? "Voir le résultat ✨" : "Rejoindre le Quiz 🔓"}</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // 5. CARTE À GRATTER
+                    if (gameData.gameType === 'scratch_card') {
+                      console.log('[Scratch] Affichage bulle carte à gratter dans le chat', gameData);
+                      const isScratched = gameData.status === 'scratched';
+                      const cardContent = gameData.content || {};
+                      const cardDataForBubble: ScratchCardData = {
+                        id: gameData.sessionId || 'scratch_' + msg.id,
+                        title: cardContent.title || 'Message à Gratter 🎫',
+                        secretContent: cardContent.secretContent || 'Secret à découvrir...',
+                        secretMediaUrl: cardContent.secretMediaUrl,
+                        scratchColor: cardContent.scratchColor || 'gold',
+                        isScratched: isScratched,
+                        scratchProgress: isScratched ? 100 : 0
+                      };
+
+                      return (
+                        <div className="py-1 min-w-[240px] max-w-xs select-none">
+                          <div className="flex items-center justify-between pb-1.5 border-b border-white/10 mb-2">
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-[#ffeaa7]">
+                              <span className="text-base leading-none">🎫</span>
+                              <span>Carte à gratter</span>
+                            </div>
+                            <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                              isScratched 
+                                ? 'bg-[#00b894]/20 text-[#55efc4] border border-[#00b894]/40' 
+                                : 'bg-[#ffeaa7]/20 text-[#ffeaa7] border border-[#ffeaa7]/40 animate-pulse'
+                            }`}>
+                              {isScratched ? 'Découverte ✨' : 'Nouvelle carte 🔒'}
+                            </span>
+                          </div>
+
+                          <ScratchCardBubble
+                            data={cardDataForBubble}
+                            isSender={isMe}
+                            onFullyScratched={() => {
+                              if (!isScratched && onScratchCardSession && gameData.sessionId) {
+                                onScratchCardSession(gameData.sessionId);
+                              }
+                            }}
+                          />
+                        </div>
+                      );
+                    }
+
+                    return <span>{msg.content}</span>;
+                  })()}
+
               {/* Footer info: Time, Transport Badge, Ticks, Pin, Star */}
                   <div 
                     className="flex items-center justify-end gap-1 text-[10px] mt-1 shrink-0 select-none"
@@ -2042,14 +2233,14 @@ export const ChatView: React.FC<ChatViewProps> = ({
                   <span>Wishlist</span>
                 </button>
               )}
-              {onOpenGames && (
+              {onOpenGames && pairingState?.isPaired && (
                 <button
                   type="button"
-                  onClick={() => { setShowAttachMenu(false); onOpenGames(); }}
-                  className="px-3 py-1.5 rounded-full bg-[#130f26] hover:bg-[#281e4b] border border-[#2d2254] text-[11px] font-medium text-white flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer"
+                  onClick={() => { setShowAttachMenu(false); console.log('[Game] Bouton roue de défis cliqué'); onOpenGames('wheel'); }}
+                  className="px-3 py-1.5 rounded-full bg-[#130f26] hover:bg-[#281e4b] border border-[#e056fd]/40 text-[11px] font-medium text-white flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer"
                 >
-                  <Dices size={13} className="text-[#6c5ce7]" />
-                  <span>Jeux Couple</span>
+                  <span className="text-xs">🎡</span>
+                  <span>Roue de défis</span>
                 </button>
               )}
               {onOpenCycleCare && (
@@ -2199,6 +2390,54 @@ export const ChatView: React.FC<ChatViewProps> = ({
             >
               <Paperclip size={22} />
             </button>
+            
+            {/* Wheel button */}
+            {onOpenGames && pairingState?.isPaired && (
+              <button
+                type="button"
+                onClick={() => {
+                  console.log('[Game] Bouton roue de défis cliqué');
+                  onOpenGames('wheel');
+                }}
+                aria-label="Roue de défis"
+                className="p-2 rounded-xl transition-colors cursor-pointer shrink-0 text-[#a29bfe] hover:text-[#e056fd] hover:bg-white/10"
+                title="🎡 Roue de défis"
+              >
+                <span className="text-lg leading-none">🎡</span>
+              </button>
+            )}
+
+            {/* Quiz button */}
+            {onOpenBlindQuiz && pairingState?.isPaired && (
+              <button
+                type="button"
+                onClick={() => {
+                  console.log('[Quiz] Bouton quiz cliqué');
+                  onOpenBlindQuiz();
+                }}
+                aria-label="Quiz double aveugle"
+                className="p-2 rounded-xl transition-colors cursor-pointer shrink-0 text-[#a29bfe] hover:text-[#00b894] hover:bg-white/10"
+                title="❓ Quiz Double Aveugle"
+              >
+                <span className="text-lg leading-none">❓</span>
+              </button>
+            )}
+
+            {/* Scratch Card button */}
+            {onOpenScratchCard && pairingState?.isPaired && (
+              <button
+                type="button"
+                onClick={() => {
+                  console.log('[Scratch] Bouton carte à gratter cliqué');
+                  onOpenScratchCard();
+                }}
+                aria-label="Carte à gratter"
+                className="p-2 rounded-xl transition-colors cursor-pointer shrink-0 text-[#a29bfe] hover:text-[#ffeaa7] hover:bg-white/10"
+                title="🎫 Carte à gratter"
+              >
+                <span className="text-lg leading-none">🎫</span>
+              </button>
+            )}
 
             {/* Text input with auto-formatting support & mode indication */}
             <div className="flex-1 relative flex items-center min-w-0">

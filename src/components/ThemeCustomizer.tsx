@@ -17,7 +17,9 @@ import {
   Send,
   Eye,
   Layers,
-  Sparkle
+  Sparkle,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { 
   AppThemeConfig, 
@@ -28,11 +30,16 @@ import {
   User,
   BubbleShape,
   FontFamilyOption,
-  WallpaperPreset
+  WallpaperPreset,
+  ThemeMode
 } from '../types';
 import { 
   PRESET_THEMES, 
   DEFAULT_THEME_CONFIG, 
+  DEFAULT_COLORS,
+  DEFAULT_LIGHT_COLORS,
+  DEFAULT_WALLPAPER,
+  DEFAULT_LIGHT_WALLPAPER,
   applyThemeToDOM, 
   saveThemeConfig, 
   generateDynamicFavicon,
@@ -412,39 +419,121 @@ export const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({
           ======================================================== */}
       {activeTab === 'colors' && (
         <div className="space-y-4">
+          {/* Mode Switcher: Sombre vs Clair */}
+          <div className="p-3 bg-[#130f26] rounded-2xl border border-[#2d2254] space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles size={16} className="text-[#00b894]" />
+                <h4 className="font-bold text-xs text-white uppercase tracking-wider">
+                  Mode d'Affichage
+                </h4>
+              </div>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                themeConfig.mode === 'light' ? 'bg-amber-400/20 text-amber-300 border border-amber-400/30' : 'bg-[#6c5ce7]/20 text-[#a29bfe] border border-[#6c5ce7]/30'
+              }`}>
+                {themeConfig.mode === 'light' ? 'Mode Clair' : 'Mode Sombre'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  updateTheme({
+                    mode: 'dark',
+                    colors: themeConfig.mode === 'light' ? { ...DEFAULT_COLORS } : themeConfig.colors,
+                    wallpaper: themeConfig.mode === 'light' ? { ...DEFAULT_WALLPAPER } : themeConfig.wallpaper
+                  });
+                  soundEffects.playSent();
+                }}
+                className={`p-2.5 rounded-xl border flex items-center justify-center gap-2 font-bold text-xs transition-all cursor-pointer ${
+                  themeConfig.mode !== 'light'
+                    ? 'bg-[#1e173e] border-[#00b894] text-white shadow-lg shadow-[#00b894]/10 ring-1 ring-[#00b894]'
+                    : 'bg-[#181332] border-[#2d2254] text-[#a29bfe] hover:text-white hover:bg-[#1f1742]'
+                }`}
+              >
+                <Moon size={16} className={themeConfig.mode !== 'light' ? 'text-[#00b894]' : ''} />
+                <span>Mode Sombre</span>
+                {themeConfig.mode !== 'light' && <Check size={14} className="text-[#00b894]" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  updateTheme({
+                    mode: 'light',
+                    colors: themeConfig.mode !== 'light' ? { ...DEFAULT_LIGHT_COLORS } : themeConfig.colors,
+                    wallpaper: themeConfig.mode !== 'light' ? { ...DEFAULT_LIGHT_WALLPAPER } : themeConfig.wallpaper
+                  });
+                  soundEffects.playSent();
+                }}
+                className={`p-2.5 rounded-xl border flex items-center justify-center gap-2 font-bold text-xs transition-all cursor-pointer ${
+                  themeConfig.mode === 'light'
+                    ? 'bg-[#1e173e] border-amber-400 text-white shadow-lg shadow-amber-400/10 ring-1 ring-amber-400'
+                    : 'bg-[#181332] border-[#2d2254] text-[#a29bfe] hover:text-white hover:bg-[#1f1742]'
+                }`}
+              >
+                <Sun size={16} className={themeConfig.mode === 'light' ? 'text-amber-400' : ''} />
+                <span>Mode Clair</span>
+                {themeConfig.mode === 'light' && <Check size={14} className="text-amber-400" />}
+              </button>
+            </div>
+          </div>
+
           {/* Preset Palettes */}
           <div className="p-3 bg-[#130f26] rounded-2xl border border-[#2d2254] space-y-2">
-            <div className="flex items-center gap-2">
-              <Sparkles size={15} className="text-[#00b894]" />
-              <h4 className="font-bold text-xs text-white uppercase tracking-wider">
-                Thèmes Prédéfinis (1 Clic)
-              </h4>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Palette size={15} className="text-[#55efc4]" />
+                <h4 className="font-bold text-xs text-white uppercase tracking-wider">
+                  Thèmes Prédéfinis (1 Clic)
+                </h4>
+              </div>
+              <span className="text-[10px] text-[#a29bfe]">
+                {PRESET_THEMES.length} palettes disponibles
+              </span>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
-              {PRESET_THEMES.map(preset => (
-                <button
-                  key={preset.id}
-                  onClick={() => {
-                    updateTheme({
-                      ...preset.config,
-                      name: preset.name
-                    });
-                    soundEffects.playReaction();
-                  }}
-                  className="p-2.5 rounded-xl bg-[#1c1538] hover:bg-[#261d4a] border border-[#2d2254] text-left transition-all cursor-pointer flex flex-col gap-1.5"
-                >
-                  <div className="flex items-center gap-1">
-                    {preset.previewColors.map((col, idx) => (
-                      <span 
-                        key={idx} 
-                        className="w-3.5 h-3.5 rounded-full border border-black/30 shadow-xs" 
-                        style={{ backgroundColor: col }} 
-                      />
-                    ))}
-                  </div>
-                  <span className="font-bold text-xs text-white truncate">{preset.name}</span>
-                </button>
-              ))}
+              {PRESET_THEMES.map(preset => {
+                const isCurrent = themeConfig.name === preset.name || themeConfig.id === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    onClick={() => {
+                      updateTheme({
+                        ...preset.config,
+                        id: preset.id,
+                        name: preset.name,
+                        mode: preset.mode
+                      });
+                      soundEffects.playReaction();
+                    }}
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col gap-1.5 relative ${
+                      isCurrent
+                        ? 'bg-[#261d4a] border-[#00b894] ring-1 ring-[#00b894]'
+                        : 'bg-[#1c1538] hover:bg-[#261d4a] border-[#2d2254]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <div className="flex items-center gap-1">
+                        {preset.previewColors.map((col, idx) => (
+                          <span 
+                            key={idx} 
+                            className="w-3.5 h-3.5 rounded-full border border-black/30 shadow-xs" 
+                            style={{ backgroundColor: col }} 
+                          />
+                        ))}
+                      </div>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded uppercase ${
+                        preset.mode === 'light' ? 'bg-amber-400/20 text-amber-300' : 'bg-[#6c5ce7]/20 text-[#a29bfe]'
+                      }`}>
+                        {preset.mode === 'light' ? 'Clair' : 'Sombre'}
+                      </span>
+                    </div>
+                    <span className="font-bold text-xs text-white truncate">{preset.name}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 

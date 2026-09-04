@@ -46,6 +46,7 @@ interface ChatListProps {
   onOpenScratchCard?: () => void;
   searchQuery?: string;
   hideChatPreview?: boolean;
+  isPartnerOnline?: boolean;
 }
 
 export const ChatList: React.FC<ChatListProps> = ({
@@ -66,7 +67,8 @@ export const ChatList: React.FC<ChatListProps> = ({
   onOpenDigitalTouch,
   onOpenScratchCard,
   searchQuery = '',
-  hideChatPreview = false
+  hideChatPreview = false,
+  isPartnerOnline = false
 }) => {
   const [filter, setFilter] = useState<'all' | 'unread' | 'favorites'>('all');
 
@@ -295,7 +297,7 @@ export const ChatList: React.FC<ChatListProps> = ({
                 <UserIcon size={24} className="text-[#a29bfe]/40" />
               )}
             </div>
-            {partnerUser.isOnline && (
+            {isPartnerOnline && (
               <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-[#00b894] border-2 border-[#171230] rounded-full shadow-sm animate-pulse" />
             )}
           </div>

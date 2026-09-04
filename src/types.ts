@@ -1,4 +1,5 @@
 export type MessageType = 
+  | 'game'
   | 'text' 
   | 'image' 
   | 'video' 
@@ -389,9 +390,12 @@ export interface TypographyConfig {
   iosEmojis: boolean;
 }
 
+export type ThemeMode = 'dark' | 'light';
+
 export interface AppThemeConfig {
   id: string;
   name: string;
+  mode?: ThemeMode;
   colors: CustomColors;
   wallpaper: WallpaperConfig;
   typography: TypographyConfig;
