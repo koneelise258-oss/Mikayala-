@@ -21,6 +21,8 @@ export default defineConfig(() => {
           'favicon.ico', 
           'icon-192.png',
           'icon-512.png',
+          'screenshot-chat.png',
+          'screenshot-jeux.png',
           'manifest.webmanifest',
           'manifest.json',
           'icons/icon-*.png'
@@ -29,6 +31,7 @@ export default defineConfig(() => {
           name: 'Mikayla – Application de couple intime et privée',
           short_name: 'Mikayla',
           description: 'Application de couple intime et privée : chat, appels, jeux, coffre-fort, cycle & mood care.',
+          id: 'mikayla-app',
           theme_color: '#0f172a',
           background_color: '#0f172a',
           display: 'standalone',
@@ -78,7 +81,23 @@ export default defineConfig(() => {
           ],
           categories: ['lifestyle', 'social'],
           lang: 'fr',
-          dir: 'ltr'
+          dir: 'ltr',
+          screenshots: [
+            {
+              src: '/screenshot-chat.png',
+              sizes: '1080x1920',
+              type: 'image/png',
+              form_factor: 'narrow',
+              label: 'Chat Mikayla'
+            },
+            {
+              src: '/screenshot-jeux.png',
+              sizes: '1080x1920',
+              type: 'image/png',
+              form_factor: 'narrow',
+              label: 'Jeux Mikayla'
+            }
+          ]
         }
       })
     ],
