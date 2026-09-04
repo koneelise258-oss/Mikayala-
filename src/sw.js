@@ -64,8 +64,8 @@ self.addEventListener('push', (event) => {
   const title = data.title || 'Mikayla 💌';
   const options = {
     body: data.body || 'Nouveau message reçu',
-    icon: data.icon || '/icons/icon-purple-192.png',
-    badge: data.badge || '/icons/icon-purple-192.png',
+    icon: data.icon || '/icon-192.png',
+    badge: data.badge || '/icon-192.png',
     vibrate: [200, 100, 200],
     data: data.data || { url: '/' },
     tag: data.tag || `push-${Date.now()}`,

@@ -1,0 +1,55 @@
+{
+  "name": "Mikayla – Application de couple intime et privée",
+  "short_name": "Mikayla",
+  "description": "Application de couple intime et privée : chat, appels, jeux, coffre-fort, cycle & mood care.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay"],
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Ouvrir le chat",
+      "short_name": "Chat",
+      "url": "/chat",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Ouvrir les jeux",
+      "short_name": "Jeux",
+      "url": "/games",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ],
+  "categories": ["lifestyle", "social"],
+  "lang": "fr",
+  "dir": "ltr"
+}

@@ -26,6 +26,19 @@ if (typeof window !== 'undefined') {
 }
 
 // Register Service Worker for PWA with update detection
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/service-worker.js')
+      .then((reg) => {
+        console.log('Service Worker registered:', reg.scope);
+      })
+      .catch((err) => {
+        console.error('Service Worker registration failed:', err);
+      });
+  });
+}
+
 const updateSW = registerSW({
   onNeedRefresh() {
     // Dispatch custom event for app update

@@ -19,37 +19,66 @@ export default defineConfig(() => {
         },
         includeAssets: [
           'favicon.ico', 
+          'icon-192.png',
+          'icon-512.png',
+          'manifest.webmanifest',
+          'manifest.json',
           'icons/icon-*.png'
         ],
         manifest: {
-          name: 'Mikayla',
+          name: 'Mikayla – Application de couple intime et privée',
           short_name: 'Mikayla',
-          description: 'Application de couple intime et privée Mikayla',
-          theme_color: '#130f26',
-          background_color: '#0f0c1d',
+          description: 'Application de couple intime et privée : chat, appels, jeux, coffre-fort, cycle & mood care.',
+          theme_color: '#0f172a',
+          background_color: '#0f172a',
           display: 'standalone',
+          display_override: ['window-controls-overlay'],
+          orientation: 'portrait',
           start_url: '/',
           scope: '/',
           icons: [
             {
-              src: '/icons/icon-purple-192.png',
+              src: '/icon-192.png',
               sizes: '192x192',
               type: 'image/png',
-              purpose: 'any'
+              purpose: 'any maskable'
             },
             {
-              src: '/icons/icon-purple-512.png',
+              src: '/icon-512.png',
               sizes: '512x512',
               type: 'image/png',
-              purpose: 'any'
-            },
-            {
-              src: '/icons/icon-purple-maskable-512.png',
-              sizes: '512x512',
-              type: 'image/png',
-              purpose: 'maskable'
+              purpose: 'any maskable'
             }
-          ]
+          ],
+          shortcuts: [
+            {
+              name: 'Ouvrir le chat',
+              short_name: 'Chat',
+              url: '/chat',
+              icons: [
+                {
+                  src: '/icon-192.png',
+                  sizes: '192x192',
+                  type: 'image/png'
+                }
+              ]
+            },
+            {
+              name: 'Ouvrir les jeux',
+              short_name: 'Jeux',
+              url: '/games',
+              icons: [
+                {
+                  src: '/icon-192.png',
+                  sizes: '192x192',
+                  type: 'image/png'
+                }
+              ]
+            }
+          ],
+          categories: ['lifestyle', 'social'],
+          lang: 'fr',
+          dir: 'ltr'
         }
       })
     ],
