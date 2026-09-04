@@ -12,29 +12,29 @@ export const THEME_STORAGE_KEY = 'mikayla_theme_config';
 
 export const DEFAULT_COLORS: CustomColors = {
   // 1. EN-TÊTE & NAVIGATION
-  headerBg: '#171230',
-  headerText: '#f1f2f6',
-  tabsBg: '#130f26',
-  tabsActiveIndicator: '#00b894',
+  headerBg: '#11141d',
+  headerText: '#ffffff',
+  tabsBg: '#151924',
+  tabsActiveIndicator: '#6c5ce7',
 
   // 2. BULLES DE MESSAGES ENVOYÉS (Moi)
-  bubbleSentBg: '#005c4b',
-  bubbleSentText: '#f1f2f6',
+  bubbleSentBg: '#2d2544',
+  bubbleSentText: '#ffffff',
   bubbleSentTime: '#a29bfe',
-  tickSingle: '#a29bfe',
+  tickSingle: '#8e95a5',
   tickDelivered: '#cbd5e1',
   tickRead: '#55efc4',
 
   // 3. BULLES DE MESSAGES REÇUS (Partenaire)
-  bubbleRecvBg: '#1e173e',
+  bubbleRecvBg: '#1b202d',
   bubbleRecvText: '#f1f2f6',
-  bubbleRecvSender: '#55efc4',
-  bubbleRecvTime: '#a29bfe',
+  bubbleRecvSender: '#a29bfe',
+  bubbleRecvTime: '#8e95a5',
 
   // 4. ÉLÉMENTS D'ACCENTUATION ET INTERFACE
-  accentColor: '#00b894',
-  inputBg: '#130f26',
-  bottomNavBg: '#130f26'
+  accentColor: '#6c5ce7',
+  inputBg: '#161924',
+  bottomNavBg: '#11141d'
 };
 
 export const DEFAULT_LIGHT_COLORS: CustomColors = {

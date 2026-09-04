@@ -216,7 +216,7 @@ export const ChatList: React.FC<ChatListProps> = ({
     }
 
     return (
-      <div className="flex items-center gap-1.5 text-xs text-[#a29bfe] truncate">
+      <div className="flex items-center gap-1.5 text-xs text-[#8e95a5] truncate">
         {renderTicks()}
         <span className="truncate">{contentNode}</span>
       </div>
@@ -224,18 +224,18 @@ export const ChatList: React.FC<ChatListProps> = ({
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[#130f26] flex flex-col relative select-none">
+    <div className="flex-1 overflow-y-auto bg-[#0b0e14] flex flex-col relative select-none">
       {/* Intimate Quick Access Shortcuts Banner */}
-      <div className="px-3.5 py-2.5 flex items-center gap-2 overflow-x-auto no-scrollbar border-b border-[#2d2254] bg-[#171230]/50 shrink-0">
+      <div className="px-3.5 py-3 flex items-center gap-2 overflow-x-auto no-scrollbar border-b border-white/5 bg-[#11141d]/70 backdrop-blur-md shrink-0">
         <button
           onClick={() => {
             triggerHaptic(20);
             soundEffects.playTap();
             onOpenVault();
           }}
-          className="flex items-center gap-1.5 bg-[#1e173e] hover:bg-[#281e4b] active:scale-95 border border-[#372863] text-[#55efc4] text-xs font-semibold px-3 py-1.5 rounded-xl whitespace-nowrap transition-all shadow-sm cursor-pointer"
+          className="flex items-center gap-1.5 bg-[#181b26] hover:bg-[#1f2433] active:scale-95 border border-white/5 hover:border-[#6c5ce7]/40 text-white text-xs font-semibold px-3.5 py-1.5 rounded-full whitespace-nowrap transition-all shadow-sm cursor-pointer"
         >
-          <Lock size={13} className="text-[#00b894]" />
+          <Lock size={13} className="text-[#a29bfe]" />
           <span>Coffre-Fort</span>
         </button>
 
@@ -246,7 +246,7 @@ export const ChatList: React.FC<ChatListProps> = ({
               soundEffects.playTap();
               onOpenLoveTimer();
             }}
-            className="flex items-center gap-1.5 bg-[#1e173e] hover:bg-[#281e4b] active:scale-95 border border-[#372863] text-[#fd79a8] text-xs font-semibold px-3 py-1.5 rounded-xl whitespace-nowrap transition-all shadow-sm cursor-pointer"
+            className="flex items-center gap-1.5 bg-[#181b26] hover:bg-[#1f2433] active:scale-95 border border-white/5 hover:border-[#fd79a8]/40 text-white text-xs font-semibold px-3.5 py-1.5 rounded-full whitespace-nowrap transition-all shadow-sm cursor-pointer"
           >
             <Heart size={13} className="text-[#fd79a8]" />
             <span>Love Timer</span>
@@ -259,7 +259,7 @@ export const ChatList: React.FC<ChatListProps> = ({
             soundEffects.playTap();
             onOpenWishlist();
           }}
-          className="flex items-center gap-1.5 bg-[#1e173e] hover:bg-[#281e4b] active:scale-95 border border-[#372863] text-[#fd79a8] text-xs font-semibold px-3 py-1.5 rounded-xl whitespace-nowrap transition-all shadow-sm cursor-pointer"
+          className="flex items-center gap-1.5 bg-[#181b26] hover:bg-[#1f2433] active:scale-95 border border-white/5 hover:border-[#fd79a8]/40 text-white text-xs font-semibold px-3.5 py-1.5 rounded-full whitespace-nowrap transition-all shadow-sm cursor-pointer"
         >
           <Sparkles size={13} className="text-[#fd79a8]" />
           <span>Wishlist</span>
@@ -272,7 +272,7 @@ export const ChatList: React.FC<ChatListProps> = ({
               soundEffects.playTap();
               onOpenCoupons();
             }}
-            className="flex items-center gap-1.5 bg-[#1e173e] hover:bg-[#281e4b] active:scale-95 border border-[#372863] text-[#ffeaa7] text-xs font-semibold px-3 py-1.5 rounded-xl whitespace-nowrap transition-all shadow-sm cursor-pointer"
+            className="flex items-center gap-1.5 bg-[#181b26] hover:bg-[#1f2433] active:scale-95 border border-white/5 hover:border-[#ffeaa7]/40 text-white text-xs font-semibold px-3.5 py-1.5 rounded-full whitespace-nowrap transition-all shadow-sm cursor-pointer"
           >
             <Ticket size={13} className="text-[#ffeaa7]" />
             <span>Bons Duo</span>
@@ -285,7 +285,7 @@ export const ChatList: React.FC<ChatListProps> = ({
             soundEffects.playTap();
             onOpenGames();
           }}
-          className="flex items-center gap-1.5 bg-[#1e173e] hover:bg-[#281e4b] active:scale-95 border border-[#372863] text-[#a29bfe] text-xs font-semibold px-3 py-1.5 rounded-xl whitespace-nowrap transition-all shadow-sm cursor-pointer"
+          className="flex items-center gap-1.5 bg-[#181b26] hover:bg-[#1f2433] active:scale-95 border border-white/5 hover:border-[#a29bfe]/40 text-white text-xs font-semibold px-3.5 py-1.5 rounded-full whitespace-nowrap transition-all shadow-sm cursor-pointer"
         >
           <Dices size={13} className="text-[#a29bfe]" />
           <span>Roue & Jeux</span>
@@ -298,7 +298,7 @@ export const ChatList: React.FC<ChatListProps> = ({
               soundEffects.playTap();
               onOpenCalendar();
             }}
-            className="flex items-center gap-1.5 bg-[#1e173e] hover:bg-[#281e4b] active:scale-95 border border-[#372863] text-[#74b9ff] text-xs font-semibold px-3 py-1.5 rounded-xl whitespace-nowrap transition-all shadow-sm cursor-pointer"
+            className="flex items-center gap-1.5 bg-[#181b26] hover:bg-[#1f2433] active:scale-95 border border-white/5 hover:border-[#74b9ff]/40 text-white text-xs font-semibold px-3.5 py-1.5 rounded-full whitespace-nowrap transition-all shadow-sm cursor-pointer"
           >
             <Calendar size={13} className="text-[#74b9ff]" />
             <span>Calendrier</span>
@@ -308,62 +308,68 @@ export const ChatList: React.FC<ChatListProps> = ({
 
       {/* Main Couple Conversation Row */}
       {matchesSearch ? (
-        <div
-          onClick={handleChatClick}
-          className="flex items-center px-4 py-4 cursor-pointer bg-[#1b1435] hover:bg-[#231a44] active:bg-[#171230] transition-colors border-b border-[#2d2254]/70 min-h-[76px] group"
-        >
-          {/* Avatar with Emerald Online Ring */}
-          <div className="relative shrink-0 mr-3.5">
-            <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-[#1e173e] overflow-hidden border-2 border-[#6c5ce7]/50 shadow-md group-hover:scale-105 transition-transform flex items-center justify-center">
-              {partnerProfile?.avatar_url || partnerUser.avatar ? (
-                <img
-                  src={partnerProfile?.avatar_url || partnerUser.avatar}
-                  alt={partnerName}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <UserIcon size={24} className="text-[#a29bfe]/40" />
+        <div className="p-3">
+          <div
+            onClick={handleChatClick}
+            className="flex items-center p-3.5 cursor-pointer bg-[#171b26]/80 hover:bg-[#1f2433] active:scale-[0.99] transition-all rounded-2xl border border-white/5 hover:border-white/10 shadow-lg min-h-[76px] group"
+          >
+            {/* Avatar with Gradient Ring & Online Dot */}
+            <div className="relative shrink-0 mr-3.5">
+              <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-full p-[2px] bg-gradient-to-tr from-[#fd79a8] via-[#a29bfe] to-[#6c5ce7] shadow-md group-hover:scale-105 transition-transform flex items-center justify-center">
+                <div className="w-full h-full rounded-full overflow-hidden bg-[#11141d]">
+                  {partnerProfile?.avatar_url || partnerUser.avatar ? (
+                    <img
+                      src={partnerProfile?.avatar_url || partnerUser.avatar}
+                      alt={partnerName}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <UserIcon size={24} className="text-[#a29bfe]/60" />
+                    </div>
+                  )}
+                </div>
+              </div>
+              {isPartnerOnline && (
+                <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-[#00b894] border-2 border-[#11141d] rounded-full shadow-sm animate-pulse" />
               )}
             </div>
-            {isPartnerOnline && (
-              <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-[#00b894] border-2 border-[#171230] rounded-full shadow-sm animate-pulse" />
-            )}
-          </div>
 
-          {/* Contact & Message Content */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between mb-1">
-              <div className="flex items-center gap-1.5 truncate">
-                <span className="font-bold text-sm sm:text-base text-[#f1f2f6] truncate">
-                  {partnerName}
-                </span>
-                <span className="text-[10px] text-[#55efc4] bg-[#00b894]/20 border border-[#00b894]/30 px-1.5 py-0.2 rounded-full font-semibold shrink-0">
-                  Duo
-                </span>
-              </div>
-              <span className={`text-[11px] shrink-0 ml-2 ${unreadMessagesCount > 0 ? 'text-[#00b894] font-bold' : 'text-[#a29bfe]/60'}`}>
-                {lastMessage ? formatTime(lastMessage.timestamp) : '12:00'}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between text-xs text-[#a29bfe]">
-              <div className="flex-1 truncate pr-2">
-                {renderLastMessageSnippet()}
-              </div>
-
-              <div className="flex items-center gap-1.5 shrink-0">
-                <Pin size={13} className="text-[#00b894] rotate-45" />
-                {unreadMessagesCount > 0 && (
-                  <span className="bg-[#00b894] text-[#130f26] text-[10px] font-extrabold px-1.5 py-0.2 rounded-full min-w-4 h-4 flex items-center justify-center shadow-sm">
-                    {unreadMessagesCount}
+            {/* Contact & Message Content */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2 truncate">
+                  <span className="font-bold text-sm sm:text-base text-white truncate group-hover:text-[#a29bfe] transition-colors">
+                    {partnerName}
                   </span>
-                )}
+                  <span className="text-[10px] text-[#a29bfe] bg-[#6c5ce7]/15 border border-[#6c5ce7]/30 px-2 py-0.5 rounded-full font-semibold shrink-0">
+                    Duo Intime
+                  </span>
+                </div>
+                <span className={`text-[11px] font-medium shrink-0 ml-2 ${unreadMessagesCount > 0 ? 'text-[#6c5ce7] font-bold' : 'text-[#8e95a5]'}`}>
+                  {lastMessage ? formatTime(lastMessage.timestamp) : '12:00'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-[#8e95a5]">
+                <div className="flex-1 truncate pr-2">
+                  {renderLastMessageSnippet()}
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Pin size={13} className="text-[#6c5ce7] rotate-45" />
+                  {unreadMessagesCount > 0 && (
+                    <span className="bg-[#6c5ce7] text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full min-w-4 h-4 flex items-center justify-center shadow-md">
+                      {unreadMessagesCount}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex flex-col items-center justify-center text-[#a29bfe] p-8 text-center">
+        <div className="flex-1 flex flex-col items-center justify-center text-[#8e95a5] p-8 text-center">
           <p className="text-sm font-semibold">Aucun message trouvé pour « {searchQuery} »</p>
         </div>
       )}
@@ -375,7 +381,7 @@ export const ChatList: React.FC<ChatListProps> = ({
           soundEffects.playTap();
           onOpenNewChat();
         }}
-        className="absolute bottom-6 right-6 w-14 h-14 rounded-2xl bg-[#00b894] hover:bg-[#00a884] active:scale-95 text-[#130f26] shadow-2xl flex items-center justify-center transition-all hover:scale-105 z-10 cursor-pointer border-2 border-[#55efc4]/30"
+        className="absolute bottom-6 right-6 w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#6c5ce7] to-[#a29bfe] hover:brightness-110 active:scale-95 text-white shadow-[0_4px_25px_rgba(108,92,231,0.4)] flex items-center justify-center transition-all hover:scale-105 z-10 cursor-pointer border border-white/20"
         title="Sanctuaire / Scanner QR"
       >
         <MessageSquarePlus size={24} className="stroke-[2.5]" />

@@ -18,34 +18,29 @@ export const TabsNav: React.FC<TabsNavProps> = ({
 }) => {
   return (
     <nav 
-      className="h-[48px] text-[#a29bfe] select-none flex text-xs font-bold uppercase tracking-wider shrink-0 border-b border-[#2d2254] relative z-20 transition-colors bg-[#130f26]"
+      className="h-[52px] px-3 select-none flex items-center gap-2 shrink-0 border-b border-white/5 relative z-20 transition-colors bg-[#151924]/90 backdrop-blur-md"
       style={{
-        backgroundColor: 'var(--mk-tabs-bg, #130f26)'
+        backgroundColor: 'var(--mk-tabs-bg, #151924)'
       }}
     >
       {/* Discussions Tab */}
       <button
         onClick={() => onTabChange('discussions')}
-        style={{
-          borderBottomColor: activeTab === 'discussions' ? 'var(--mk-tabs-active, #00b894)' : 'transparent',
-          color: activeTab === 'discussions' ? 'var(--mk-tabs-active, #00b894)' : undefined
-        }}
-        className={`flex-1 flex items-center justify-center gap-2 border-b-2 transition-all cursor-pointer group ${
+        className={`flex-1 py-2 px-3 rounded-full flex items-center justify-center gap-2 text-xs font-bold tracking-tight transition-all cursor-pointer group ${
           activeTab === 'discussions'
-            ? 'bg-[#1a1435]/60 font-black'
-            : 'border-transparent text-[#a29bfe]/70 hover:text-[#f1f2f6]'
+            ? 'bg-[#1e2333] text-white shadow-md border border-white/10 ring-1 ring-[#6c5ce7]/30'
+            : 'text-[#8e95a5] hover:text-white hover:bg-white/5'
         }`}
       >
         <MessageSquareHeart 
           size={16} 
           strokeWidth={activeTab === 'discussions' ? 2.4 : 1.8}
-          className={`transition-transform duration-200 ${activeTab === 'discussions' ? 'scale-110' : ''}`}
+          className={`transition-transform duration-200 ${activeTab === 'discussions' ? 'scale-110 text-[#a29bfe]' : 'text-[#8e95a5]'}`}
         />
         <span>Discussions</span>
         {unreadCount > 0 && (
           <span 
-            style={{ backgroundColor: 'var(--mk-accent, #00b894)' }}
-            className="text-[#130f26] font-extrabold text-[10px] px-1.5 py-0.5 rounded-full min-w-4 h-4 flex items-center justify-center shadow-sm animate-pulse"
+            className="bg-[#6c5ce7] text-white font-extrabold text-[10px] px-2 py-0.5 rounded-full min-w-4 h-4 flex items-center justify-center shadow-md animate-pulse"
           >
             {unreadCount}
           </span>
@@ -55,24 +50,20 @@ export const TabsNav: React.FC<TabsNavProps> = ({
       {/* Appels Tab */}
       <button
         onClick={() => onTabChange('appels')}
-        style={{
-          borderBottomColor: activeTab === 'appels' ? 'var(--mk-tabs-active, #00b894)' : 'transparent',
-          color: activeTab === 'appels' ? 'var(--mk-tabs-active, #00b894)' : undefined
-        }}
-        className={`flex-1 flex items-center justify-center gap-2 border-b-2 transition-all cursor-pointer group ${
+        className={`flex-1 py-2 px-3 rounded-full flex items-center justify-center gap-2 text-xs font-bold tracking-tight transition-all cursor-pointer group ${
           activeTab === 'appels'
-            ? 'bg-[#1a1435]/60 font-black'
-            : 'border-transparent text-[#a29bfe]/70 hover:text-[#f1f2f6]'
+            ? 'bg-[#1e2333] text-white shadow-md border border-white/10 ring-1 ring-[#6c5ce7]/30'
+            : 'text-[#8e95a5] hover:text-white hover:bg-white/5'
         }`}
       >
         <PhoneCall 
           size={16} 
           strokeWidth={activeTab === 'appels' ? 2.4 : 1.8}
-          className={`transition-transform duration-200 ${activeTab === 'appels' ? 'scale-110' : ''}`}
+          className={`transition-transform duration-200 ${activeTab === 'appels' ? 'scale-110 text-[#fd79a8]' : 'text-[#8e95a5]'}`}
         />
         <span>Appels Intimes</span>
         {missedCallsCount > 0 && (
-          <span className="bg-[#ff7675] text-white font-extrabold text-[10px] px-1.5 py-0.5 rounded-full min-w-4 h-4 flex items-center justify-center shadow-sm animate-bounce">
+          <span className="bg-[#ff7675] text-white font-extrabold text-[10px] px-2 py-0.5 rounded-full min-w-4 h-4 flex items-center justify-center shadow-md animate-bounce">
             {missedCallsCount}
           </span>
         )}

@@ -1049,15 +1049,15 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
       {/* Top Chat Header */}
       <div 
-        className="h-[62px] px-3.5 flex items-center justify-between border-b border-[#2d2254] relative z-30 shrink-0 transition-colors"
+        className="h-[62px] px-3.5 flex items-center justify-between border-b border-white/5 relative z-30 shrink-0 transition-colors bg-[#11141d]/95 backdrop-blur-xl shadow-md"
         style={{
-          backgroundColor: 'var(--mk-header-bg)',
-          color: 'var(--mk-header-text)'
+          backgroundColor: 'var(--mk-header-bg, #11141d)',
+          color: 'var(--mk-header-text, #ffffff)'
         }}
       >
         {searchInChat ? (
-          <div className="flex items-center w-full bg-[#130f26] rounded-xl px-3 py-1.5 border border-[#372863]">
-            <Search size={16} className="text-[#a29bfe] mr-2" />
+          <div className="flex items-center w-full bg-[#181b26] rounded-full px-3.5 py-1.5 border border-white/10 shadow-inner">
+            <Search size={16} className="text-[#8e95a5] mr-2" />
             <input
               type="text"
               placeholder="Rechercher dans la discussion..."
@@ -1071,7 +1071,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 setSearchInChat(false);
                 setChatSearchQuery('');
               }}
-              className="p-1.5 text-[#a29bfe] hover:text-white hover:bg-white/10 rounded-full"
+              className="p-1.5 text-[#8e95a5] hover:text-white hover:bg-white/10 rounded-full cursor-pointer"
             >
               <X size={16} />
             </button>
@@ -1081,28 +1081,28 @@ export const ChatView: React.FC<ChatViewProps> = ({
             <div className="flex items-center space-x-3 flex-1 overflow-hidden">
               <button
                 onClick={onBack}
-                className="p-1 sm:hidden text-[#a29bfe] hover:text-white hover:bg-white/10 rounded-xl transition-all"
+                className="p-1.5 sm:hidden text-[#8e95a5] hover:text-white hover:bg-white/5 rounded-full transition-all cursor-pointer"
               >
-                <ArrowLeft size={22} />
+                <ArrowLeft size={20} />
               </button>
               
               <div 
                 className="relative cursor-pointer group"
                 onClick={onOpenContactInfo}
               >
-                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full overflow-hidden bg-gradient-to-br from-[#00b894] to-[#55efc4] p-[2px] shadow-lg relative">
-                  <div className="w-full h-full rounded-full overflow-hidden border-2 border-[#130f26]">
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full p-[2px] bg-gradient-to-tr from-[#fd79a8] via-[#a29bfe] to-[#6c5ce7] shadow-lg relative group-hover:scale-105 transition-transform">
+                  <div className="w-full h-full rounded-full overflow-hidden bg-[#11141d]">
                     {partnerProfile?.avatarUrl ? (
                       <img src={partnerProfile.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
                     ) : (
-                      <div className="w-full h-full bg-[#1b1435] flex items-center justify-center">
+                      <div className="w-full h-full flex items-center justify-center">
                         <UserIcon size={20} className="text-[#a29bfe]" />
                       </div>
                     )}
                   </div>
                 </div>
                 {isPartnerOnline && (
-                  <div className="absolute bottom-0 right-0 w-3 h-3 bg-[#00b894] border-2 border-[#130f26] rounded-full shadow-sm animate-pulse" />
+                  <div className="absolute bottom-0 right-0 w-3 h-3 bg-[#00b894] border-2 border-[#11141d] rounded-full shadow-sm animate-pulse" />
                 )}
               </div>
               
@@ -1111,50 +1111,53 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 onClick={onOpenContactInfo}
               >
                 <div className="flex items-center gap-1.5">
-                  <h2 className="font-bold text-sm sm:text-base text-white truncate group-hover:text-[#55efc4] transition-colors">
+                  <h2 className="font-bold text-sm sm:text-base text-white truncate group-hover:text-[#a29bfe] transition-colors leading-tight">
                     {partnerNickname || partnerUser.name}
                   </h2>
                 </div>
-                <div className="flex items-center text-[11px] text-[#a29bfe]">
+                <div className="flex items-center text-[11px] text-[#8e95a5] mt-0.5">
                   {isPartnerTyping ? (
                     <span className="text-[#55efc4] font-medium italic animate-pulse">écrit…</span>
                   ) : isPartnerOnline ? (
                     <span className="text-[#00b894] font-medium">En ligne</span>
                   ) : partnerLastSeenText ? (
-                    <span className="text-[#a29bfe]/80">{partnerLastSeenText}</span>
+                    <span className="text-[#8e95a5]">{partnerLastSeenText}</span>
                   ) : (
-                    <span className="text-[#a29bfe]/60">Hors ligne</span>
+                    <span className="text-[#8e95a5]/70">Hors ligne</span>
                   )}
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center space-x-1 sm:space-x-2 shrink-0">
+            <div className="flex items-center space-x-1 sm:space-x-1.5 shrink-0">
               <button
                 onClick={() => onStartCall('video')}
                 disabled={!pairingState?.isPaired || !pairingState?.coupleId}
-                className="p-2 sm:p-2.5 text-[#a29bfe] hover:text-white hover:bg-white/10 rounded-xl transition-all disabled:opacity-50"
+                className="p-2 sm:p-2.5 text-[#8e95a5] hover:text-white hover:bg-white/10 bg-white/5 border border-white/5 rounded-full transition-all disabled:opacity-50 cursor-pointer"
+                title="Appel vidéo intime"
               >
-                <Video size={20} />
+                <Video size={18} />
               </button>
               <button
                 onClick={() => onStartCall('audio')}
                 disabled={!pairingState?.isPaired || !pairingState?.coupleId}
-                className="p-2 sm:p-2.5 text-[#a29bfe] hover:text-white hover:bg-white/10 rounded-xl transition-all disabled:opacity-50"
+                className="p-2 sm:p-2.5 text-[#8e95a5] hover:text-white hover:bg-white/10 bg-white/5 border border-white/5 rounded-full transition-all disabled:opacity-50 cursor-pointer"
+                title="Appel vocal intime"
               >
-                <Phone size={20} />
+                <Phone size={18} />
               </button>
               
               <div className="relative">
                 <button
                   onClick={() => setShowChatMenu(!showChatMenu)}
-                  className="p-2 sm:p-2.5 text-[#a29bfe] hover:text-white hover:bg-white/10 rounded-xl transition-all"
+                  className="p-2 sm:p-2.5 text-[#8e95a5] hover:text-white hover:bg-white/10 bg-white/5 border border-white/5 rounded-full transition-all cursor-pointer"
+                  title="Menu discussion"
                 >
-                  <MoreVertical size={20} />
+                  <MoreVertical size={18} />
                 </button>
 
                 {showChatMenu && (
-                  <div className="absolute right-0 top-12 w-56 bg-[#1b1435] border border-[#2d2254] rounded-2xl shadow-2xl overflow-hidden py-2 animate-in zoom-in-95 duration-100 origin-top-right">
+                  <div className="absolute right-0 top-12 w-56 bg-[#171b26] border border-white/10 rounded-2xl shadow-2xl overflow-hidden py-2 animate-in zoom-in-95 duration-100 origin-top-right z-50 backdrop-blur-2xl">
                     
                     {onOpenGames && pairingState?.isPaired && (
                       <button
@@ -1163,21 +1166,21 @@ export const ChatView: React.FC<ChatViewProps> = ({
                           console.log('[Game] Bouton roue de défis cliqué');
                           onOpenGames('wheel');
                         }}
-                        className="w-full text-left px-4 py-2.5 hover:bg-[#281e4b] flex items-center space-x-3 text-white"
+                        className="w-full text-left px-4 py-2.5 hover:bg-white/5 flex items-center space-x-3 text-white cursor-pointer"
                       >
                         <span className="text-base">🎡</span>
                         <span>Roue de défis</span>
                       </button>
                     )}
 
-                    <div className="h-px bg-[#2d2254] my-1" />
+                    <div className="h-px bg-white/5 my-1" />
 
                     <button
                       onClick={() => {
                         setSearchInChat(true);
                         setShowChatMenu(false);
                       }}
-                      className="w-full text-left px-4 py-2.5 hover:bg-[#281e4b] flex items-center space-x-3 text-white"
+                      className="w-full text-left px-4 py-2.5 hover:bg-white/5 flex items-center space-x-3 text-white cursor-pointer"
                     >
                       <Search size={16} className="text-[#a29bfe]" />
                       <span>Rechercher</span>
@@ -1329,8 +1332,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
             <React.Fragment key={msg.id}>
               {/* Date Divider */}
               {showDateDivider && (
-                <div className="flex justify-center my-3">
-                  <span className="bg-[#1b1435] text-[#a29bfe] text-[10px] font-semibold uppercase tracking-wider px-3 py-1 rounded-full shadow-xs border border-[#2d2254]">
+                <div className="flex justify-center my-3.5">
+                  <span className="bg-[#171b26]/90 backdrop-blur-md text-[#8e95a5] text-[10px] font-bold uppercase tracking-wider px-3.5 py-1 rounded-full shadow-sm border border-white/5">
                     {formatDateDivider(msg.timestamp)}
                   </span>
                 </div>
@@ -1343,7 +1346,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
               >
                 {/* Floating Reaction Bar */}
                 {activeReactionMsgId === msg.id && (
-                  <div className="reaction-bar-container absolute -top-10 z-40 bg-[#1b1435] border border-[#372863] rounded-full px-2 py-1 shadow-2xl flex items-center gap-1.5 animate-in zoom-in-95 duration-100">
+                  <div className="reaction-bar-container absolute -top-11 z-40 bg-[#171b26]/95 backdrop-blur-xl border border-white/10 rounded-full px-2.5 py-1 shadow-2xl flex items-center gap-1.5 animate-in zoom-in-95 duration-100">
                     {['❤️', '🔥', '😘', '🥺', '✨', '😂'].map(emoji => (
                       <button
                         key={emoji}
@@ -1362,7 +1365,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                         setActiveContextMenuMsgId(msg.id);
                         setActiveReactionMsgId(null);
                       }}
-                      className="p-1 text-[#a29bfe] hover:text-white rounded-full cursor-pointer"
+                      className="p-1 text-[#8e95a5] hover:text-white rounded-full cursor-pointer"
                       title="Plus d'actions"
                     >
                       <MoreVertical size={14} />
