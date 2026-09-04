@@ -1474,12 +1474,15 @@ export const ChatView: React.FC<ChatViewProps> = ({
                         </button>
                       </div>
                     ) : (
-                      <div 
-                        className="leading-relaxed whitespace-pre-wrap break-words font-medium"
-                        style={{ fontSize: 'var(--mk-font-size, 14px)' }}
-                      >
-                        {renderFormattedText(msg.content)}
-                      </div>
+                      // Ne pas afficher de texte brut si le message contient un JSON de jeu ou structure de données
+                      (!msg.content?.trim().startsWith('{') && !msg.content?.includes('"gameType"')) ? (
+                        <div 
+                          className="leading-relaxed whitespace-pre-wrap break-words font-medium"
+                          style={{ fontSize: 'var(--mk-font-size, 14px)' }}
+                        >
+                          {renderFormattedText(msg.content)}
+                        </div>
+                      ) : null
                     )
                   )}
 
@@ -2002,7 +2005,28 @@ export const ChatView: React.FC<ChatViewProps> = ({
                       );
                     }
 
-                    return <span>{msg.content}</span>;
+                    // Fallback propre pour tout autre jeu/gage - Ne JAMAIS afficher de JSON brut ou code
+                    const customTitle = gameData.title || gameData.result?.title || gameData.result?.action || gameData.name || 'Jeu Complice';
+                    const customDesc = gameData.description || gameData.result?.description || gameData.result?.challenge || gameData.challenge || gameData.question || gameData.text || (typeof gameData.result === 'string' ? gameData.result : '');
+
+                    return (
+                      <div className="flex flex-col gap-2 min-w-[220px] max-w-xs">
+                        <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                          <div className="flex items-center gap-2">
+                            <Sparkles size={16} className="text-[#fd79a8]" />
+                            <span className="font-bold text-sm tracking-wide text-white">{customTitle}</span>
+                          </div>
+                          <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#fd79a8]/20 text-[#fd79a8] border border-[#fd79a8]/40">
+                            🎲 Complice
+                          </span>
+                        </div>
+                        {customDesc ? (
+                          <div className="p-3 rounded-2xl bg-white/5 border border-white/10 text-xs sm:text-sm font-medium text-white leading-relaxed">
+                            {customDesc}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
                   })()}
 
               {/* Footer info: Time, Transport Badge, Ticks, Pin, Star */}

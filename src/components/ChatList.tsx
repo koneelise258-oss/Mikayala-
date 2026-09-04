@@ -185,6 +185,34 @@ export const ChatList: React.FC<ChatListProps> = ({
           <Gift size={14} className="text-[#ffeaa7]" /> Message Secret à Gratter 🎁
         </span>
       );
+    } else if (lastMessage.type === 'game' || (lastMessage.content && (lastMessage.content.startsWith('{') || lastMessage.content.includes('"gameType"')))) {
+      try {
+        const gameObj = JSON.parse(lastMessage.content);
+        let gameLabel = "Jeu complice 🎲";
+        if (gameObj.gameType === 'intimate_dice' || gameObj.gameType === 'dice') {
+          gameLabel = `🎲 Dés Intimes : ${gameObj.result?.action || 'Gage tiré'}`;
+        } else if (gameObj.gameType === 'challenge_wheel' || gameObj.gameType === 'wheel') {
+          gameLabel = `🎡 Défi Roue : ${gameObj.result?.challenge || gameObj.challenge || 'Nouveau tirage'}`;
+        } else if (gameObj.gameType === 'truth_or_dare' || gameObj.gameType === 'tod') {
+          const isTruth = gameObj.result?.type === 'truth' || gameObj.type === 'truth';
+          gameLabel = `${isTruth ? '🤫 Vérité' : '🔥 Action'} : ${gameObj.result?.title || 'Gage complice'}`;
+        } else if (gameObj.gameType === 'blind_quiz') {
+          gameLabel = `❓ Quiz Double Aveugle : ${gameObj.question || 'Nouveau quiz'}`;
+        } else if (gameObj.gameType === 'scratch_card') {
+          gameLabel = `🎫 Carte à gratter : ${gameObj.content?.title || 'Secret'}`;
+        }
+        contentNode = (
+          <span className="flex items-center gap-1.5 text-[#fd79a8] font-medium">
+            <Sparkles size={14} className="text-[#55efc4]" /> {gameLabel}
+          </span>
+        );
+      } catch(e) {
+        contentNode = (
+          <span className="flex items-center gap-1.5 text-[#fd79a8]">
+            <Sparkles size={14} className="text-[#55efc4]" /> Défi ou Jeu Complice 🎲
+          </span>
+        );
+      }
     }
 
     return (

@@ -62,17 +62,28 @@ class CallService {
       .on('broadcast', { event: 'signal' }, (response) => {
         const payload = response.payload as SignalingPayload;
         console.log('[Call signal received]', {
-          payload,
+          type: payload.type,
+          senderId: payload.senderId,
+          receiverId: payload.receiverId,
           currentUserId: this.currentUserId,
-          isForMe: payload.receiverId === this.currentUserId
+          partnerId: this.partnerId
         });
-        if (payload.receiverId === this.currentUserId) {
+
+        // Ignore echo of our own signal
+        if (payload.senderId && payload.senderId === this.currentUserId) {
+          return;
+        }
+
+        // In a dedicated couple room topic `signaling:${coupleId}`, any signal from partner is for us
+        const isForMe =
+          !payload.receiverId ||
+          payload.receiverId === this.currentUserId ||
+          payload.senderId !== this.currentUserId;
+
+        if (isForMe) {
           this.handleIncomingSignal(payload);
         } else {
-          console.log('[Call signal received] Ignored: receiverId mismatch', {
-            receiverId: payload.receiverId,
-            currentUserId: this.currentUserId
-          });
+          console.log('[Call signal received] Ignored self or invalid signal');
         }
       })
       .subscribe((status) => {
@@ -92,7 +103,7 @@ class CallService {
   }
 
   public handleDirectSignal(payload: SignalingPayload) {
-    if (payload.receiverId === this.currentUserId) {
+    if (payload.senderId !== this.currentUserId || payload.receiverId === this.currentUserId) {
       console.log('[CallService] Signal direct de proximité traité:', payload.type);
       this.handleIncomingSignal(payload);
     }
@@ -472,11 +483,30 @@ class CallService {
     this.sendSignal({
       type: 'request',
       callId: this.activeCallId,
-      senderId: this.currentUserId!,
-      receiverId: this.partnerId!,
-      coupleId: this.coupleId!,
+      senderId: this.currentUserId || '',
+      receiverId: this.partnerId || '',
+      coupleId: this.coupleId || '',
       callType: type
     });
+
+    // Pings répétés toutes les 2.5s jusqu'à réponse ou fin pour réveiller et traverser les reconnexions réseau
+    let pingAttempts = 0;
+    const requestInterval = setInterval(() => {
+      pingAttempts++;
+      if (this.activeCallId === callId && this.callState === 'ringing' && pingAttempts < 6) {
+        console.log(`[CallService] Re-broadcasting call request (attempt ${pingAttempts}/5)...`);
+        this.sendSignal({
+          type: 'request',
+          callId: this.activeCallId,
+          senderId: this.currentUserId || '',
+          receiverId: this.partnerId || '',
+          coupleId: this.coupleId || '',
+          callType: type
+        });
+      } else {
+        clearInterval(requestInterval);
+      }
+    }, 2500);
 
     this.startRingingTimeout(callId);
     this.callState = 'ringing';
@@ -590,7 +620,7 @@ class CallService {
     }
 
     // 2. Broadcast via Supabase Realtime channel
-    if (this.signalingChannel) {
+    if (this.signalingChannel && this.isSignalingReady) {
       this.signalingChannel.send({
         type: 'broadcast',
         event: 'signal',
@@ -599,26 +629,38 @@ class CallService {
         console.log('[Call signal sent result]', res);
       }).catch((err: any) => {
         console.error('[Call signal sent error]', err);
+        this.outgoingSignalQueue.push(payload);
       });
+    } else {
+      console.log('[CallService] Realtime channel not ready yet, queuing signal:', payload.type);
+      this.outgoingSignalQueue.push(payload);
     }
   }
 
   private sendSignal(payload: SignalingPayload) {
-    // Toujours envoyer immédiatement en Proximity/Local, et en file d'attente Supabase si non connecté
+    // Fill in default IDs if missing
+    if (!payload.senderId && this.currentUserId) payload.senderId = this.currentUserId;
+    if (!payload.receiverId && this.partnerId) payload.receiverId = this.partnerId;
+    if (!payload.coupleId && this.coupleId) payload.coupleId = this.coupleId;
+
     this.sendSignalDirect(payload);
-    if (!this.isSignalingReady && !this.signalingChannel) {
-      this.outgoingSignalQueue.push(payload);
-    }
   }
 
   private flushOutgoingSignalQueue() {
     if (!this.isSignalingReady || !this.signalingChannel) return;
     if (this.outgoingSignalQueue.length > 0) {
       console.log(`[CallService] Flushing ${this.outgoingSignalQueue.length} queued signal(s)...`);
-      while (this.outgoingSignalQueue.length > 0) {
-        const payload = this.outgoingSignalQueue.shift();
-        if (payload) {
-          this.sendSignalDirect(payload);
+      const queueCopy = [...this.outgoingSignalQueue];
+      this.outgoingSignalQueue = [];
+      for (const payload of queueCopy) {
+        if (this.signalingChannel) {
+          this.signalingChannel.send({
+            type: 'broadcast',
+            event: 'signal',
+            payload
+          }).catch((err: any) => {
+            console.error('[CallService] Error during flush send:', err);
+          });
         }
       }
     }

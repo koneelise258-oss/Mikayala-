@@ -683,12 +683,14 @@ export default function App() {
 
   // Call Signaling Logic - Setup channel once IDs are available
   useEffect(() => {
-    const coupleId = pairingState?.coupleId;
-    const partnerId = partnerUser.id || pairingState?.partnerId;
-    if (coupleId && currentUser.id && partnerId) {
+    const stored = getStoredPairingState();
+    const coupleId = pairingState?.coupleId || stored.coupleId;
+    const partnerId = partnerUser.id || pairingState?.partnerId || stored.partnerId || '';
+    if (coupleId && currentUser.id) {
+      console.log('[App] Setting up callService with:', { coupleId, currentUserId: currentUser.id, partnerId });
       callService.setup(coupleId, currentUser.id, partnerId);
     }
-  }, [pairingState?.coupleId, currentUser.id, partnerUser.id]);
+  }, [pairingState?.coupleId, pairingState?.partnerId, currentUser.id, partnerUser.id]);
 
   // Handle call service events
   useEffect(() => {
