@@ -155,11 +155,27 @@ class CallService {
     }
   }
 
-  private handleConnectionStateChange() {
-    const state = this.peerConnection?.connectionState;
-    console.log(`[${new Date().toISOString()}] [WebRTC connection state]`, state, { activeCallId: this.activeCallId });
+  private async attemptIceRestart() {
+    if (!this.peerConnection || !this.isCallActive) return;
+    try {
+      console.log(`[${new Date().toISOString()}] [CallService] Attempting ICE restart to recover connection...`);
+      if ('restartIce' in this.peerConnection && typeof (this.peerConnection as any).restartIce === 'function') {
+        (this.peerConnection as any).restartIce();
+      }
+      if (this.peerConnection.signalingState === 'stable') {
+        await this.createOffer();
+      }
+    } catch (e) {
+      console.warn('[CallService] ICE restart error:', e);
+    }
+  }
 
-    if (state === 'connected') {
+  private handleConnectionStateChange() {
+    const connState = this.peerConnection?.connectionState;
+    const iceState = this.peerConnection?.iceConnectionState;
+    console.log(`[${new Date().toISOString()}] [WebRTC connection state: ${connState}, iceState: ${iceState}]`, { activeCallId: this.activeCallId });
+
+    if (connState === 'connected' || iceState === 'connected' || iceState === 'completed') {
       if (this.disconnectedTimer) {
         clearTimeout(this.disconnectedTimer);
         this.disconnectedTimer = null;
@@ -169,23 +185,42 @@ class CallService {
       return;
     }
 
-    if (state === 'disconnected') {
+    if (connState === 'disconnected') {
       if (this.disconnectedTimer) return;
 
-      console.warn(`[${new Date().toISOString()}] [CallService] Disconnected state detected. Starting 5s grace period before ending call...`);
+      console.warn(`[${new Date().toISOString()}] [CallService] Disconnected state detected. Starting 20s grace period and attempting ICE restart...`);
+      this.attemptIceRestart();
+
       this.disconnectedTimer = setTimeout(() => {
-        const currentState = this.peerConnection?.connectionState;
-        if (currentState === 'disconnected' || currentState === 'failed') {
-          console.error(`[${new Date().toISOString()}] [CallService] Connection failed after 5s grace period. Ending call.`);
+        const currentConnState = this.peerConnection?.connectionState;
+        const currentIceState = this.peerConnection?.iceConnectionState;
+        if (
+          (currentConnState === 'disconnected' || currentConnState === 'failed') &&
+          currentIceState !== 'connected' &&
+          currentIceState !== 'completed'
+        ) {
+          console.error(`[${new Date().toISOString()}] [CallService] Connection failed after 20s grace period. Ending call.`);
           this.endCallWithReason('connection_failed');
+        } else {
+          console.log(`[${new Date().toISOString()}] [CallService] Connection recovered during grace period.`);
         }
         this.disconnectedTimer = null;
-      }, 5000);
+      }, 20000);
       return;
     }
 
-    if (state === 'failed') {
-      this.endCallWithReason('connection_failed');
+    if (connState === 'failed') {
+      this.attemptIceRestart();
+      if (!this.disconnectedTimer) {
+        this.disconnectedTimer = setTimeout(() => {
+          const currentConnState = this.peerConnection?.connectionState;
+          const currentIceState = this.peerConnection?.iceConnectionState;
+          if (currentConnState === 'failed' && currentIceState !== 'connected' && currentIceState !== 'completed') {
+            this.endCallWithReason('connection_failed');
+          }
+          this.disconnectedTimer = null;
+        }, 10000);
+      }
     }
   }
 
@@ -207,7 +242,16 @@ class CallService {
     this.cleanupPeerConnection();
 
     this.peerConnection = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' },
+        { urls: 'stun:stun.services.mozilla.com' },
+        { urls: 'stun:stun.stunprotocol.org:3478' }
+      ],
+      iceCandidatePoolSize: 10
     });
 
     this.peerConnection.ontrack = (event) => {
@@ -237,7 +281,18 @@ class CallService {
     };
 
     this.peerConnection.oniceconnectionstatechange = () => {
-      console.log(`[${new Date().toISOString()}] [WebRTC iceConnectionState]:`, this.peerConnection?.iceConnectionState, { activeCallId: this.activeCallId });
+      const iceState = this.peerConnection?.iceConnectionState;
+      console.log(`[${new Date().toISOString()}] [WebRTC iceConnectionState]:`, iceState, { activeCallId: this.activeCallId });
+      if (iceState === 'connected' || iceState === 'completed') {
+        if (this.disconnectedTimer) {
+          clearTimeout(this.disconnectedTimer);
+          this.disconnectedTimer = null;
+        }
+        this.clearRingingTimeout();
+        this.callState = 'connected';
+      } else if (iceState === 'disconnected' || iceState === 'failed') {
+        this.handleConnectionStateChange();
+      }
     };
 
     this.peerConnection.onsignalingstatechange = () => {

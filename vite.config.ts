@@ -10,12 +10,10 @@ export default defineConfig(() => {
       react(), 
       tailwindcss(),
       VitePWA({
-        strategies: 'injectManifest',
-        srcDir: 'src',
-        filename: 'sw.js',
-        registerType: 'autoUpdate',
+        registerType: 'prompt',
+        injectRegister: false,
         devOptions: {
-          enabled: true,
+          enabled: false,
         },
         includeAssets: [
           'favicon.ico', 

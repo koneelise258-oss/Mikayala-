@@ -1,6 +1,5 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
-import { registerSW } from 'virtual:pwa-register';
 import App from './App.tsx';
 import './index.css';
 
@@ -25,29 +24,22 @@ if (typeof window !== 'undefined') {
   }
 }
 
-// Register Service Worker for PWA with update detection
-if ('serviceWorker' in navigator) {
+// Register Service Worker for PWA (Production & PWA install without destructive reload loops)
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker
-      .register('/service-worker.js')
-      .then((reg) => {
-        console.log('Service Worker registered:', reg.scope);
-      })
-      .catch((err) => {
-        console.error('Service Worker registration failed:', err);
-      });
+    // Only register in production or standalone PWA mode to avoid dev server interference
+    if (import.meta.env.PROD || window.matchMedia('(display-mode: standalone)').matches) {
+      navigator.serviceWorker
+        .register('/service-worker.js')
+        .then((reg) => {
+          console.log('[SW] Service Worker registered cleanly:', reg.scope);
+        })
+        .catch((err) => {
+          console.warn('[SW] Service Worker registration skipped/failed:', err);
+        });
+    }
   });
 }
-
-const updateSW = registerSW({
-  onNeedRefresh() {
-    // Dispatch custom event for app update
-    window.dispatchEvent(new CustomEvent('mikayala_app_update_available'));
-  },
-  onOfflineReady() {
-    console.log('App is ready for offline use');
-  },
-});
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
