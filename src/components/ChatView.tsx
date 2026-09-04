@@ -2226,24 +2226,24 @@ export const ChatView: React.FC<ChatViewProps> = ({
                   <span>À Gratter</span>
                 </button>
               )}
-              {onOpenDigitalTouch && (
+              {onOpenGames && pairingState?.isPaired && (
                 <button
                   type="button"
-                  onClick={() => { setShowAttachMenu(false); onOpenDigitalTouch(); }}
-                  className="px-3 py-1.5 rounded-full bg-[#130f26] hover:bg-[#281e4b] border border-[#2d2254] text-[11px] font-medium text-white flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer"
+                  onClick={() => { setShowAttachMenu(false); console.log('[Game] Bouton roue de défis cliqué'); onOpenGames('wheel'); }}
+                  className="px-3 py-1.5 rounded-full bg-[#130f26] hover:bg-[#281e4b] border border-[#e056fd]/40 text-[11px] font-medium text-white flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer"
                 >
-                  <Zap size={13} className="text-[#00b894]" />
-                  <span>Digital Touch</span>
+                  <span className="text-xs">🎡</span>
+                  <span>Roue de défis</span>
                 </button>
               )}
-              {onOpenCoupons && (
+              {onOpenGames && pairingState?.isPaired && (
                 <button
                   type="button"
-                  onClick={() => { setShowAttachMenu(false); onOpenCoupons(); }}
-                  className="px-3 py-1.5 rounded-full bg-[#130f26] hover:bg-[#281e4b] border border-[#2d2254] text-[11px] font-medium text-white flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer"
+                  onClick={() => { setShowAttachMenu(false); console.log('[Game] Bouton dés intimes cliqué'); onOpenGames('dice'); }}
+                  className="px-3 py-1.5 rounded-full bg-[#130f26] hover:bg-[#281e4b] border border-[#fd79a8]/40 text-[11px] font-medium text-white flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer"
                 >
-                  <Ticket size={13} className="text-[#fd79a8]" />
-                  <span>Bons Intimes</span>
+                  <span className="text-xs">🎲</span>
+                  <span>Dés Intimes</span>
                 </button>
               )}
               {onOpenBlindQuiz && (
@@ -2433,54 +2433,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
             >
               <Paperclip size={22} />
             </button>
-            
-            {/* Wheel button */}
-            {onOpenGames && pairingState?.isPaired && (
-              <button
-                type="button"
-                onClick={() => {
-                  console.log('[Game] Bouton roue de défis cliqué');
-                  onOpenGames('wheel');
-                }}
-                aria-label="Roue de défis"
-                className="p-2 rounded-xl transition-colors cursor-pointer shrink-0 text-[#a29bfe] hover:text-[#e056fd] hover:bg-white/10"
-                title="🎡 Roue de défis"
-              >
-                <span className="text-lg leading-none">🎡</span>
-              </button>
-            )}
-
-            {/* Quiz button */}
-            {onOpenBlindQuiz && pairingState?.isPaired && (
-              <button
-                type="button"
-                onClick={() => {
-                  console.log('[Quiz] Bouton quiz cliqué');
-                  onOpenBlindQuiz();
-                }}
-                aria-label="Quiz double aveugle"
-                className="p-2 rounded-xl transition-colors cursor-pointer shrink-0 text-[#a29bfe] hover:text-[#00b894] hover:bg-white/10"
-                title="❓ Quiz Double Aveugle"
-              >
-                <span className="text-lg leading-none">❓</span>
-              </button>
-            )}
-
-            {/* Scratch Card button */}
-            {onOpenScratchCard && pairingState?.isPaired && (
-              <button
-                type="button"
-                onClick={() => {
-                  console.log('[Scratch] Bouton carte à gratter cliqué');
-                  onOpenScratchCard();
-                }}
-                aria-label="Carte à gratter"
-                className="p-2 rounded-xl transition-colors cursor-pointer shrink-0 text-[#a29bfe] hover:text-[#ffeaa7] hover:bg-white/10"
-                title="🎫 Carte à gratter"
-              >
-                <span className="text-lg leading-none">🎫</span>
-              </button>
-            )}
 
             {/* Text input with auto-formatting support & mode indication */}
             <div className="flex-1 relative flex items-center min-w-0">
