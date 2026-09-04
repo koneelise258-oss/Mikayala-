@@ -90,6 +90,7 @@ export const CallModal: React.FC<CallModalProps> = ({
     // Auto connect after 2.5 seconds to simulate partner answering
     const connectTimer = setTimeout(() => {
       stopRing();
+      soundEffects.stopRingTone();
       setCallStatus('connected');
     }, 2500);
 
@@ -101,6 +102,7 @@ export const CallModal: React.FC<CallModalProps> = ({
     return () => {
       clearTimeout(connectTimer);
       stopRing();
+      soundEffects.stopRingTone();
       stopStreams();
     };
   }, [isOpen, callType, isFrontCamera]);

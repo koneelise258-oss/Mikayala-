@@ -238,7 +238,7 @@ export interface CallRecord {
 }
 
 export interface SignalingPayload {
-  type: 'offer' | 'answer' | 'candidate' | 'hangup' | 'request' | 'declined' | 'missed';
+  type: 'offer' | 'answer' | 'candidate' | 'hangup' | 'request' | 'declined' | 'missed' | 'connected';
   callId?: string;
   senderId: string;
   receiverId: string;

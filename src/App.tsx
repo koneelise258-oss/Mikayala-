@@ -744,6 +744,7 @@ export default function App() {
         setCallStatus('idle');
         setLocalStream(null);
         setRemoteStream(null);
+        soundEffects.stopRingTone();
         if (stopRingRef.current) {
           stopRingRef.current();
           stopRingRef.current = null;
@@ -870,10 +871,11 @@ export default function App() {
         activeCallIdRef.current = null;
         callStartTimeRef.current = null;
         isCallerRef.current = false;
-      } else if (payload.type === 'offer') {
-        if (callStatusRef.current === 'ringing' || callStatusRef.current === 'connecting') {
+      } else if (payload.type === 'offer' || payload.type === 'answer' || payload.type === 'connected') {
+        if (callStatusRef.current === 'ringing' || callStatusRef.current === 'connecting' || callStatusRef.current === 'incoming') {
           callStartTimeRef.current = Date.now();
           setCallStatus('ongoing');
+          soundEffects.stopRingTone();
           if (stopRingRef.current) {
             stopRingRef.current();
             stopRingRef.current = null;
@@ -888,12 +890,24 @@ export default function App() {
         callStartTimeRef.current = Date.now();
         setCallStatus('ongoing');
       }
+      soundEffects.stopRingTone();
       if (stopRingRef.current) {
         stopRingRef.current();
         stopRingRef.current = null;
       }
     });
   }, []);
+
+  // Global safety effect to instantly kill ringtone once call becomes active or idle
+  useEffect(() => {
+    if (callStatus === 'ongoing' || callStatus === 'idle') {
+      soundEffects.stopRingTone();
+      if (stopRingRef.current) {
+        stopRingRef.current();
+        stopRingRef.current = null;
+      }
+    }
+  }, [callStatus]);
 
   const handleStartCall = async (type: CallType) => {
     if (callStatusRef.current !== 'idle' || isCallOpenRef.current) {
@@ -911,6 +925,7 @@ export default function App() {
       activeCallIdRef.current = callService.getActiveCallId() || crypto.randomUUID();
       setLocalStream(stream);
       setCallStatus('ringing');
+      soundEffects.stopRingTone();
       if (stopRingRef.current) stopRingRef.current();
       stopRingRef.current = soundEffects.playRingTone();
     } catch (err: any) {
@@ -920,6 +935,7 @@ export default function App() {
   };
 
   const handleAcceptCall = async () => {
+    soundEffects.stopRingTone();
     if (stopRingRef.current) {
       stopRingRef.current();
       stopRingRef.current = null;
@@ -931,6 +947,7 @@ export default function App() {
       await callService.createOffer();
       callStartTimeRef.current = Date.now();
       setCallStatus('ongoing');
+      soundEffects.stopRingTone();
     } catch (err: any) {
       console.error('[App] Call accept error:', err);
       handleHangup();
@@ -944,6 +961,7 @@ export default function App() {
     setCallStatus('idle');
     setLocalStream(null);
     setRemoteStream(null);
+    soundEffects.stopRingTone();
     if (stopRingRef.current) {
       stopRingRef.current();
       stopRingRef.current = null;
@@ -985,6 +1003,7 @@ export default function App() {
     setCallStatus('idle');
     setLocalStream(null);
     setRemoteStream(null);
+    soundEffects.stopRingTone();
     if (stopRingRef.current) {
       stopRingRef.current();
       stopRingRef.current = null;

@@ -1,6 +1,8 @@
 // Sound Effects using Web Audio API for Mikayla
 class SoundManager {
   private ctx: AudioContext | null = null;
+  private activeRingIntervals: Set<number> = new Set();
+  private activeRingNodes: Set<{ osc1: OscillatorNode; osc2: OscillatorNode; gain: GainNode }> = new Set();
 
   private getContext(): AudioContext {
     if (!this.ctx) {
@@ -219,12 +221,38 @@ class SoundManager {
     }
   }
 
+  // Stop all active ring tones immediately and cancel oscillators/intervals
+  stopRingTone() {
+    this.activeRingIntervals.forEach(id => clearInterval(id));
+    this.activeRingIntervals.clear();
+
+    const now = this.ctx ? this.ctx.currentTime : 0;
+    this.activeRingNodes.forEach(({ osc1, osc2, gain }) => {
+      try {
+        if (this.ctx) {
+          gain.gain.cancelScheduledValues(now);
+          gain.gain.setValueAtTime(0, now);
+        }
+        osc1.stop(now);
+        osc2.stop(now);
+        osc1.disconnect();
+        osc2.disconnect();
+        gain.disconnect();
+      } catch {
+        // Safe catch for already terminated audio nodes
+      }
+    });
+    this.activeRingNodes.clear();
+  }
+
   // Calling Ringing Sound
   playRingTone(): () => void {
     try {
+      // Always stop previous ringtones first to prevent stacking
+      this.stopRingTone();
+
       const ctx = this.getContext();
       let isPlaying = true;
-      let intervalId: number;
 
       const ringCycle = () => {
         if (!isPlaying) return;
@@ -233,6 +261,9 @@ class SoundManager {
         const osc1 = ctx.createOscillator();
         const osc2 = ctx.createOscillator();
         const gain = ctx.createGain();
+
+        const nodeGroup = { osc1, osc2, gain };
+        this.activeRingNodes.add(nodeGroup);
 
         osc1.frequency.setValueAtTime(440, now);
         osc2.frequency.setValueAtTime(480, now);
@@ -249,14 +280,21 @@ class SoundManager {
         osc2.start(now);
         osc1.stop(now + 1.3);
         osc2.stop(now + 1.3);
+
+        osc1.onended = () => {
+          this.activeRingNodes.delete(nodeGroup);
+        };
       };
 
       ringCycle();
-      intervalId = window.setInterval(ringCycle, 3000);
+      const intervalId = window.setInterval(ringCycle, 3000);
+      this.activeRingIntervals.add(intervalId);
 
       return () => {
         isPlaying = false;
         clearInterval(intervalId);
+        this.activeRingIntervals.delete(intervalId);
+        this.stopRingTone();
       };
     } catch {
       return () => {};
