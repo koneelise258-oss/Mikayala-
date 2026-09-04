@@ -1,4 +1,5 @@
 import { callService } from './services/callService';
+import { proximityService } from './services/proximityService';
 import { CallOverlay } from './components/CallOverlay';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -1363,7 +1364,35 @@ export default function App() {
   useEffect(() => { saveCoupons(coupons); }, [coupons]);
   useEffect(() => { saveQuizzes(quizzes); }, [quizzes]);
 
-  // Online / Offline Listeners
+  // Initialisation du service Proximité (Bluetooth / Wi-Fi Hotspot) et écouteurs directs
+  useEffect(() => {
+    const coupleId = pairingState?.coupleId || getStoredPairingState().coupleId || 'local_couple';
+    const currentUid = currentUser.id;
+
+    proximityService.setup(coupleId, currentUid, (payload) => {
+      if (payload.type === 'chat_message' && payload.message) {
+        const incomingMsg = payload.message;
+        setMessages(prev => {
+          if (prev.some(m => m.id === incomingMsg.id)) return prev;
+          const updated = [...prev, incomingMsg].sort((a, b) => a.timestamp - b.timestamp);
+          return updated;
+        });
+        soundEffects.playReceived();
+        triggerHaptic(40);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('mikayla_new_message_sent', { detail: incomingMsg }));
+        }
+      } else if (payload.type === 'signaling' && payload.signaling) {
+        callService.handleDirectSignal(payload.signaling);
+      }
+    });
+
+    return () => {
+      proximityService.cleanup();
+    };
+  }, [pairingState?.coupleId, currentUser.id]);
+
+  // Online / Offline Listeners & Auto-Sync
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
@@ -1372,6 +1401,15 @@ export default function App() {
         saveNetworkState(next);
         return next;
       });
+      // Synchronisation automatique de l'outbox hors-ligne vers Supabase
+      const coupleId = pairingState?.coupleId || getStoredPairingState().coupleId;
+      if (coupleId) {
+        proximityService.reconcileOfflineOutbox(coupleId).then(count => {
+          if (count > 0) {
+            setPendingSyncCount(0);
+          }
+        });
+      }
     };
     const handleOffline = () => {
       setIsOnline(false);
@@ -1388,11 +1426,22 @@ export default function App() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, []);
+  }, [pairingState?.coupleId]);
 
   const handleSelectNetworkMode = (mode: NetworkMode, tech?: ProximityTech) => {
     const updated = saveNetworkMode(mode, tech);
     setNetworkState(updated);
+    if (mode === 'proximity') {
+      proximityService.setConnectionState(true, tech || 'bluetooth');
+    } else if (mode === 'cloud') {
+      proximityService.setConnectionState(false, 'bluetooth');
+      const coupleId = pairingState?.coupleId || getStoredPairingState().coupleId;
+      if (coupleId && isOnline) {
+        proximityService.reconcileOfflineOutbox(coupleId).then(count => {
+          if (count > 0) setPendingSyncCount(0);
+        });
+      }
+    }
   };
 
   const handleImportSms = (smsText: string) => {
@@ -1492,6 +1541,16 @@ export default function App() {
     // Notify ChatView immediately so it renders without delay
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('mikayla_new_message_sent', { detail: newMsg }));
+    }
+
+    // Diffusion directe Proximité (Bluetooth / Wi-Fi Hotspot)
+    try {
+      proximityService.broadcastPayload({
+        type: 'chat_message',
+        message: newMsg
+      });
+    } catch (proxErr) {
+      console.warn('[App] Proximity broadcast message:', proxErr);
     }
 
     // If offline, increment pending counter

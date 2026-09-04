@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { SignalingPayload, CallType } from '../types';
+import { proximityService } from './proximityService';
 
 export type CallEventCallback = (payload: SignalingPayload) => void;
 
@@ -88,6 +89,13 @@ class CallService {
 
   public setOnCallEvent(callback: CallEventCallback) {
     this.onCallEventCallback = callback;
+  }
+
+  public handleDirectSignal(payload: SignalingPayload) {
+    if (payload.receiverId === this.currentUserId) {
+      console.log('[CallService] Signal direct de proximité traité:', payload.type);
+      this.handleIncomingSignal(payload);
+    }
   }
 
   public setOnRemoteStream(callback: (stream: MediaStream) => void) {
@@ -516,6 +524,17 @@ class CallService {
 
   private sendSignalDirect(payload: SignalingPayload) {
     console.log('[Call signal sent]', payload);
+    // 1. Broadcast via Proximity mesh (Wi-Fi Hotspot / Bluetooth Direct 0-Data)
+    try {
+      proximityService.broadcastPayload({
+        type: 'signaling',
+        signaling: payload
+      });
+    } catch (e) {
+      console.warn('[CallService] Proximity broadcast error:', e);
+    }
+
+    // 2. Broadcast via Supabase Realtime channel
     if (this.signalingChannel) {
       this.signalingChannel.send({
         type: 'broadcast',
@@ -526,20 +545,13 @@ class CallService {
       }).catch((err: any) => {
         console.error('[Call signal sent error]', err);
       });
-    } else {
-      console.warn('[Call signal sent] Failed: signalingChannel is null');
     }
   }
 
   private sendSignal(payload: SignalingPayload) {
-    if (this.isSignalingReady && this.signalingChannel) {
-      this.sendSignalDirect(payload);
-    } else {
-      console.log('[Call signal queued - not SUBSCRIBED yet]', {
-        payload,
-        isSignalingReady: this.isSignalingReady,
-        hasChannel: !!this.signalingChannel
-      });
+    // Toujours envoyer immédiatement en Proximity/Local, et en file d'attente Supabase si non connecté
+    this.sendSignalDirect(payload);
+    if (!this.isSignalingReady && !this.signalingChannel) {
       this.outgoingSignalQueue.push(payload);
     }
   }
