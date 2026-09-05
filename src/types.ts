@@ -31,7 +31,7 @@ export interface NetworkState {
   lastSyncTime?: number;
 }
 
-export type MessageStatus = 'pending' | 'sent' | 'delivered' | 'read';
+export type MessageStatus = 'pending' | 'pending_sync' | 'sent' | 'delivered' | 'read';
 
 export interface PollOption {
   id: string;
@@ -185,6 +185,13 @@ export interface Message {
   isEdited?: boolean;
   isDeletedForEveryone?: boolean;
   isDeletedForMe?: boolean;
+  deleted_for_everyone?: boolean;
+  deleted_at?: string | null;
+  deleted_for_users?: string[];
+  deletedForEveryone?: boolean;
+  deletedAt?: string | null;
+  deletedForUsers?: string[];
+  syncStatus?: 'pending_sync' | 'synced' | 'failed';
   ephemeralDuration?: number; // seconds
   expiresAt?: number;
   transportMode?: NetworkMode; // 'cloud' | 'sms' | 'proximity'

@@ -491,7 +491,16 @@ export const ChatView: React.FC<ChatViewProps> = ({
     };
   }, [pairingState?.coupleId, isChatActive, isPhotoPreviewOpen, isDirectCameraOpen, currentAuthUserId]);
 
-  const activeMessages = (pairingState?.isPaired && pairingState?.coupleId) ? realMessages : parentMessages;
+  const rawActiveMessages = (pairingState?.isPaired && pairingState?.coupleId) ? realMessages : parentMessages;
+  const activeUserId = currentAuthUserId || currentUser.id;
+
+  const activeMessages = useMemo(() => {
+    return rawActiveMessages.filter(m => {
+      if (m.isDeletedForMe) return false;
+      if (activeUserId && m.deletedForUsers && m.deletedForUsers.includes(activeUserId)) return false;
+      return true;
+    });
+  }, [rawActiveMessages, activeUserId]);
 
   // Optimized O(1) Map for high-performance reply and reference resolution on low-end CPUs
   const messagesByIdMap = useMemo(() => {
@@ -1403,16 +1412,16 @@ export const ChatView: React.FC<ChatViewProps> = ({
                         {quotedMsg.senderId === currentUser.id ? 'Vous' : partnerUser.name}
                       </p>
                       <p className={`text-[#a29bfe] truncate ${quotedMsg.isDeletedForEveryone ? 'italic' : ''}`}>
-                        {quotedMsg.isDeletedForEveryone ? 'Message effacé' : quotedMsg.content}
+                        {Boolean(quotedMsg.isDeletedForEveryone || quotedMsg.deletedForEveryone || quotedMsg.deleted_for_everyone) ? 'Ce message a été supprimé' : quotedMsg.content}
                       </p>
                     </div>
                   )}
 
                   {/* Deleted Message Placeholder */}
-                  {msg.isDeletedForEveryone ? (
-                    <div className="flex items-center gap-2 italic opacity-60 text-[11px] py-1">
-                      <Trash2 size={13} />
-                      <span>Ce message intime a été effacé.</span>
+                  {Boolean(msg.isDeletedForEveryone || msg.deletedForEveryone || msg.deleted_for_everyone) ? (
+                    <div className="flex items-center gap-2 italic text-stone-400 dark:text-stone-400 text-xs py-1 px-1 select-none">
+                      <Trash2 size={13} className="opacity-70 flex-shrink-0" />
+                      <span>Ce message a été supprimé</span>
                     </div>
                   ) : (
                     <>
@@ -2660,29 +2669,35 @@ export const ChatView: React.FC<ChatViewProps> = ({
               
               <button 
                 onClick={() => {
-                  // Not persistent yet - showing as unavailable per requirements
-                  alert("La suppression persistante 'pour moi' sera disponible prochainement.");
-                  setActiveContextMenuMsgId(null);
+                  if (activeContextMenuMsgId) {
+                    onDeleteMessage(activeContextMenuMsgId, false);
+                    setActiveContextMenuMsgId(null);
+                  }
                 }}
-                className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-[#ff7675]/10 text-sm text-[#ff7675] transition-colors text-left opacity-50"
+                className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-[#ff7675]/20 text-sm text-[#ff7675] transition-colors text-left"
               >
                 <Trash2 size={18} />
                 <div className="flex flex-col">
-                  <span>Supprimer pour moi</span>
-                  <span className="text-[10px] opacity-70">(Bientôt disponible)</span>
+                  <span className="font-semibold">Supprimer pour moi</span>
+                  <span className="text-[10px] text-[#ff7675]/70">Masquer sur cet appareil uniquement</span>
                 </div>
               </button>
 
               {filteredMessages.find(m => m.id === activeContextMenuMsgId)?.senderId === (currentAuthUserId || currentUser.id) && (
                 <button 
                   onClick={() => {
-                    onDeleteMessage(activeContextMenuMsgId, true);
-                    setActiveContextMenuMsgId(null);
+                    if (activeContextMenuMsgId) {
+                      onDeleteMessage(activeContextMenuMsgId, true);
+                      setActiveContextMenuMsgId(null);
+                    }
                   }}
-                  className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-[#ff7675]/20 text-sm text-[#ff7675] font-bold transition-colors text-left"
+                  className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-[#ff7675]/25 text-sm text-[#ff7675] font-bold transition-colors text-left"
                 >
                   <Trash2 size={18} />
-                  <span>Supprimer pour nous deux</span>
+                  <div className="flex flex-col">
+                    <span className="font-bold">Supprimer pour tout le monde</span>
+                    <span className="text-[10px] text-[#ff7675]/70 font-normal">Effacer pour les deux appareils</span>
+                  </div>
                 </button>
               )}
             </div>

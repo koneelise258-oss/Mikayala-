@@ -2,6 +2,7 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { Message, MessageStatus, MessageType } from '../types';
 import { getStoredPairingState, initAnonymousAuth } from './authService';
 import { NotificationService } from './notificationService';
+import { offlineStorageService } from './offlineStorageService';
 
 export interface SendMessagePayload extends Partial<Message> {
   senderId?: string;
@@ -56,6 +57,31 @@ export function mapDbRecordToMessage(row: any): Message {
     ? 'read' 
     : (isDelivered ? 'delivered' : (row.status === 'pending' ? 'pending' : (row.status || 'sent')));
 
+  const rawDeletedForUsers = row.deleted_for_users || row.deletedForUsers;
+  let deletedForUsers: string[] = [];
+  if (Array.isArray(rawDeletedForUsers)) {
+    deletedForUsers = rawDeletedForUsers;
+  } else if (typeof rawDeletedForUsers === 'string') {
+    try {
+      if (rawDeletedForUsers.startsWith('[')) {
+        deletedForUsers = JSON.parse(rawDeletedForUsers);
+      } else {
+        deletedForUsers = rawDeletedForUsers.replace(/[{}"\s]/g, '').split(',').filter(Boolean);
+      }
+    } catch {
+      deletedForUsers = [];
+    }
+  }
+
+  const isDeletedForEveryone = Boolean(
+    row.deleted_for_everyone ?? 
+    row.is_deleted_for_everyone ?? 
+    row.deletedForEveryone ?? 
+    row.isDeletedForEveryone ?? 
+    false
+  );
+  const deletedAt = row.deleted_at || row.deletedAt || null;
+
   return {
     id: row.id,
     senderId: row.sender_id || row.senderId || '',
@@ -65,9 +91,9 @@ export function mapDbRecordToMessage(row: any): Message {
     readAt: rawReadAt || (isRead ? new Date(createdTime).toISOString() : null),
     status: status,
     type: mappedType,
-    content: row.content || '',
-    storagePath: row.storage_path || row.storagePath || null,
-    mediaUrl: row.media_url || row.mediaUrl,
+    content: isDeletedForEveryone ? 'Ce message a été supprimé' : (row.content || ''),
+    storagePath: isDeletedForEveryone ? undefined : (row.storage_path || row.storagePath || null),
+    mediaUrl: isDeletedForEveryone ? undefined : (row.media_url || row.mediaUrl),
     fileName: row.file_name || row.fileName,
     fileSize: row.file_size || row.fileSize,
     fileType: row.file_type || row.fileType,
@@ -76,7 +102,7 @@ export function mapDbRecordToMessage(row: any): Message {
     isViewOnce: row.is_view_once ?? row.isViewOnce ?? false,
     isViewed: row.is_viewed ?? row.isViewed ?? false,
     isHD: row.is_hd ?? row.isHD ?? false,
-    pollData: typeof row.poll_data === 'string' ? JSON.parse(row.poll_data) : row.poll_data,
+    pollData: typeof row.poll_data === 'string' ? JSON.parse(row.poll_data) : row.pollData,
     eventData: typeof row.event_data === 'string' ? JSON.parse(row.event_data) : row.event_data,
     locationData: typeof row.location_data === 'string' ? JSON.parse(row.location_data) : row.location_data,
     contactCard: typeof row.contact_card === 'string' ? JSON.parse(row.contact_card) : row.contact_card,
@@ -89,13 +115,19 @@ export function mapDbRecordToMessage(row: any): Message {
     isStarred: row.is_starred ?? row.isStarred ?? false,
     isPinned: row.is_pinned ?? row.isPinned ?? false,
     isEdited: row.is_edited ?? row.isEdited ?? false,
-    isDeletedForEveryone: row.is_deleted_for_everyone ?? row.isDeletedForEveryone ?? false,
+    isDeletedForEveryone,
+    deletedForEveryone: isDeletedForEveryone,
+    deleted_for_everyone: isDeletedForEveryone,
+    deletedAt,
+    deleted_at: deletedAt,
+    deletedForUsers,
+    deleted_for_users: deletedForUsers,
     isDeletedForMe: row.is_deleted_for_me ?? row.isDeletedForMe ?? false,
     ephemeralDuration: row.ephemeral_duration || row.ephemeralDuration,
     expiresAt: row.expires_at || row.expiresAt,
     transportMode: row.transport_mode || row.transportMode || 'cloud'
   };
-}
+  }
 
 /**
  * Uploads a media file (Audio, Image, Video, Document) to Supabase Storage
@@ -285,6 +317,17 @@ export function clearSignedUrlCache(): void {
 /**
 Helper functions for caching messages locally in offline mode
 */
+function getActiveUserId(): string {
+  try {
+    const saved = localStorage.getItem('mikayala_user_profile');
+    if (saved) {
+      const u = JSON.parse(saved);
+      if (u?.id) return u.id;
+    }
+  } catch {}
+  return '';
+}
+
 function saveMessagesToCache(coupleId: string, messages: Message[]): void {
   try {
     if (!coupleId || !Array.isArray(messages)) return;
@@ -292,15 +335,21 @@ function saveMessagesToCache(coupleId: string, messages: Message[]): void {
   } catch (_) {}
 }
 
-function getCachedMessagesFallback(coupleId: string): Message[] {
+function getCachedMessagesFallback(coupleId: string, currentUserId?: string): Message[] {
   try {
     if (!coupleId) return [];
+    const activeUserId = currentUserId || getActiveUserId();
     const cachedStr = localStorage.getItem(`mikayala_cached_messages_${coupleId}`);
     if (cachedStr) {
       const cached = JSON.parse(cachedStr);
       if (Array.isArray(cached)) {
-        console.log('[messageService] Messages chargés depuis le cache local:', cached.length);
-        return cached;
+        const filtered = cached.filter((m: Message) => {
+          if (m.isDeletedForMe) return false;
+          if (activeUserId && m.deletedForUsers && m.deletedForUsers.includes(activeUserId)) return false;
+          return true;
+        });
+        console.log('[messageService] Messages chargés depuis le cache local:', filtered.length);
+        return filtered;
       }
     }
   } catch (_) {}
@@ -594,10 +643,12 @@ export async function envoyerMessageTexte(coupleId: string, contenu: string): Pr
  * Récupère tous les messages d'un couple depuis la table public.messages
  * @param coupleId UUID du couple
  */
-export async function getMessages(coupleId: string): Promise<Message[]> {
+export async function getMessages(coupleId: string, currentUserId?: string): Promise<Message[]> {
   const targetCoupleId = coupleId || getStoredPairingState().coupleId;
+  const activeUserId = currentUserId || getActiveUserId();
+
   if (!targetCoupleId || !isSupabaseConfigured()) {
-    return getCachedMessagesFallback(targetCoupleId || '');
+    return getCachedMessagesFallback(targetCoupleId || '', activeUserId);
   }
 
   try {
@@ -614,11 +665,20 @@ export async function getMessages(coupleId: string): Promise<Message[]> {
       } else {
         console.error('[messageService] Erreur récupération messages:', error.message);
       }
-      return getCachedMessagesFallback(targetCoupleId);
+      return getCachedMessagesFallback(targetCoupleId, activeUserId);
     }
 
     const rows = data || [];
-    const mapped = rows.map(mapDbRecordToMessage).sort((a, b) => a.timestamp - b.timestamp);
+    const mapped = rows
+      .map(mapDbRecordToMessage)
+      .filter((m: Message) => {
+        // Filtrer les messages supprimés pour moi
+        if (m.isDeletedForMe) return false;
+        if (activeUserId && m.deletedForUsers && m.deletedForUsers.includes(activeUserId)) return false;
+        return true;
+      })
+      .sort((a, b) => a.timestamp - b.timestamp);
+
     console.log('[Chat] nombre de messages chargés:', mapped.length);
     saveMessagesToCache(targetCoupleId, mapped);
     return mapped;
@@ -629,7 +689,7 @@ export async function getMessages(coupleId: string): Promise<Message[]> {
     } else {
       console.error('[messageService] Exception dans getMessages:', err);
     }
-    return getCachedMessagesFallback(targetCoupleId);
+    return getCachedMessagesFallback(targetCoupleId, activeUserId);
   }
 }
 
@@ -1106,36 +1166,182 @@ export const sendMessage = async (payload: SendMessagePayload): Promise<Message>
 };
 
 /**
- * Deletes a message for everyone (Sync with DB & Storage)
+ * Supprime un message uniquement pour l'utilisateur connecté ("Supprimer pour moi")
+ * Ajoute son identifiant dans le tableau deleted_for_users
  */
-export async function deleteMessage(messageId: string, storagePath?: string | null): Promise<{ success: boolean; error?: string }> {
-  if (!isSupabaseConfigured()) return { success: false, error: "Supabase non configuré" };
+export async function deleteMessageForMe(
+  messageId: string,
+  currentUserId?: string,
+  coupleId?: string
+): Promise<{ success: boolean; error?: string }> {
+  const targetCoupleId = coupleId || getStoredPairingState().coupleId;
+  const activeUserId = currentUserId || getActiveUserId();
 
-  try {
-    // 1. If there's a storage path, delete the file first
-    if (storagePath) {
-      const { error: storageError } = await supabase.storage
-        .from(STORAGE_BUCKET)
-        .remove([storagePath]);
-      
-      if (storageError) {
-        console.error('[messageService] Error deleting storage file:', storageError);
+  if (!activeUserId) {
+    return { success: false, error: "Identifiant utilisateur introuvable" };
+  }
+
+  // 1. Sauvegarde locale hors-ligne dans IndexedDB (action en attente de sync)
+  offlineStorageService.saveOfflineDeleteAction({
+    action: 'delete_for_me',
+    messageId,
+    userId: activeUserId,
+    coupleId: targetCoupleId || ''
+  }).catch(() => {});
+
+  // 2. Mise à jour immédiate du cache local (masquage instantané)
+  if (targetCoupleId) {
+    try {
+      const cachedStr = localStorage.getItem(`mikayala_cached_messages_${targetCoupleId}`);
+      if (cachedStr) {
+        const list: Message[] = JSON.parse(cachedStr);
+        const updated = list.map(m => {
+          if (m.id === messageId) {
+            const arr = m.deletedForUsers || [];
+            return {
+              ...m,
+              isDeletedForMe: true,
+              deletedForUsers: arr.includes(activeUserId) ? arr : [...arr, activeUserId],
+              deleted_for_users: arr.includes(activeUserId) ? arr : [...arr, activeUserId]
+            };
+          }
+          return m;
+        });
+        saveMessagesToCache(targetCoupleId, updated);
       }
+    } catch {}
+  }
+
+  // 3. Mise à jour de la base de données Supabase si en ligne
+  if (isSupabaseConfigured() && typeof navigator !== 'undefined' && navigator.onLine) {
+    try {
+      // Tenter la procédure stockée RPC si disponible
+      const { error: rpcErr } = await supabase.rpc('delete_message_for_me', {
+        p_message_id: messageId,
+        p_user_id: activeUserId
+      });
+
+      if (rpcErr) {
+        // Fallback: SELECT puis UPDATE de deleted_for_users
+        const { data } = await supabase
+          .from('messages')
+          .select('deleted_for_users')
+          .eq('id', messageId)
+          .single();
+
+        const currentUsers: string[] = Array.isArray(data?.deleted_for_users) ? data.deleted_for_users : [];
+        if (!currentUsers.includes(activeUserId)) {
+          await supabase
+            .from('messages')
+            .update({ deleted_for_users: [...currentUsers, activeUserId] })
+            .eq('id', messageId);
+        }
+      }
+    } catch (err: any) {
+      console.warn('[messageService] Supabase deleteMessageForMe report:', err?.message || err);
     }
+  }
 
-    // 2. Delete the message record
-    const { error } = await supabase
-      .from('messages')
-      .delete()
-      .eq('id', messageId);
+  return { success: true };
+}
 
-    if (error) {
-      return { success: false, error: error.message };
+/**
+ * Supprime un message pour tout le monde ("Supprimer pour tout le monde")
+ * Action réservée à l'expéditeur du message
+ */
+export async function deleteMessageForEveryone(
+  messageId: string,
+  currentUserId?: string,
+  storagePath?: string | null,
+  coupleId?: string
+): Promise<{ success: boolean; error?: string }> {
+  const targetCoupleId = coupleId || getStoredPairingState().coupleId;
+  const activeUserId = currentUserId || getActiveUserId();
+
+  // 1. Sauvegarde locale hors-ligne dans IndexedDB (action en attente de sync)
+  offlineStorageService.saveOfflineDeleteAction({
+    action: 'delete_for_everyone',
+    messageId,
+    userId: activeUserId,
+    coupleId: targetCoupleId || '',
+    storagePath
+  }).catch(() => {});
+
+  // 2. Mise à jour optimiste du cache local
+  if (targetCoupleId) {
+    try {
+      const cachedStr = localStorage.getItem(`mikayala_cached_messages_${targetCoupleId}`);
+      if (cachedStr) {
+        const list: Message[] = JSON.parse(cachedStr);
+        const updated = list.map(m => {
+          if (m.id === messageId) {
+            return {
+              ...m,
+              content: 'Ce message a été supprimé',
+              isDeletedForEveryone: true,
+              deletedForEveryone: true,
+              deleted_for_everyone: true,
+              deletedAt: new Date().toISOString(),
+              mediaUrl: undefined,
+              storagePath: undefined
+            };
+          }
+          return m;
+        });
+        saveMessagesToCache(targetCoupleId, updated);
+      }
+    } catch {}
+  }
+
+  // 3. En ligne : UPDATE dans Supabase et suppression du fichier média correspondant dans Supabase Storage
+  if (isSupabaseConfigured() && typeof navigator !== 'undefined' && navigator.onLine) {
+    try {
+      if (storagePath) {
+        await supabase.storage
+          .from(STORAGE_BUCKET)
+          .remove([storagePath])
+          .catch(err => console.warn('[messageService] Storage remove err:', err));
+      }
+
+      const { error } = await supabase
+        .from('messages')
+        .update({
+          deleted_for_everyone: true,
+          is_deleted_for_everyone: true,
+          deleted_at: new Date().toISOString(),
+          content: 'Ce message a été supprimé',
+          media_url: null,
+          storage_path: null
+        })
+        .eq('id', messageId);
+
+      if (error) {
+        console.warn('[messageService] Erreur Supabase deleteMessageForEveryone:', error.message);
+      }
+    } catch (err: any) {
+      console.warn('[messageService] Exception deleteMessageForEveryone:', err?.message || err);
     }
+  }
 
-    return { success: true };
-  } catch (err: any) {
-    return { success: false, error: err.message };
+  return { success: true };
+}
+
+/**
+ * Fonction générale de suppression de message (Supprimer pour moi OU Supprimer pour tout le monde)
+ */
+export async function deleteMessage(
+  messageId: string,
+  forEveryone: boolean = true,
+  currentUserId?: string,
+  storagePath?: string | null,
+  coupleId?: string
+): Promise<{ success: boolean; error?: string }> {
+  const activeUserId = currentUserId || getActiveUserId();
+
+  if (forEveryone) {
+    return deleteMessageForEveryone(messageId, activeUserId, storagePath, coupleId);
+  } else {
+    return deleteMessageForMe(messageId, activeUserId, coupleId);
   }
 }
 

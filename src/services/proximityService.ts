@@ -1,9 +1,11 @@
 import { Message, SignalingPayload } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { mapDbRecordToMessage, uploadMediaToStorage } from './messageService';
+import { localP2PService } from './localP2PService';
+import { offlineStorageService } from './offlineStorageService';
 
 export interface ProximityMessagePayload {
-  type: 'chat_message' | 'chat_reaction' | 'typing' | 'signaling' | 'call_event' | 'game_event';
+  type: 'chat_message' | 'chat_reaction' | 'typing' | 'signaling' | 'call_event' | 'game_event' | 'delete_message';
   senderId: string;
   coupleId: string;
   message?: Message;
@@ -11,6 +13,7 @@ export interface ProximityMessagePayload {
   isTyping?: boolean;
   signaling?: SignalingPayload;
   gameData?: any;
+  deleteData?: { messageId: string; forEveryone: boolean; senderId?: string };
   timestamp: number;
 }
 
@@ -57,7 +60,31 @@ class ProximityService {
       console.warn('[ProximityService] Erreur initialisation BroadcastChannel:', e);
     }
 
-    // 2. Écouteur pour la reconnexion réseau automatique
+    // 2. Écoute des paquets directs via Local WebSocket (Wi-Fi Hotspot) et Web Bluetooth
+    localP2PService.onPacketReceived((packet) => {
+      if (packet.senderId !== this.currentUserId) {
+        console.log('[ProximityService] Paquet P2P direct reçu de', packet.senderId, packet.type);
+        if (packet.type === 'message' && packet.data && this.onPayloadReceived) {
+          this.onPayloadReceived({
+            type: 'chat_message',
+            senderId: packet.senderId,
+            coupleId: packet.coupleId || this.coupleId,
+            message: packet.data,
+            timestamp: packet.timestamp
+          });
+        } else if (packet.type === 'delete_message' && packet.data && this.onPayloadReceived) {
+          this.onPayloadReceived({
+            type: 'delete_message',
+            senderId: packet.senderId,
+            coupleId: this.coupleId,
+            deleteData: packet.data,
+            timestamp: packet.timestamp
+          });
+        }
+      }
+    });
+
+    // 3. Écouteur pour la reconnexion réseau automatique
     if (typeof window !== 'undefined') {
       window.addEventListener('online', () => {
         console.log('[ProximityService] Réseau internet détecté. Lancement de la réconciliation...');
@@ -86,7 +113,7 @@ class ProximityService {
   }
 
   /**
-   * Envoi d'un message direct (texte, image base64, audio, réaction, appel)
+   * Envoi d'un message direct (texte, image base64, audio, réaction, suppression, appel)
    */
   public broadcastPayload(payload: Omit<ProximityMessagePayload, 'senderId' | 'coupleId' | 'timestamp'>) {
     const fullPayload: ProximityMessagePayload = {
@@ -96,7 +123,7 @@ class ProximityService {
       timestamp: Date.now()
     };
 
-    // 1. Diffusion locale BroadcastChannel (même réseau / même appareil / Wi-Fi Hotspot)
+    // 1. Diffusion locale BroadcastChannel (même réseau / même onglet / Hotspot local)
     try {
       if (this.localBroadcastChannel) {
         this.localBroadcastChannel.postMessage(fullPayload);
@@ -106,16 +133,45 @@ class ProximityService {
       console.warn('[ProximityService] Échec broadcast local:', err);
     }
 
-    // 2. Si le message est un message de chat, l'enregistrer dans l'Outbox pour réconciliation cloud future
+    // 2. Diffusion via WebSocket local (Point d'accès) et Web Bluetooth P2P
+    try {
+      if (fullPayload.type === 'chat_message' && fullPayload.message) {
+        localP2PService.sendP2PMessage(fullPayload.message, this.currentUserId, this.coupleId);
+      } else if (fullPayload.type === 'delete_message' && fullPayload.deleteData) {
+        localP2PService.sendP2PDeleteInstruction(
+          fullPayload.deleteData.messageId,
+          fullPayload.deleteData.forEveryone,
+          this.currentUserId
+        );
+      } else {
+        localP2PService.sendPacket({
+          type: fullPayload.type as any,
+          senderId: this.currentUserId,
+          coupleId: this.coupleId,
+          data: fullPayload,
+          timestamp: Date.now()
+        });
+      }
+    } catch (p2pErr) {
+      console.warn('[ProximityService] Échec envoi via localP2PService:', p2pErr);
+    }
+
+    // 3. Si le message est un message de chat, l'enregistrer dans l'Outbox et IndexedDB pour réconciliation cloud future
     if (fullPayload.type === 'chat_message' && fullPayload.message) {
       this.enqueueOfflineMessage(fullPayload.message);
     }
   }
 
   /**
-   * Ajoute un message à la file d'attente hors-ligne (Outbox)
+   * Ajoute un message à la file d'attente hors-ligne (Outbox & IndexedDB)
    */
-  public enqueueOfflineMessage(message: Message) {
+  public enqueueOfflineMessage(message: Message, mediaBlob?: Blob) {
+    // A. Enregistrement moderne et volumineux dans IndexedDB
+    offlineStorageService.saveOfflineMessage(message, mediaBlob).catch((err) => {
+      console.warn('[ProximityService] Erreur sauvegarde IndexedDB:', err);
+    });
+
+    // B. Enregistrement redondant dans localStorage
     try {
       const existingStr = localStorage.getItem(OUTBOX_STORAGE_KEY);
       const outbox: Message[] = existingStr ? JSON.parse(existingStr) : [];
@@ -125,7 +181,8 @@ class ProximityService {
         outbox.push({
           ...message,
           transportMode: this.tech === 'wifi_hotspot' ? 'proximity' : 'proximity',
-          status: 'sent'
+          status: 'pending_sync',
+          syncStatus: 'pending_sync'
         });
         localStorage.setItem(OUTBOX_STORAGE_KEY, JSON.stringify(outbox));
         console.log('[ProximityService] Message stocké dans l\'Outbox hors-ligne (total:', outbox.length, ')');
@@ -152,8 +209,12 @@ class ProximityService {
    */
   public async reconcileOfflineOutbox(coupleId?: string): Promise<number> {
     const targetCoupleId = coupleId || this.coupleId;
+
+    // Déclenche la synchronisation via IndexedDB
+    const { syncedCount: idbSynced } = await offlineStorageService.syncOfflineMessages(targetCoupleId);
+
     if (!targetCoupleId || !isSupabaseConfigured()) {
-      return 0;
+      return idbSynced;
     }
 
     const outbox = this.getOfflineOutbox();

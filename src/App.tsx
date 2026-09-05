@@ -58,6 +58,8 @@ import {
   envoyerMessageTexte,
   clearSignedUrlCache,
   deleteMessage,
+  deleteMessageForMe,
+  deleteMessageForEveryone,
   sendMessage
 } from './services/messageService';
 import { 
@@ -370,24 +372,37 @@ export default function App() {
     const coupleId = pairingState?.coupleId || getStoredPairingState().coupleId;
     if (!pairingState?.isPaired || !coupleId) return;
 
-    getMessages(coupleId)
+    const activeUserId = currentUser.id;
+    getMessages(coupleId, activeUserId)
       .then(fetched => {
         setMessages(fetched);
       })
       .catch(err => console.warn('[App] Fetch messages error:', err));
 
-    const unsubscribe = sAbonnerAuxMessages(coupleId, (newMsg: Message) => {
-      let isNew = false;
-      setMessages(prev => {
-        const idx = prev.findIndex(m => m.id === newMsg.id);
-        if (idx >= 0) {
-          const updated = [...prev];
-          updated[idx] = newMsg;
-          return updated.sort((a, b) => a.timestamp - b.timestamp);
+    const unsubscribe = sAbonnerAuxMessages(
+      coupleId,
+      (newMsg: Message) => {
+        // Filtrer si supprimé pour moi
+        if (newMsg.isDeletedForMe) {
+          setMessages(prev => prev.filter(m => m.id !== newMsg.id));
+          return;
         }
-        isNew = true;
-        return [...prev, newMsg].sort((a, b) => a.timestamp - b.timestamp);
-      });
+        if (activeUserId && newMsg.deletedForUsers && newMsg.deletedForUsers.includes(activeUserId)) {
+          setMessages(prev => prev.filter(m => m.id !== newMsg.id));
+          return;
+        }
+
+        let isNew = false;
+        setMessages(prev => {
+          const idx = prev.findIndex(m => m.id === newMsg.id);
+          if (idx >= 0) {
+            const updated = [...prev];
+            updated[idx] = newMsg;
+            return updated.sort((a, b) => a.timestamp - b.timestamp);
+          }
+          isNew = true;
+          return [...prev, newMsg].sort((a, b) => a.timestamp - b.timestamp);
+        });
 
       // Side effects for NEW messages should be OUTSIDE setMessages
       if (isNew) {
@@ -1403,6 +1418,26 @@ export default function App() {
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('mikayla_new_message_sent', { detail: incomingMsg }));
         }
+      } else if (payload.type === 'delete_message' && payload.deleteData) {
+        const { messageId, forEveryone } = payload.deleteData;
+        if (forEveryone) {
+          setMessages(prev =>
+            prev.map(m =>
+              m.id === messageId
+                ? {
+                    ...m,
+                    isDeletedForEveryone: true,
+                    deletedForEveryone: true,
+                    deleted_for_everyone: true,
+                    deletedAt: new Date().toISOString(),
+                    content: 'Ce message a été supprimé',
+                    mediaUrl: undefined,
+                    storagePath: undefined
+                  }
+                : m
+            )
+          );
+        }
       } else if (payload.type === 'signaling' && payload.signaling) {
         callService.handleDirectSignal(payload.signaling);
       }
@@ -1625,28 +1660,52 @@ export default function App() {
 
   const handleDeleteMessage = async (msgId: string, forEveryone: boolean) => {
     const targetMsg = messages.find(m => m.id === msgId);
-    
-    if (forEveryone && isSupabaseConfigured()) {
-      // Synchronisation Cloud
-      const storagePath = targetMsg?.storagePath;
-      const res = await deleteMessage(msgId, storagePath);
-      
-      if (!res.success) {
-        console.error('[App] Erreur suppression synchronisée:', res.error);
-      }
-    }
+    const activeUserId = currentUser.id;
+    const coupleId = pairingState?.coupleId || getStoredPairingState().coupleId;
 
     if (forEveryone) {
+      // 1. Mise à jour optimiste immédiate du state local
       setMessages(prev =>
         prev.map(m =>
           m.id === msgId
-            ? { ...m, isDeletedForEveryone: true, content: 'Ce message intime a été effacé.' }
+            ? {
+                ...m,
+                isDeletedForEveryone: true,
+                deletedForEveryone: true,
+                deleted_for_everyone: true,
+                deletedAt: new Date().toISOString(),
+                content: 'Ce message a été supprimé',
+                mediaUrl: undefined,
+                storagePath: undefined
+              }
             : m
         )
       );
+
+      // 2. Diffusion de l'instruction P2P (Wi-Fi Hotspot Local / Bluetooth)
+      try {
+        proximityService.broadcastPayload({
+          type: 'delete_message',
+          deleteData: {
+            messageId: msgId,
+            forEveryone: true,
+            senderId: activeUserId
+          }
+        });
+      } catch (p2pErr) {
+        console.warn('[App] Erreur broadcast suppression P2P:', p2pErr);
+      }
+
+      // 3. Exécution Cloud & mise en file d'attente hors-ligne si besoin
+      const storagePath = targetMsg?.storagePath;
+      await deleteMessageForEveryone(msgId, activeUserId, storagePath, coupleId);
     } else {
-      // Suppression locale uniquement
+      // "Supprimer pour moi":
+      // 1. Masquage local immédiat sur cet appareil
       setMessages(prev => prev.filter(m => m.id !== msgId));
+
+      // 2. Persistance (Supabase + IndexedDB offline action)
+      await deleteMessageForMe(msgId, activeUserId, coupleId);
     }
   };
 
