@@ -255,15 +255,31 @@ export interface SignalingPayload {
   candidate?: RTCIceCandidateInit;
 }
 
+/* --- GALLERY & MULTIMEDIA TYPES --- */
+export interface GalleryMediaItem {
+  id: string;
+  file: File;
+  type: 'photo' | 'video';
+  previewUrl: string;
+  thumbnailUrl?: string;
+  duration?: number; // en secondes pour les vidéos
+  size: number;
+  name: string;
+}
+
 /* --- MIKAYLA INTIMACY MODULES TYPES --- */
 
 export interface VaultItem {
   id: string;
   title: string;
   type: 'photo' | 'video' | 'secret_note';
+  mediaType?: 'photo' | 'video' | 'secret_note';
   mediaUrl: string;
   thumbnailUrl?: string;
+  duration?: number; // durée en secondes si vidéo
+  description?: string;
   category: 'intime' | 'souvenirs' | 'voyages' | 'capsule';
+  coupleId?: string;
   addedBy: string;
   addedByName?: string;
   addedByAvatar?: string;

@@ -22,6 +22,8 @@ import { PhotoPreviewModal } from './PhotoPreviewModal';
 import { DirectCameraModal } from './DirectCameraModal';
 import { PhotoEditor } from './photo/PhotoEditor';
 import { ChatThemeDrawer } from './ChatThemeDrawer';
+import { MediaGalleryPickerModal } from './media/MediaGalleryPickerModal';
+import { GalleryMediaItem } from '../types';
 import { getStoredPairingState, initAnonymousAuth, fetchActiveCoupleFromSupabase } from '../services/authService';
 import { 
   envoyerMessageTexte, 
@@ -165,6 +167,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [activeContextMenuMsgId, setActiveContextMenuMsgId] = useState<string | null>(null);
   const [searchInChat, setSearchInChat] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState('');
+  const [isGalleryPickerOpen, setIsGalleryPickerOpen] = useState(false);
 
   // Supabase state
   const [currentAuthUserId, setCurrentAuthUserId] = useState<string>('');
@@ -861,6 +864,41 @@ export const ChatView: React.FC<ChatViewProps> = ({
     } else {
       setSelectedPhotoFile(file);
       setIsPhotoEditorOpen(true);
+    }
+  };
+
+  const handleConfirmGalleryMedia = async (selectedMedia: GalleryMediaItem[]) => {
+    if (!selectedMedia || selectedMedia.length === 0) return;
+    const targetCoupleId = getStoredPairingState().coupleId || pairingState?.coupleId;
+
+    for (const item of selectedMedia) {
+      if (item.type === 'video') {
+        if (!targetCoupleId) {
+          setComingSoonToast("Votre couple n'est pas encore jumelé.");
+          continue;
+        }
+        setIsSending(true);
+        try {
+          const resultMessage = await envoyerMessageVideo(targetCoupleId, item.file, item.duration || 5);
+          if (isSupabaseConfigured()) {
+            setRealMessages(prev => [...prev.filter(m => m.id !== resultMessage.id), resultMessage]);
+          }
+          soundEffects.playSent();
+          triggerHaptic(20);
+        } catch (err: any) {
+          console.error('[ChatView] Erreur envoi vidéo galerie:', err);
+          setComingSoonToast(err.message || "Erreur lors de l'envoi de la vidéo.");
+        } finally {
+          setIsSending(false);
+        }
+      } else {
+        if (selectedMedia.length === 1) {
+          setSelectedPhotoFile(item.file);
+          setIsPhotoEditorOpen(true);
+        } else {
+          await handleSendPhotoMessage(item.file, '');
+        }
+      }
     }
   };
 
@@ -2153,14 +2191,14 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
             {/* Standard 6 Media Items Grid */}
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-              {/* 1. Galerie - ACTIVE */}
+              {/* 1. Galerie - ACTIVE (Photos & Vidéos) */}
               <button
                 type="button"
                 onClick={() => {
                   setShowAttachMenu(false);
-                  galleryInputRef.current?.click();
+                  setIsGalleryPickerOpen(true);
                 }}
-                aria-label="Galerie photo"
+                aria-label="Galerie photos et vidéos"
                 className="flex flex-col items-center gap-1.5 p-2 rounded-2xl hover:bg-white/5 transition-all group/item cursor-pointer active:scale-95"
               >
                 <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#0984e3] to-[#74b9ff] flex items-center justify-center text-white shadow-lg group-hover/item:scale-105 transition-transform">
@@ -2600,7 +2638,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
         }}
         onOpenGalleryFallback={() => {
           window.history.back();
-          galleryInputRef.current?.click();
+          setIsGalleryPickerOpen(true);
         }}
       />
 
@@ -2724,6 +2762,17 @@ export const ChatView: React.FC<ChatViewProps> = ({
           onThemeChange={onThemeChange}
           partnerName={partnerNickname || partnerProfile?.display_name || partnerUser.name}
           partnerAvatar={partnerUser.avatar}
+        />
+      )}
+
+      {/* Media Gallery Picker Modal (Photos & Vidéos avec multi-sélection) */}
+      {isGalleryPickerOpen && (
+        <MediaGalleryPickerModal
+          isOpen={isGalleryPickerOpen}
+          onClose={() => setIsGalleryPickerOpen(false)}
+          onConfirm={handleConfirmGalleryMedia}
+          title="Sélectionner des Photos & Vidéos"
+          maxSelection={10}
         />
       )}
     </div>

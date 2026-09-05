@@ -22,11 +22,15 @@ import {
   Layers,
   Heart,
   Calendar,
-  MessageSquare
+  MessageSquare,
+  Play,
+  Video as VideoIcon
 } from 'lucide-react';
-import { VaultItem, User, Message } from '../types';
+import { VaultItem, User, Message, GalleryMediaItem } from '../types';
 import { triggerHaptic } from '../utils/security';
 import { soundEffects } from '../utils/audio';
+import { formatVideoDuration, extractVideoMetadata } from '../utils/mediaProcessor';
+import { MediaGalleryPickerModal } from './media/MediaGalleryPickerModal';
 
 interface VaultModalProps {
   isOpen: boolean;
@@ -72,9 +76,13 @@ export const VaultModal: React.FC<VaultModalProps> = ({
   const [newTitle, setNewTitle] = useState<string>('');
   const [newCategory, setNewCategory] = useState<'intime' | 'souvenirs' | 'voyages' | 'capsule'>('intime');
   const [newMediaUrl, setNewMediaUrl] = useState<string>('');
+  const [newMediaType, setNewMediaType] = useState<'photo' | 'video'>('photo');
+  const [newThumbnailUrl, setNewThumbnailUrl] = useState<string>('');
+  const [newDuration, setNewDuration] = useState<number>(0);
   const [newCaption, setNewCaption] = useState<string>('');
   const [isViewOnceOption, setIsViewOnceOption] = useState<boolean>(false);
   const [activeViewingItem, setActiveViewingItem] = useState<VaultItem | null>(null);
+  const [isGalleryPickerOpen, setIsGalleryPickerOpen] = useState<boolean>(false);
 
   // Extract all chat images/media available for import
   const chatMediaMessages = useMemo(() => {
@@ -110,20 +118,66 @@ export const VaultModal: React.FC<VaultModalProps> = ({
     return true;
   });
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
+    if (!file) return;
+
+    const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv)$/i.test(file.name);
+    
+    if (!newTitle) {
+      setNewTitle(file.name.replace(/\.[^/.]+$/, ""));
+    }
+
+    if (isVideo) {
+      setNewMediaType('video');
+      const objectUrl = URL.createObjectURL(file);
+      setNewMediaUrl(objectUrl);
+      try {
+        const meta = await extractVideoMetadata(file);
+        setNewThumbnailUrl(meta.thumbnailUrl);
+        setNewDuration(meta.duration);
+      } catch (err) {
+        console.warn('[VaultModal] Metadata extraction fallback:', err);
+      }
+    } else {
+      setNewMediaType('photo');
       const reader = new FileReader();
       reader.onload = () => {
         if (typeof reader.result === 'string') {
           setNewMediaUrl(reader.result);
-          if (!newTitle) {
-            setNewTitle(file.name.replace(/\.[^/.]+$/, ""));
-          }
         }
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleConfirmGalleryForVault = async (selectedMedia: GalleryMediaItem[]) => {
+    if (!selectedMedia || selectedMedia.length === 0) return;
+
+    for (const item of selectedMedia) {
+      const isVideo = item.type === 'video';
+      handleAddItemCallback?.({
+        title: item.name.replace(/\.[^/.]+$/, "") || (isVideo ? 'Vidéo intime 🎥' : 'Photo secrète 💜'),
+        type: isVideo ? 'video' : 'photo',
+        mediaType: isVideo ? 'video' : 'photo',
+        mediaUrl: item.previewUrl,
+        thumbnailUrl: item.thumbnailUrl,
+        duration: item.duration,
+        category: newCategory,
+        addedBy: currentUser.id,
+        addedByName: currentUser.name,
+        addedByAvatar: currentUser.avatar,
+        caption: '',
+        isViewOnce: false,
+        isViewed: false,
+        source: 'upload',
+        tags: [newCategory, item.type]
+      });
+    }
+
+    triggerHaptic([50, 50, 100]);
+    soundEffects.playSent();
+    setShowAddForm(false);
   };
 
   const handleSaveItem = (e: React.FormEvent) => {
@@ -131,9 +185,12 @@ export const VaultModal: React.FC<VaultModalProps> = ({
     if (!newMediaUrl) return;
 
     handleAddItemCallback?.({
-      title: newTitle.trim() || 'Souvenir intime 💜',
-      type: 'photo',
+      title: newTitle.trim() || (newMediaType === 'video' ? 'Vidéo intime 🎥' : 'Souvenir intime 💜'),
+      type: newMediaType,
+      mediaType: newMediaType,
       mediaUrl: newMediaUrl,
+      thumbnailUrl: newThumbnailUrl || undefined,
+      duration: newDuration || undefined,
       category: newCategory,
       addedBy: currentUser.id,
       addedByName: currentUser.name,
@@ -142,13 +199,16 @@ export const VaultModal: React.FC<VaultModalProps> = ({
       isViewOnce: isViewOnceOption,
       isViewed: false,
       source: 'upload',
-      tags: [newCategory]
+      tags: [newCategory, newMediaType]
     });
 
     triggerHaptic([50, 50, 100]);
     soundEffects.playSent();
     setNewTitle('');
     setNewMediaUrl('');
+    setNewThumbnailUrl('');
+    setNewDuration(0);
+    setNewMediaType('photo');
     setNewCaption('');
     setIsViewOnceOption(false);
     setShowAddForm(false);
@@ -256,12 +316,23 @@ export const VaultModal: React.FC<VaultModalProps> = ({
 
           {/* Viewer Media */}
           <div className="flex-1 flex flex-col items-center justify-center relative p-2 my-auto">
-            <img
-              src={activeViewingItem.mediaUrl}
-              alt={activeViewingItem.title}
-              className="max-h-[72vh] max-w-full rounded-2xl object-contain shadow-2xl border border-[#6c5ce7]/30 select-none"
-              onContextMenu={e => e.preventDefault()}
-            />
+            {activeViewingItem.type === 'video' ? (
+              <video
+                src={activeViewingItem.mediaUrl}
+                controls
+                autoPlay
+                playsInline
+                className="max-h-[72vh] max-w-full rounded-2xl shadow-2xl border border-[#6c5ce7]/30"
+                onContextMenu={e => e.preventDefault()}
+              />
+            ) : (
+              <img
+                src={activeViewingItem.mediaUrl}
+                alt={activeViewingItem.title}
+                className="max-h-[72vh] max-w-full rounded-2xl object-contain shadow-2xl border border-[#6c5ce7]/30 select-none"
+                onContextMenu={e => e.preventDefault()}
+              />
+            )}
             {activeViewingItem.caption && (
               <p className="mt-3 text-center text-xs sm:text-sm font-medium text-[#f1f2f6] max-w-lg bg-[#1b1435]/90 px-4 py-2.5 rounded-xl border border-[#372863] shadow-lg">
                 {activeViewingItem.caption}
@@ -536,14 +607,23 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-[#a29bfe] mb-1 font-medium">Photo ou Média</label>
-                  <div className="flex items-center gap-3">
-                    <label className="flex-1 flex items-center justify-center gap-2 border border-dashed border-[#6c5ce7]/60 hover:border-[#00b894] bg-[#130f26] hover:bg-[#1a1435] rounded-xl p-3 cursor-pointer transition-colors text-[#55efc4]">
+                  <label className="block text-[#a29bfe] mb-1 font-medium">Photo ou Vidéo</label>
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsGalleryPickerOpen(true)}
+                      className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#6c5ce7] to-[#a29bfe] hover:brightness-110 text-white text-xs font-bold py-2.5 px-3 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
+                    >
+                      <ImageIcon size={16} />
+                      <span>Ouvrir la Galerie (Photos & Vidéos)</span>
+                    </button>
+
+                    <label className="flex items-center justify-center gap-2 border border-dashed border-[#6c5ce7]/60 hover:border-[#00b894] bg-[#130f26] hover:bg-[#1a1435] rounded-xl p-3 cursor-pointer transition-colors text-[#55efc4]">
                       <Upload size={16} />
-                      <span className="font-semibold">Parcourir ou Déposer une photo</span>
+                      <span className="font-semibold text-xs">Ou Parcourir un fichier spécifique</span>
                       <input
                         type="file"
-                        accept="image/*"
+                        accept="image/*,video/*"
                         onChange={handleFileUpload}
                         className="hidden"
                       />
@@ -551,8 +631,22 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                   </div>
                   {newMediaUrl && (
                     <div className="mt-2 flex items-center gap-3 bg-[#130f26] p-2 rounded-xl border border-[#2d2254]">
-                      <img src={newMediaUrl} alt="Preview" className="w-12 h-12 rounded-lg object-cover" />
-                      <span className="text-xs text-[#00b894] font-medium">Image prête à être chiffrée & partagée</span>
+                      {newMediaType === 'video' ? (
+                        <div className="relative w-12 h-12 rounded-lg bg-black overflow-hidden flex items-center justify-center">
+                          <img src={newThumbnailUrl || newMediaUrl} alt="Preview" className="w-full h-full object-cover opacity-80" />
+                          <Play size={14} fill="white" className="absolute text-white" />
+                        </div>
+                      ) : (
+                        <img src={newMediaUrl} alt="Preview" className="w-12 h-12 rounded-lg object-cover" />
+                      )}
+                      <div className="flex flex-col">
+                        <span className="text-xs text-[#00b894] font-medium">
+                          {newMediaType === 'video' ? 'Vidéo prête à être chiffrée' : 'Image prête à être chiffrée'}
+                        </span>
+                        {newMediaType === 'video' && newDuration > 0 && (
+                          <span className="text-[10px] text-[#a29bfe]">Durée : {formatVideoDuration(newDuration)}</span>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -626,17 +720,30 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                     ) : (
                       <>
                         <img
-                          src={item.mediaUrl}
+                          src={item.type === 'video' ? (item.thumbnailUrl || item.mediaUrl) : item.mediaUrl}
                           alt={item.title}
                           className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-[#130f26] via-[#130f26]/30 to-transparent" />
+
+                        {/* Video Play Overlay */}
+                        {item.type === 'video' && (
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                            <div className="w-10 h-10 rounded-full bg-black/60 backdrop-blur-sm border border-white/40 flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform">
+                              <Play size={16} fill="white" className="ml-0.5" />
+                            </div>
+                          </div>
+                        )}
 
                         {/* Top Badges */}
                         <div className="absolute top-2 left-2 right-2 flex items-center justify-between z-10">
                           {item.isViewOnce ? (
                             <span className="bg-[#ff7675] text-white text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-md">
                               <Flame size={10} /> 1x HD
+                            </span>
+                          ) : item.type === 'video' ? (
+                            <span className="bg-[#130f26]/85 backdrop-blur-md text-[#55efc4] text-[9px] font-bold px-2 py-0.5 rounded-full border border-[#00b894]/40 flex items-center gap-1 shadow">
+                              <VideoIcon size={10} /> VIDÉO
                             </span>
                           ) : (
                             <span className="bg-[#130f26]/80 backdrop-blur-md text-[#55efc4] text-[9px] font-semibold px-2 py-0.5 rounded-full border border-[#00b894]/30">
@@ -684,11 +791,18 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                               <span className="w-1.5 h-1.5 rounded-full bg-current" />
                               <span>{isMe ? 'Ajouté par Vous' : `Ajouté par ${adderDisplayName}`}</span>
                             </span>
-                            {item.source === 'chat' && (
-                              <span className="text-[9px] text-[#a29bfe] bg-black/40 px-1.5 py-0.2 rounded">
-                                Chat
-                              </span>
-                            )}
+                            <div className="flex items-center gap-1">
+                              {item.type === 'video' && item.duration ? (
+                                <span className="text-[9px] text-[#55efc4] bg-black/60 px-1.5 py-0.5 rounded font-mono">
+                                  {formatVideoDuration(item.duration)}
+                                </span>
+                              ) : null}
+                              {item.source === 'chat' && (
+                                <span className="text-[9px] text-[#a29bfe] bg-black/40 px-1.5 py-0.2 rounded">
+                                  Chat
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </>
@@ -726,6 +840,17 @@ export const VaultModal: React.FC<VaultModalProps> = ({
           </span>
         </div>
       </div>
+
+      {/* Galerie Photos & Vidéos pour le Coffre-Fort */}
+      {isGalleryPickerOpen && (
+        <MediaGalleryPickerModal
+          isOpen={isGalleryPickerOpen}
+          onClose={() => setIsGalleryPickerOpen(false)}
+          onConfirm={handleConfirmGalleryForVault}
+          title="Sélectionner des médias pour le Coffre-Fort"
+          maxSelection={10}
+        />
+      )}
     </div>
   );
 };

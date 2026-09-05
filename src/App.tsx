@@ -478,6 +478,21 @@ export default function App() {
   useEffect(() => {
     if (pairingState?.coupleId && currentUser?.id) {
       vaultService.setup(pairingState.coupleId, currentUser.id);
+
+      // Charger tous les éléments du coffre partagé (visibles par les 2 utilisateurs)
+      vaultService.fetchVaultItems(pairingState.coupleId).then(remoteItems => {
+        if (remoteItems && remoteItems.length > 0) {
+          setVaultItems(prev => {
+            const map = new Map<string, VaultItem>();
+            prev.forEach(item => map.set(item.id, item));
+            remoteItems.forEach(item => map.set(item.id, item));
+            const merged = Array.from(map.values()).sort((a, b) => b.dateAdded - a.dateAdded);
+            saveVaultItems(merged);
+            return merged;
+          });
+        }
+      }).catch(err => console.warn('[App] Fetch remote vault items error:', err));
+
       const unsubscribe = vaultService.subscribe((payload) => {
         if (payload.action === 'add' && payload.item) {
           const itemToAdd = payload.item;
