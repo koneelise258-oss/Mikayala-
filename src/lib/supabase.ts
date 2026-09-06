@@ -43,17 +43,39 @@ export const supabase: SupabaseClient = createClient(
  */
 export function safeCreateChannel(topic: string, opts?: any) {
   if (!isSupabaseConfigured()) return null;
+
+  const cleanTopic = topic.replace(/^realtime:/, '');
+  const fullTopic = `realtime:${cleanTopic}`;
+
   try {
     const existingChannels = supabase.getChannels();
-    existingChannels.forEach((c) => {
-      if (c.topic === topic) {
-        supabase.removeChannel(c);
+    existingChannels.forEach((c: any) => {
+      if (c && c.topic) {
+        const cClean = c.topic.replace(/^realtime:/, '');
+        if (cClean === cleanTopic || c.topic === topic || c.topic === fullTopic) {
+          try {
+            supabase.removeChannel(c);
+          } catch (e) {
+            console.debug('[Supabase] removeChannel cleanup warning:', e);
+          }
+        }
       }
     });
   } catch (e) {
     console.debug('[Supabase] safeCreateChannel cleanup warning:', e);
   }
-  return opts ? supabase.channel(topic, opts) : supabase.channel(topic);
+
+  let channel = opts ? supabase.channel(cleanTopic, opts) : supabase.channel(cleanTopic);
+
+  // If channel state is not closed (already subscribed or joining), force clean recreate
+  if (channel && (channel as any).state && (channel as any).state !== 'closed') {
+    try {
+      supabase.removeChannel(channel);
+    } catch {}
+    channel = opts ? supabase.channel(cleanTopic, opts) : supabase.channel(cleanTopic);
+  }
+
+  return channel;
 }
 
 export default supabase;

@@ -16,6 +16,8 @@ export interface SendMessagePayload extends Partial<Message> {
 
 const STORAGE_BUCKET = 'messages-media';
 
+let activeCoupleMessageChannel: any = null;
+
 /**
  * Diffuse un événement en temps réel à travers le canal Supabase partagé du couple
  */
@@ -27,7 +29,16 @@ export async function broadcastMessageToCouple(
   const targetCoupleId = coupleId || getStoredPairingState().coupleId;
   if (!targetCoupleId || !isSupabaseConfigured()) return;
   try {
-    const channelName = `couple-msgs-${targetCoupleId}`;
+    if (activeCoupleMessageChannel && (activeCoupleMessageChannel.state === 'joined' || activeCoupleMessageChannel.state === 'joining')) {
+      await activeCoupleMessageChannel.send({
+        type: 'broadcast',
+        event: eventName,
+        payload
+      });
+      return;
+    }
+
+    const channelName = `couple-msgs-send-${targetCoupleId}`;
     const channel = safeCreateChannel(channelName);
     if (channel) {
       await channel.subscribe(async (status) => {
@@ -754,6 +765,8 @@ export function sAbonnerAuxMessages(
     return () => {};
   }
 
+  activeCoupleMessageChannel = channel;
+
   channel
     .on(
       'postgres_changes',
@@ -819,6 +832,9 @@ export function sAbonnerAuxMessages(
 
   return () => {
     console.log('[Realtime] Désabonnement demandé.');
+    if (activeCoupleMessageChannel === channel) {
+      activeCoupleMessageChannel = null;
+    }
     window.clearInterval(pollInterval);
     supabase.removeChannel(channel);
   };

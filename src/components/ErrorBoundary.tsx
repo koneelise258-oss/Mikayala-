@@ -54,15 +54,27 @@ export class ErrorBoundary extends React.Component<Props, State> {
               </div>
             )}
             
-            <button
-              onClick={() => {
-                localStorage.clear();
-                window.location.reload();
-              }}
-              className="w-full py-3 bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold rounded-xl transition-colors border border-red-500/20"
-            >
-              Réinitialiser l'application (Efface les données locales)
-            </button>
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => {
+                  window.location.reload();
+                }}
+                className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl transition-colors shadow-lg"
+              >
+                🔄 Recharger la page (Conserver mes données)
+              </button>
+              <button
+                onClick={() => {
+                  if (window.confirm("Êtes-vous sûr de vouloir réinitialiser l'application ? Vos identifiants locaux seront effacés.")) {
+                    localStorage.clear();
+                    window.location.reload();
+                  }
+                }}
+                className="w-full py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-semibold rounded-xl transition-colors border border-red-500/20"
+              >
+                ⚠️ Réinitialiser l'application (Efface les données locales)
+              </button>
+            </div>
           </div>
         </div>
       );
