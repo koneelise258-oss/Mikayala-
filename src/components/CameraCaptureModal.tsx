@@ -64,6 +64,9 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
   };
 
   if (!isOpen) return null;

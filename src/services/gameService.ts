@@ -1,7 +1,7 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 export interface GameEventPayload {
-  type: 'roll_dice' | 'spin_wheel' | 'draw_tod' | 'game_start' | 'game_state_update' | 'challenge_completed';
+  type: 'roll_dice' | 'spin_wheel' | 'draw_tod' | 'game_start' | 'game_state_update' | 'challenge_completed' | 'sync_challenges' | 'sync_dice_config';
   senderId: string;
   coupleId: string;
   data: any;

@@ -4,10 +4,107 @@ import { CycleData, CycleHistoryItem, CyclePhase, DailySymptomLog, MenstrualPred
 const STORAGE_KEY = 'mikayla_cycle_data';
 const HISTORY_STORAGE_KEY = 'mikayla_cycle_history';
 
+export type CycleUpdateCallback = (data: CycleData) => void;
+
 /**
  * Calcul mathématique et gynécologique intelligent du cycle menstruel (méthode de calendrier avancée style Flo)
  */
 export class CycleService {
+  private coupleId: string = '';
+  private currentUserId: string = '';
+  private localBroadcastChannel: BroadcastChannel | null = null;
+  private realtimeChannel: any = null;
+  private onUpdateCallback: CycleUpdateCallback | null = null;
+
+  public setup(coupleId: string, currentUserId: string, onUpdate?: CycleUpdateCallback) {
+    this.coupleId = coupleId;
+    this.currentUserId = currentUserId;
+    if (onUpdate) {
+      this.onUpdateCallback = onUpdate;
+    }
+
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        if (this.localBroadcastChannel) {
+          this.localBroadcastChannel.close();
+        }
+        this.localBroadcastChannel = new BroadcastChannel(`mikayla_cycle_channel_${coupleId || 'local'}`);
+        this.localBroadcastChannel.onmessage = (event) => {
+          if (event.data?.type === 'sync_cycle' && event.data.data) {
+            if (event.data.senderId !== this.currentUserId) {
+              this.applyIncomingCycleData(event.data.data);
+            }
+          }
+        };
+      }
+    } catch (e) {
+      console.warn('[CycleService] BroadcastChannel warning:', e);
+    }
+
+    if (isSupabaseConfigured() && coupleId) {
+      if (this.realtimeChannel) {
+        supabase.removeChannel(this.realtimeChannel);
+      }
+      this.realtimeChannel = supabase
+        .channel(`cycle_broadcast:${coupleId}`)
+        .on('broadcast', { event: 'sync_cycle' }, (response) => {
+          const payload = response.payload;
+          if (payload && payload.senderId !== this.currentUserId && payload.data) {
+            this.applyIncomingCycleData(payload.data);
+          }
+        })
+        .subscribe();
+    }
+  }
+
+  private applyIncomingCycleData(incoming: CycleData) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(incoming));
+      if (incoming.history) {
+        localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(incoming.history));
+      }
+    } catch (e) {}
+
+    const recomputed = this.loadCycleData();
+    if (this.onUpdateCallback) {
+      this.onUpdateCallback(recomputed);
+    }
+  }
+
+  private broadcastCycleData(data: CycleData) {
+    const payload = {
+      type: 'sync_cycle',
+      senderId: this.currentUserId,
+      coupleId: this.coupleId,
+      data
+    };
+
+    try {
+      if (this.localBroadcastChannel) {
+        this.localBroadcastChannel.postMessage(payload);
+      }
+    } catch (e) {}
+
+    if (this.realtimeChannel) {
+      this.realtimeChannel.send({
+        type: 'broadcast',
+        event: 'sync_cycle',
+        payload
+      });
+    }
+  }
+
+  public cleanup() {
+    if (this.localBroadcastChannel) {
+      this.localBroadcastChannel.close();
+      this.localBroadcastChannel = null;
+    }
+    if (this.realtimeChannel) {
+      supabase.removeChannel(this.realtimeChannel);
+      this.realtimeChannel = null;
+    }
+    this.onUpdateCallback = null;
+  }
   /**
    * Calcule la durée moyenne adaptative à partir de l'historique des cycles réels (au-delà de 3 cycles)
    */
@@ -353,6 +450,8 @@ export class CycleService {
       } catch (storageErr) {
         console.warn('[Cycle] LocalStorage warning:', storageErr);
       }
+
+      this.broadcastCycleData(fullData);
 
       // Synchronisation Cloud Supabase si en ligne
       if (isSupabaseConfigured() && userId) {

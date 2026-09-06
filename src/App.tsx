@@ -1571,7 +1571,10 @@ export default function App() {
 
   // Anti-Discretion Blur on window blur / tab switch / minimize
   useEffect(() => {
-    if (!settings.antiScreenshotBlur) return;
+    if (!settings.blurOnBackground) {
+      setIsPrivacyBlurred(false);
+      return;
+    }
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
@@ -1579,18 +1582,12 @@ export default function App() {
       }
     };
 
-    const handleWindowBlur = () => {
-      setIsPrivacyBlurred(true);
-    };
-
-    window.addEventListener('blur', handleWindowBlur);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      window.removeEventListener('blur', handleWindowBlur);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [settings.antiScreenshotBlur]);
+  }, [settings.blurOnBackground]);
 
   // Mark messages as read when opening chat (local fallback when not paired)
   useEffect(() => {
@@ -2793,6 +2790,19 @@ export default function App() {
         />
       )}
 
+      {/* Real-time Voice & Video Call Overlay (WhatsApp style with PiP & Controls) */}
+      <CallOverlay
+        isOpen={isCallOpen}
+        type={callType}
+        status={callStatus === 'idle' ? 'connecting' : callStatus}
+        partnerUser={partnerUser}
+        localStream={localStream}
+        remoteStream={remoteStream}
+        onHangup={handleHangup}
+        onAccept={handleAcceptCall}
+        onDecline={handleDeclineCall}
+      />
+
       {/* Intimate Modules: Cycle Care & Empathie Complice */}
       {isCycleCareOpen && (
         <CycleCareModal
@@ -2801,6 +2811,7 @@ export default function App() {
           cycleData={cycleData}
           currentUser={currentUser}
           partnerUser={partnerUser}
+          coupleId={pairingState?.coupleId || ''}
           onUpdateCycleData={(updated) => {
             setCycleData(prev => ({ ...prev, ...updated }));
           }}

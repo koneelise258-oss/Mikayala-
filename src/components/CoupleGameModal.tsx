@@ -85,7 +85,15 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
       });
 
       gameService.setOnGameEvent((payload) => {
-        if (payload.type === 'spin_wheel') {
+        if (payload.type === 'sync_challenges' && Array.isArray(payload.data?.challenges)) {
+          setChallenges(payload.data.challenges);
+          saveGameChallenges(payload.data.challenges);
+          soundEffects.playReceived();
+        } else if (payload.type === 'sync_dice_config' && payload.data?.diceConfig) {
+          setDiceConfig(payload.data.diceConfig);
+          saveDiceConfig(payload.data.diceConfig);
+          soundEffects.playReceived();
+        } else if (payload.type === 'spin_wheel') {
           // Sync wheel spin
           setRotationDegree(payload.data.targetAngle);
           setIsSpinning(true);
@@ -325,6 +333,22 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
     }, 120);
   };
 
+  const updateAndBroadcastChallenges = (newChallenges: GameChallenge[]) => {
+    setChallenges(newChallenges);
+    saveGameChallenges(newChallenges);
+    if (coupleId && currentUser.id) {
+      gameService.sendEvent(coupleId, currentUser.id, 'sync_challenges', { challenges: newChallenges });
+    }
+  };
+
+  const updateAndBroadcastDice = (newConfig: CustomDiceConfig) => {
+    setDiceConfig(newConfig);
+    saveDiceConfig(newConfig);
+    if (coupleId && currentUser.id) {
+      gameService.sendEvent(coupleId, currentUser.id, 'sync_dice_config', { diceConfig: newConfig });
+    }
+  };
+
   // --- CUSTOMIZER OPERATIONS ---
   const handleAddNewChallenge = (e: React.FormEvent) => {
     e.preventDefault();
@@ -341,7 +365,8 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
       createdAt: Date.now()
     };
 
-    setChallenges(prev => [created, ...prev]);
+    const updated = [created, ...challenges];
+    updateAndBroadcastChallenges(updated);
     setNewTitle('');
     setNewDescription('');
     setShowNewChallengeForm(false);
@@ -360,30 +385,30 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
 
   const handleSaveEditChallenge = (id: string) => {
     if (!editTitle.trim()) return;
-    setChallenges(prev =>
-      prev.map(c => (c.id === id ? {
-        ...c,
-        title: editTitle.trim(),
-        description: editDescription.trim(),
-        type: editType,
-        category: editCategory,
-        intensity: editIntensity
-      } : c))
-    );
+    const updated = challenges.map(c => (c.id === id ? {
+      ...c,
+      title: editTitle.trim(),
+      description: editDescription.trim(),
+      type: editType,
+      category: editCategory,
+      intensity: editIntensity
+    } : c));
+    updateAndBroadcastChallenges(updated);
     setEditingChallengeId(null);
     triggerHaptic(40);
     soundEffects.playReaction();
   };
 
   const handleDeleteChallenge = (id: string) => {
-    setChallenges(prev => prev.filter(c => c.id !== id));
+    const updated = challenges.filter(c => c.id !== id);
+    updateAndBroadcastChallenges(updated);
     triggerHaptic(40);
   };
 
   const handleResetToDefaults = () => {
     if (confirm('Voulez-vous restaurer tous les défis et dés intimes par défaut ?')) {
-      setChallenges(DEFAULT_CHALLENGES);
-      setDiceConfig(INITIAL_DICE_CONFIG);
+      updateAndBroadcastChallenges(DEFAULT_CHALLENGES);
+      updateAndBroadcastDice(INITIAL_DICE_CONFIG);
       triggerHaptic([60, 60, 60]);
       soundEffects.playBiometricSuccess();
     }
@@ -392,37 +417,43 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
   // Dice customization
   const handleAddDiceAction = () => {
     if (!newDiceAction.trim()) return;
-    setDiceConfig(prev => ({ ...prev, actions: [...prev.actions, newDiceAction.trim()] }));
+    const updated = { ...diceConfig, actions: [...diceConfig.actions, newDiceAction.trim()] };
+    updateAndBroadcastDice(updated);
     setNewDiceAction('');
     triggerHaptic(40);
   };
 
   const handleDeleteDiceAction = (index: number) => {
-    setDiceConfig(prev => ({ ...prev, actions: prev.actions.filter((_, i) => i !== index) }));
+    const updated = { ...diceConfig, actions: diceConfig.actions.filter((_, i) => i !== index) };
+    updateAndBroadcastDice(updated);
     triggerHaptic(40);
   };
 
   const handleAddDiceZone = () => {
     if (!newDiceZone.trim()) return;
-    setDiceConfig(prev => ({ ...prev, zones: [...prev.zones, newDiceZone.trim()] }));
+    const updated = { ...diceConfig, zones: [...diceConfig.zones, newDiceZone.trim()] };
+    updateAndBroadcastDice(updated);
     setNewDiceZone('');
     triggerHaptic(40);
   };
 
   const handleDeleteDiceZone = (index: number) => {
-    setDiceConfig(prev => ({ ...prev, zones: prev.zones.filter((_, i) => i !== index) }));
+    const updated = { ...diceConfig, zones: diceConfig.zones.filter((_, i) => i !== index) };
+    updateAndBroadcastDice(updated);
     triggerHaptic(40);
   };
 
   const handleAddDiceDuration = () => {
     if (!newDiceDuration.trim()) return;
-    setDiceConfig(prev => ({ ...prev, durations: [...prev.durations, newDiceDuration.trim()] }));
+    const updated = { ...diceConfig, durations: [...diceConfig.durations, newDiceDuration.trim()] };
+    updateAndBroadcastDice(updated);
     setNewDiceDuration('');
     triggerHaptic(40);
   };
 
   const handleDeleteDiceDuration = (index: number) => {
-    setDiceConfig(prev => ({ ...prev, durations: prev.durations.filter((_, i) => i !== index) }));
+    const updated = { ...diceConfig, durations: diceConfig.durations.filter((_, i) => i !== index) };
+    updateAndBroadcastDice(updated);
     triggerHaptic(40);
   };
 

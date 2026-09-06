@@ -21,76 +21,26 @@ import confetti from 'canvas-confetti';
 import { User, EventData } from '../types';
 import { triggerHaptic } from '../utils/security';
 import { soundEffects } from '../utils/audio';
-
-interface CoupleEvent extends EventData {
-  id: string;
-  category?: 'date' | 'anniversary' | 'trip' | 'surprise' | 'intimate' | 'other';
-  color?: string;
-  reminderMinutes?: number;
-  notes?: string;
-}
+import { calendarService, CoupleEvent, INITIAL_CALENDAR_EVENTS } from '../services/calendarService';
 
 interface CoupleCalendarModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: User;
   partnerUser: User;
+  coupleId?: string;
   onShareToChat?: (text: string) => void;
 }
-
-const STORAGE_KEY_CALENDAR_EVENTS = 'mikayala_couple_calendar_events';
-
-const INITIAL_EVENTS: CoupleEvent[] = [
-  {
-    id: 'evt-1',
-    title: 'Dîner aux chandelles & Vue panoramique',
-    date: new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0],
-    time: '20:00',
-    location: 'Restaurant Le Ciel de Paris',
-    description: 'Une soirée en amoureux sans téléphone portable (juste Mikayla !)',
-    category: 'date',
-    color: '#fd79a8',
-    attendees: []
-  },
-  {
-    id: 'evt-2',
-    title: 'Notre Anniversaire de Rencontre 💖',
-    date: new Date(Date.now() + 86400000 * 14).toISOString().split('T')[0],
-    time: '19:30',
-    location: 'Lieu secret surprise',
-    description: 'Célébration de notre amour, échange de cadeaux et de vœux intimes.',
-    category: 'anniversary',
-    color: '#ffeaa7',
-    attendees: []
-  },
-  {
-    id: 'evt-3',
-    title: 'Week-end Spa & Déconnexion',
-    date: new Date(Date.now() + 86400000 * 28).toISOString().split('T')[0],
-    time: '14:00',
-    location: 'Château & Spa Thermal',
-    description: 'Massage en duo, bain bouillonnant et nuit magique.',
-    category: 'trip',
-    color: '#00b894',
-    attendees: []
-  }
-];
 
 export const CoupleCalendarModal: React.FC<CoupleCalendarModalProps> = ({
   isOpen,
   onClose,
   currentUser,
   partnerUser,
+  coupleId = 'local_couple',
   onShareToChat
 }) => {
-  const [events, setEvents] = useState<CoupleEvent[]>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY_CALENDAR_EVENTS);
-      return stored ? JSON.parse(stored) : INITIAL_EVENTS;
-    } catch {
-      return INITIAL_EVENTS;
-    }
-  });
+  const [events, setEvents] = useState<CoupleEvent[]>(() => calendarService.getEvents());
 
   const [currentMonthDate, setCurrentMonthDate] = useState<Date>(new Date());
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -105,8 +55,19 @@ export const CoupleCalendarModal: React.FC<CoupleCalendarModalProps> = ({
   const [newCategory, setNewCategory] = useState<'date' | 'anniversary' | 'trip' | 'surprise' | 'intimate' | 'other'>('date');
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_CALENDAR_EVENTS, JSON.stringify(events));
-  }, [events]);
+    if (!isOpen) return;
+
+    setEvents(calendarService.getEvents());
+    calendarService.setup(coupleId, currentUser.id, (updated) => {
+      setEvents(updated);
+      soundEffects.playReceived();
+      triggerHaptic(30);
+    });
+
+    return () => {
+      calendarService.cleanup();
+    };
+  }, [isOpen, coupleId, currentUser.id]);
 
   if (!isOpen) return null;
 
@@ -124,7 +85,7 @@ export const CoupleCalendarModal: React.FC<CoupleCalendarModalProps> = ({
 
     const catObj = categories.find(c => c.id === newCategory);
     const newEvt: CoupleEvent = {
-      id: `evt-${Date.now()}`,
+      id: `evt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       title: newTitle.trim(),
       date: newDate,
       time: newTime,
@@ -132,21 +93,26 @@ export const CoupleCalendarModal: React.FC<CoupleCalendarModalProps> = ({
       description: newDescription.trim(),
       category: newCategory,
       color: catObj ? catObj.color : '#fd79a8',
+      createdBy: currentUser.id,
+      createdAt: Date.now(),
       attendees: [{ userId: currentUser.id, status: 'going' }]
     };
 
-    setEvents(prev => [...prev, newEvt].sort((a, b) => a.date.localeCompare(b.date)));
+    const updated = calendarService.addEvent(newEvt);
+    setEvents(updated);
     setIsAddingEvent(false);
     setNewTitle('');
     setNewLocation('');
     setNewDescription('');
     triggerHaptic([50, 50, 100]);
+    soundEffects.playSent();
     confetti({ particleCount: 30, spread: 60, origin: { y: 0.7 } });
   };
 
   const handleDeleteEvent = (id: string) => {
     triggerHaptic(30);
-    setEvents(prev => prev.filter(e => e.id !== id));
+    const updated = calendarService.deleteEvent(id);
+    setEvents(updated);
   };
 
   const handleShareEvent = (event: CoupleEvent) => {

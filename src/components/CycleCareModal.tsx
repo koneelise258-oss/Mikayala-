@@ -36,6 +36,7 @@ interface CycleCareModalProps {
   cycleData: CycleData;
   currentUser: User;
   partnerUser: User;
+  coupleId?: string;
   onUpdateCycleData: (data: Partial<CycleData>) => void;
   onShareCareToChat: (text: string) => void;
 }
@@ -119,6 +120,7 @@ export const CycleCareModal: React.FC<CycleCareModalProps> = ({
   cycleData,
   currentUser,
   partnerUser,
+  coupleId = 'local_couple',
   onUpdateCycleData,
   onShareCareToChat
 }) => {
@@ -130,6 +132,21 @@ export const CycleCareModal: React.FC<CycleCareModalProps> = ({
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   );
+
+  // Real-time synchronization
+  useEffect(() => {
+    if (!isOpen) return;
+
+    cycleService.setup(coupleId, currentUser.id, (incoming) => {
+      onUpdateCycleData(incoming);
+      soundEffects.playReceived();
+      triggerHaptic(30);
+    });
+
+    return () => {
+      cycleService.cleanup();
+    };
+  }, [isOpen, coupleId, currentUser.id]);
 
   // Settings State Form
   const [inputLastStartDate, setInputLastStartDate] = useState(cycleData.lastPeriodStartDate || new Date().toISOString().split('T')[0]);
@@ -195,7 +212,7 @@ export const CycleCareModal: React.FC<CycleCareModalProps> = ({
       periodLength: Number(inputPeriodLength)
     };
 
-    const saved = await cycleService.saveCycleData(currentUser.id, null, updatedData);
+    const saved = await cycleService.saveCycleData(currentUser.id, coupleId, updatedData);
     onUpdateCycleData(saved);
     setIsSavedBannerVisible(true);
     setTimeout(() => setIsSavedBannerVisible(false), 3000);
@@ -228,7 +245,7 @@ export const CycleCareModal: React.FC<CycleCareModalProps> = ({
       energyLevel: selectedEnergy
     };
 
-    const saved = await cycleService.saveCycleData(currentUser.id, null, updatedData);
+    const saved = await cycleService.saveCycleData(currentUser.id, coupleId, updatedData);
     onUpdateCycleData(saved);
     setIsSavedBannerVisible(true);
     setTimeout(() => setIsSavedBannerVisible(false), 2500);
