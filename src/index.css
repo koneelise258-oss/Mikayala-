@@ -372,8 +372,7 @@
 
 /* Skip layout calculation of off-screen message cards for buttery 60fps scrolling */
 .message-item-container {
-  content-visibility: auto;
-  contain-intrinsic-size: 0 54px;
+  /* Removed content-visibility to prevent rendering bugs on some webviews */
 }
 
 /* Relieve low-end GPU fill-rate on mobile screens */
