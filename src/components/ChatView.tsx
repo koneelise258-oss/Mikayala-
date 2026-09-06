@@ -41,7 +41,9 @@ import {
   markMessagesAsRead,
   markMessageAsRead,
   canMarkConversationAsRead as canMarkConversationAsReadGlobal,
-  uploadMediaToStorage
+  uploadMediaToStorage,
+  updateMessageReactions,
+  broadcastMessageToCouple
 } from '../services/messageService';
 import {
   formatLastSeen,
@@ -763,18 +765,52 @@ export const ChatView: React.FC<ChatViewProps> = ({
     const msg = activeMessages.find(m => m.id === msgId);
     if (!msg) return;
 
+    const myId = currentAuthUserId || currentUser.id;
     const currentReactions = { ...(msg.reactions || {}) };
-    if (currentReactions[currentUser.id] === emoji) {
+    if (currentReactions[myId] === emoji || currentReactions[currentUser.id] === emoji) {
+      delete currentReactions[myId];
       delete currentReactions[currentUser.id];
     } else {
+      currentReactions[myId] = emoji;
       currentReactions[currentUser.id] = emoji;
       soundEffects.playReaction();
       triggerHaptic(30);
     }
 
+    // 1. Optimistic update in realMessages
+    setRealMessages(prev => prev.map(m => m.id === msgId ? { ...m, reactions: currentReactions } : m));
+
+    // 2. Call parent onUpdateMessage
     onUpdateMessage(msgId, { reactions: currentReactions });
+
+    // 3. Persist and broadcast to partner via Supabase
+    const targetCoupleId = coupleId || pairingState?.coupleId || getStoredPairingState().coupleId;
+    if (targetCoupleId) {
+      updateMessageReactions(msgId, currentReactions, targetCoupleId);
+    }
+
     setActiveReactionMsgId(null);
     setActiveContextMenuMsgId(null);
+  };
+
+  const handleDeleteMessageInternal = (msgId: string, forEveryone: boolean) => {
+    // 1. Optimistic immediate update of realMessages in ChatView
+    if (forEveryone) {
+      setRealMessages(prev => prev.map(m => m.id === msgId ? {
+        ...m,
+        isDeletedForEveryone: true,
+        deletedForEveryone: true,
+        deleted_for_everyone: true,
+        deletedAt: new Date().toISOString(),
+        content: 'Ce message a été supprimé',
+        mediaUrl: undefined,
+        storagePath: undefined
+      } : m));
+    } else {
+      setRealMessages(prev => prev.filter(m => m.id !== msgId));
+    }
+    // 2. Call parent handler
+    onDeleteMessage(msgId, forEveryone);
   };
 
   const handleVotePoll = (msgId: string, optionId: string) => {
@@ -2683,6 +2719,19 @@ export const ChatView: React.FC<ChatViewProps> = ({
             <div className="p-2 space-y-1">
               <button 
                 onClick={() => {
+                  if (activeContextMenuMsgId) {
+                    setActiveReactionMsgId(activeContextMenuMsgId);
+                    setActiveContextMenuMsgId(null);
+                  }
+                }}
+                className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-white/5 text-sm text-[#fdcb6e] font-medium transition-colors text-left"
+              >
+                <Smile size={18} className="text-[#fdcb6e]" />
+                <span>Réagir au message</span>
+              </button>
+
+              <button 
+                onClick={() => {
                   const msg = filteredMessages.find(m => m.id === activeContextMenuMsgId);
                   if (msg) setReplyingTo(msg);
                   setActiveContextMenuMsgId(null);
@@ -2708,7 +2757,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
               <button 
                 onClick={() => {
                   if (activeContextMenuMsgId) {
-                    onDeleteMessage(activeContextMenuMsgId, false);
+                    handleDeleteMessageInternal(activeContextMenuMsgId, false);
                     setActiveContextMenuMsgId(null);
                   }
                 }}
@@ -2725,7 +2774,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 <button 
                   onClick={() => {
                     if (activeContextMenuMsgId) {
-                      onDeleteMessage(activeContextMenuMsgId, true);
+                      handleDeleteMessageInternal(activeContextMenuMsgId, true);
                       setActiveContextMenuMsgId(null);
                     }
                   }}

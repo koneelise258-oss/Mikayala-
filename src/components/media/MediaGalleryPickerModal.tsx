@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Check, Image as ImageIcon, Video as VideoIcon, Play, Upload, AlertCircle, Eye } from 'lucide-react';
 import { GalleryMediaItem } from '../../types';
-import { extractVideoMetadata, formatVideoDuration, validateMediaFile } from '../../utils/mediaProcessor';
+import { extractVideoMetadata, formatVideoDuration, validateMediaFile, compressImageFile } from '../../utils/mediaProcessor';
 
 interface MediaGalleryPickerModalProps {
   isOpen: boolean;
@@ -29,20 +29,6 @@ export const MediaGalleryPickerModal: React.FC<MediaGalleryPickerModalProps> = (
   const [previewItem, setPreviewItem] = useState<GalleryMediaItem | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Nettoyage des Object URLs pour préserver la mémoire mobile / TWA
-  useEffect(() => {
-    return () => {
-      items.forEach(item => {
-        try {
-          URL.revokeObjectURL(item.previewUrl);
-          if (item.thumbnailUrl && item.thumbnailUrl.startsWith('blob:')) {
-            URL.revokeObjectURL(item.thumbnailUrl);
-          }
-        } catch (_) {}
-      });
-    };
-  }, [items]);
 
   // Interception du bouton physique retour Android pour fermer la modale sans quitter l'app
   useEffect(() => {
@@ -89,7 +75,7 @@ export const MediaGalleryPickerModal: React.FC<MediaGalleryPickerModalProps> = (
         continue;
       }
 
-      const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv)$/i.test(file.name);
+      const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv|avi|flv|wmv|3gp|ts)$/i.test(file.name);
 
       try {
         if (isVideo) {
@@ -105,11 +91,13 @@ export const MediaGalleryPickerModal: React.FC<MediaGalleryPickerModalProps> = (
             name: file.name
           });
         } else {
+          const compressedDataUrl = await compressImageFile(file);
           newItems.push({
             id: `img_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
             file,
             type: 'photo',
-            previewUrl: URL.createObjectURL(file),
+            previewUrl: compressedDataUrl || URL.createObjectURL(file),
+            thumbnailUrl: compressedDataUrl || undefined,
             size: file.size,
             name: file.name
           });

@@ -63,20 +63,16 @@ export async function extractVideoMetadata(file: File): Promise<VideoMetadata> {
 
         ctx.drawImage(video, 0, 0, width, height);
 
+        // Générer une Data URL permanente et inaltérable pour la miniature
+        const permanentDataUrl = canvas.toDataURL('image/jpeg', 0.82);
+        const duration = Math.round(video.duration) || 0;
+
         canvas.toBlob((blob) => {
-          if (!blob) {
-            cleanup();
-            reject(new Error("Échec de la génération de la vignette vidéo"));
-            return;
-          }
-
-          const thumbnailUrl = URL.createObjectURL(blob);
-          const duration = Math.round(video.duration) || 0;
-
+          const finalBlob = blob || new Blob([], { type: 'image/jpeg' });
           cleanup();
           resolve({
-            thumbnailUrl,
-            thumbnailBlob: blob,
+            thumbnailUrl: permanentDataUrl,
+            thumbnailBlob: finalBlob,
             duration,
             width,
             height
@@ -84,14 +80,85 @@ export async function extractVideoMetadata(file: File): Promise<VideoMetadata> {
         }, 'image/jpeg', 0.82);
       } catch (err) {
         cleanup();
-        reject(err);
+        resolve({
+          thumbnailUrl: '',
+          thumbnailBlob: new Blob([], { type: 'image/jpeg' }),
+          duration: 0,
+          width: 640,
+          height: 360
+        });
       }
     };
 
     video.onerror = () => {
       cleanup();
-      reject(new Error("Format vidéo non supporté ou fichier illisible"));
+      // Fallback gracieux si le codec ne permet pas d'extraire une frame
+      resolve({
+        thumbnailUrl: '',
+        thumbnailBlob: new Blob([], { type: 'image/jpeg' }),
+        duration: 0,
+        width: 640,
+        height: 360
+      });
     };
+  });
+}
+
+/**
+ * Compresse et optimise une photo côté client pour un affichage instantané et persistant
+ */
+export async function compressImageFile(file: File, maxDimension: number = 1600, quality: number = 0.85): Promise<string> {
+  return new Promise((resolve) => {
+    // Si ce n'est pas une image standard
+    if (!file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+
+          if (width > maxDimension || height > maxDimension) {
+            if (width > height) {
+              height = Math.round((height * maxDimension) / width);
+              width = maxDimension;
+            } else {
+              width = Math.round((width * maxDimension) / height);
+              height = maxDimension;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(e.target?.result as string);
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+          resolve(compressedDataUrl);
+        } catch {
+          resolve(e.target?.result as string);
+        }
+      };
+      img.onerror = () => {
+        resolve(e.target?.result as string);
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = () => resolve('');
+    reader.readAsDataURL(file);
   });
 }
 
@@ -109,17 +176,17 @@ export function formatVideoDuration(seconds: number): string {
  * Valide un fichier sélectionné selon les règles de taille
  */
 export function validateMediaFile(file: File): { valid: boolean; error?: string } {
-  const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv)$/i.test(file.name);
-  const maxVideoSize = 50 * 1024 * 1024; // 50 Mo
-  const maxPhotoSize = 25 * 1024 * 1024; // 25 Mo
+  const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv|avi|flv|wmv|3gp|ts|ogv)$/i.test(file.name);
+  const maxVideoSize = 100 * 1024 * 1024; // 100 Mo
+  const maxPhotoSize = 35 * 1024 * 1024; // 35 Mo
 
   if (isVideo) {
     if (file.size > maxVideoSize) {
-      return { valid: false, error: `La vidéo "${file.name}" dépasse la taille maximale autorisée (50 Mo).` };
+      return { valid: false, error: `La vidéo "${file.name}" dépasse la taille maximale (100 Mo).` };
     }
   } else {
     if (file.size > maxPhotoSize) {
-      return { valid: false, error: `La photo "${file.name}" dépasse la taille maximale autorisée (25 Mo).` };
+      return { valid: false, error: `La photo "${file.name}" dépasse la taille maximale (35 Mo).` };
     }
   }
 

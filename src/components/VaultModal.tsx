@@ -24,13 +24,15 @@ import {
   Calendar,
   MessageSquare,
   Play,
-  Video as VideoIcon
+  Video as VideoIcon,
+  RefreshCw
 } from 'lucide-react';
 import { VaultItem, User, Message, GalleryMediaItem } from '../types';
 import { triggerHaptic } from '../utils/security';
 import { soundEffects } from '../utils/audio';
-import { formatVideoDuration, extractVideoMetadata } from '../utils/mediaProcessor';
+import { formatVideoDuration, extractVideoMetadata, compressImageFile } from '../utils/mediaProcessor';
 import { MediaGalleryPickerModal } from './media/MediaGalleryPickerModal';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 interface VaultModalProps {
   isOpen: boolean;
@@ -38,6 +40,7 @@ interface VaultModalProps {
   vaultItems: VaultItem[];
   currentUser: User;
   partnerUser?: User;
+  coupleId?: string;
   messages?: Message[];
   onAddVaultItem?: (item: Omit<VaultItem, 'id' | 'dateAdded'>) => void;
   onAddItem?: (item: Omit<VaultItem, 'id' | 'dateAdded'>) => void;
@@ -54,6 +57,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
   vaultItems,
   currentUser,
   partnerUser,
+  coupleId,
   messages = [],
   onAddVaultItem,
   onAddItem,
@@ -83,6 +87,8 @@ export const VaultModal: React.FC<VaultModalProps> = ({
   const [isViewOnceOption, setIsViewOnceOption] = useState<boolean>(false);
   const [activeViewingItem, setActiveViewingItem] = useState<VaultItem | null>(null);
   const [isGalleryPickerOpen, setIsGalleryPickerOpen] = useState<boolean>(false);
+  const [selectedFileForVault, setSelectedFileForVault] = useState<File | null>(null);
+  const [isProcessingUpload, setIsProcessingUpload] = useState<boolean>(false);
 
   // Extract all chat images/media available for import
   const chatMediaMessages = useMemo(() => {
@@ -92,6 +98,64 @@ export const VaultModal: React.FC<VaultModalProps> = ({
       !m.isDeletedForEveryone
     );
   }, [messages]);
+
+  // Helper to ensure media is permanent across sessions & devices
+  const persistMedia = async (file: File): Promise<{ mediaUrl: string; thumbnailUrl?: string }> => {
+    const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv|avi|flv|wmv|3gp|ts)$/i.test(file.name);
+    const fileExt = file.name.split('.').pop() || (isVideo ? 'mp4' : 'jpg');
+    const itemId = `vault_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+    // If Supabase Storage is configured and online
+    if (isSupabaseConfigured() && coupleId) {
+      try {
+        const storagePath = `${coupleId}/vault/${itemId}.${fileExt}`;
+        const { data, error } = await supabase.storage
+          .from('messages-media')
+          .upload(storagePath, file, {
+            cacheControl: '3600',
+            upsert: true,
+            contentType: file.type || (isVideo ? 'video/mp4' : 'image/jpeg')
+          });
+
+        if (!error && data?.path) {
+          const { data: pubData } = supabase.storage
+            .from('messages-media')
+            .getPublicUrl(data.path);
+          if (pubData?.publicUrl) {
+            return { mediaUrl: pubData.publicUrl };
+          }
+        }
+      } catch (uploadErr) {
+        console.warn('[VaultModal] Supabase upload fallback to local data URL:', uploadErr);
+      }
+    }
+
+    // For photos: compress to lightweight, permanent Data URL
+    if (!isVideo) {
+      try {
+        const compressed = await compressImageFile(file);
+        if (compressed) {
+          return { mediaUrl: compressed, thumbnailUrl: compressed };
+        }
+      } catch (_) {}
+    }
+
+    // Base64 Data URL fallback for guaranteed offline and local persistence
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          resolve({ mediaUrl: reader.result });
+        } else {
+          resolve({ mediaUrl: URL.createObjectURL(file) });
+        }
+      };
+      reader.onerror = () => {
+        resolve({ mediaUrl: URL.createObjectURL(file) });
+      };
+      reader.readAsDataURL(file);
+    });
+  };
 
   if (!isOpen) return null;
 
@@ -122,7 +186,8 @@ export const VaultModal: React.FC<VaultModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv)$/i.test(file.name);
+    setSelectedFileForVault(file);
+    const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv|avi|flv|wmv|3gp|ts)$/i.test(file.name);
     
     if (!newTitle) {
       setNewTitle(file.name.replace(/\.[^/.]+$/, ""));
@@ -134,84 +199,161 @@ export const VaultModal: React.FC<VaultModalProps> = ({
       setNewMediaUrl(objectUrl);
       try {
         const meta = await extractVideoMetadata(file);
-        setNewThumbnailUrl(meta.thumbnailUrl);
-        setNewDuration(meta.duration);
+        if (meta.thumbnailUrl) {
+          setNewThumbnailUrl(meta.thumbnailUrl);
+        }
+        setNewDuration(meta.duration || 0);
       } catch (err) {
-        console.warn('[VaultModal] Metadata extraction fallback:', err);
+        console.warn('[VaultModal] Video metadata extraction fallback:', err);
       }
     } else {
       setNewMediaType('photo');
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          setNewMediaUrl(reader.result);
-        }
-      };
-      reader.readAsDataURL(file);
+      try {
+        const compressed = await compressImageFile(file);
+        setNewMediaUrl(compressed || URL.createObjectURL(file));
+        setNewThumbnailUrl(compressed || '');
+      } catch {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === 'string') {
+            setNewMediaUrl(reader.result);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 
   const handleConfirmGalleryForVault = async (selectedMedia: GalleryMediaItem[]) => {
     if (!selectedMedia || selectedMedia.length === 0) return;
 
-    for (const item of selectedMedia) {
-      const isVideo = item.type === 'video';
+    setIsProcessingUpload(true);
+    try {
+      for (const item of selectedMedia) {
+        const isVideo = item.type === 'video';
+        let persistentUrl = item.previewUrl;
+        let persistentThumbnail = item.thumbnailUrl;
+
+        if (item.file) {
+          if (isVideo) {
+            if (!persistentThumbnail) {
+              try {
+                const meta = await extractVideoMetadata(item.file);
+                persistentThumbnail = meta.thumbnailUrl;
+              } catch (_) {}
+            }
+            const res = await persistMedia(item.file);
+            persistentUrl = res.mediaUrl;
+          } else {
+            const compressed = await compressImageFile(item.file);
+            persistentUrl = compressed || item.previewUrl;
+            persistentThumbnail = compressed || item.thumbnailUrl;
+            if (isSupabaseConfigured() && coupleId) {
+              try {
+                const res = await persistMedia(item.file);
+                if (res.mediaUrl && !res.mediaUrl.startsWith('blob:')) {
+                  persistentUrl = res.mediaUrl;
+                }
+              } catch (_) {}
+            }
+          }
+        }
+
+        handleAddItemCallback?.({
+          title: item.name.replace(/\.[^/.]+$/, "") || (isVideo ? 'Vidéo intime 🎥' : 'Photo secrète 💜'),
+          type: isVideo ? 'video' : 'photo',
+          mediaType: isVideo ? 'video' : 'photo',
+          mediaUrl: persistentUrl,
+          thumbnailUrl: persistentThumbnail || undefined,
+          duration: item.duration,
+          category: newCategory,
+          addedBy: currentUser.id,
+          addedByName: currentUser.name,
+          addedByAvatar: currentUser.avatar,
+          caption: '',
+          isViewOnce: false,
+          isViewed: false,
+          source: 'upload',
+          tags: [newCategory, item.type]
+        });
+      }
+
+      triggerHaptic([50, 50, 100]);
+      soundEffects.playSent();
+      setShowAddForm(false);
+      setIsGalleryPickerOpen(false);
+    } finally {
+      setIsProcessingUpload(false);
+    }
+  };
+
+  const handleSaveItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMediaUrl && !selectedFileForVault) return;
+
+    setIsProcessingUpload(true);
+    try {
+      let finalMediaUrl = newMediaUrl;
+      let finalThumbnail = newThumbnailUrl;
+
+      if (selectedFileForVault) {
+        const isVideo = selectedFileForVault.type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv|avi|flv|wmv|3gp|ts)$/i.test(selectedFileForVault.name);
+        if (isVideo) {
+          if (!finalThumbnail) {
+            try {
+              const meta = await extractVideoMetadata(selectedFileForVault);
+              finalThumbnail = meta.thumbnailUrl;
+            } catch (_) {}
+          }
+          const res = await persistMedia(selectedFileForVault);
+          finalMediaUrl = res.mediaUrl;
+        } else {
+          const compressed = await compressImageFile(selectedFileForVault);
+          finalMediaUrl = compressed || finalMediaUrl;
+          finalThumbnail = compressed || finalThumbnail;
+          if (isSupabaseConfigured() && coupleId) {
+            try {
+              const res = await persistMedia(selectedFileForVault);
+              if (res.mediaUrl && !res.mediaUrl.startsWith('blob:')) {
+                finalMediaUrl = res.mediaUrl;
+              }
+            } catch (_) {}
+          }
+        }
+      }
+
       handleAddItemCallback?.({
-        title: item.name.replace(/\.[^/.]+$/, "") || (isVideo ? 'Vidéo intime 🎥' : 'Photo secrète 💜'),
-        type: isVideo ? 'video' : 'photo',
-        mediaType: isVideo ? 'video' : 'photo',
-        mediaUrl: item.previewUrl,
-        thumbnailUrl: item.thumbnailUrl,
-        duration: item.duration,
+        title: newTitle.trim() || (newMediaType === 'video' ? 'Vidéo intime 🎥' : 'Souvenir intime 💜'),
+        type: newMediaType,
+        mediaType: newMediaType,
+        mediaUrl: finalMediaUrl,
+        thumbnailUrl: finalThumbnail || undefined,
+        duration: newDuration || undefined,
         category: newCategory,
         addedBy: currentUser.id,
         addedByName: currentUser.name,
         addedByAvatar: currentUser.avatar,
-        caption: '',
-        isViewOnce: false,
+        caption: newCaption.trim(),
+        isViewOnce: isViewOnceOption,
         isViewed: false,
         source: 'upload',
-        tags: [newCategory, item.type]
+        tags: [newCategory, newMediaType]
       });
+
+      triggerHaptic([50, 50, 100]);
+      soundEffects.playSent();
+      setNewTitle('');
+      setNewMediaUrl('');
+      setNewThumbnailUrl('');
+      setNewDuration(0);
+      setNewMediaType('photo');
+      setNewCaption('');
+      setIsViewOnceOption(false);
+      setSelectedFileForVault(null);
+      setShowAddForm(false);
+    } finally {
+      setIsProcessingUpload(false);
     }
-
-    triggerHaptic([50, 50, 100]);
-    soundEffects.playSent();
-    setShowAddForm(false);
-  };
-
-  const handleSaveItem = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMediaUrl) return;
-
-    handleAddItemCallback?.({
-      title: newTitle.trim() || (newMediaType === 'video' ? 'Vidéo intime 🎥' : 'Souvenir intime 💜'),
-      type: newMediaType,
-      mediaType: newMediaType,
-      mediaUrl: newMediaUrl,
-      thumbnailUrl: newThumbnailUrl || undefined,
-      duration: newDuration || undefined,
-      category: newCategory,
-      addedBy: currentUser.id,
-      addedByName: currentUser.name,
-      addedByAvatar: currentUser.avatar,
-      caption: newCaption.trim(),
-      isViewOnce: isViewOnceOption,
-      isViewed: false,
-      source: 'upload',
-      tags: [newCategory, newMediaType]
-    });
-
-    triggerHaptic([50, 50, 100]);
-    soundEffects.playSent();
-    setNewTitle('');
-    setNewMediaUrl('');
-    setNewThumbnailUrl('');
-    setNewDuration(0);
-    setNewMediaType('photo');
-    setNewCaption('');
-    setIsViewOnceOption(false);
-    setShowAddForm(false);
   };
 
   const handleImportFromChat = (msg: Message) => {
@@ -316,23 +458,35 @@ export const VaultModal: React.FC<VaultModalProps> = ({
 
           {/* Viewer Media */}
           <div className="flex-1 flex flex-col items-center justify-center relative p-2 my-auto">
-            {activeViewingItem.type === 'video' ? (
-              <video
-                src={activeViewingItem.mediaUrl}
-                controls
-                autoPlay
-                playsInline
-                className="max-h-[72vh] max-w-full rounded-2xl shadow-2xl border border-[#6c5ce7]/30"
-                onContextMenu={e => e.preventDefault()}
-              />
-            ) : (
-              <img
-                src={activeViewingItem.mediaUrl}
-                alt={activeViewingItem.title}
-                className="max-h-[72vh] max-w-full rounded-2xl object-contain shadow-2xl border border-[#6c5ce7]/30 select-none"
-                onContextMenu={e => e.preventDefault()}
-              />
-            )}
+            {(() => {
+              const isVideo = activeViewingItem.type === 'video' || activeViewingItem.mediaType === 'video' || /\.(mp4|webm|mov|m4v|mkv|avi|flv|wmv|3gp|ts|ogv)$/i.test(activeViewingItem.mediaUrl || '') || (activeViewingItem.mediaUrl || '').startsWith('data:video');
+              if (isVideo) {
+                return (
+                  <video
+                    src={activeViewingItem.mediaUrl}
+                    controls
+                    autoPlay
+                    playsInline
+                    className="max-h-[72vh] max-w-full rounded-2xl shadow-2xl border border-[#6c5ce7]/30 bg-black"
+                    onContextMenu={e => e.preventDefault()}
+                  >
+                    <source src={activeViewingItem.mediaUrl} type="video/mp4" />
+                    Votre navigateur ne supporte pas ce format vidéo.
+                  </video>
+                );
+              }
+              return (
+                <img
+                  src={activeViewingItem.mediaUrl}
+                  alt={activeViewingItem.title}
+                  className="max-h-[72vh] max-w-full rounded-2xl object-contain shadow-2xl border border-[#6c5ce7]/30 select-none bg-black/30"
+                  onContextMenu={e => e.preventDefault()}
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1518199266791-5375a83190b7?w=800&auto=format&fit=crop&q=80';
+                  }}
+                />
+              );
+            })()}
             {activeViewingItem.caption && (
               <p className="mt-3 text-center text-xs sm:text-sm font-medium text-[#f1f2f6] max-w-lg bg-[#1b1435]/90 px-4 py-2.5 rounded-xl border border-[#372863] shadow-lg">
                 {activeViewingItem.caption}
@@ -620,10 +774,10 @@ export const VaultModal: React.FC<VaultModalProps> = ({
 
                     <label className="flex items-center justify-center gap-2 border border-dashed border-[#6c5ce7]/60 hover:border-[#00b894] bg-[#130f26] hover:bg-[#1a1435] rounded-xl p-3 cursor-pointer transition-colors text-[#55efc4]">
                       <Upload size={16} />
-                      <span className="font-semibold text-xs">Ou Parcourir un fichier spécifique</span>
+                      <span className="font-semibold text-xs">Ou Parcourir un fichier vidéo (MP4, MKV, MOV...) ou photo</span>
                       <input
                         type="file"
-                        accept="image/*,video/*"
+                        accept="image/*,video/*,.mp4,.mov,.webm,.mkv,.avi,.m4v,.3gp,.ts,.flv,.wmv"
                         onChange={handleFileUpload}
                         className="hidden"
                       />
@@ -666,16 +820,24 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setShowAddForm(false)}
-                    className="px-4 py-2 rounded-xl text-[#a29bfe] hover:bg-[#281e4b]"
+                    disabled={isProcessingUpload}
+                    className="px-4 py-2 rounded-xl text-[#a29bfe] hover:bg-[#281e4b] disabled:opacity-50"
                   >
                     Annuler
                   </button>
                   <button
                     type="submit"
-                    disabled={!newMediaUrl}
-                    className="px-4 py-2 rounded-xl bg-[#00b894] hover:bg-[#00a884] disabled:opacity-50 text-[#130f26] font-bold shadow-md transition-transform active:scale-95 cursor-pointer"
+                    disabled={isProcessingUpload || (!newMediaUrl && !selectedFileForVault)}
+                    className="px-4 py-2 rounded-xl bg-[#00b894] hover:bg-[#00a884] disabled:opacity-50 text-[#130f26] font-bold shadow-md transition-transform active:scale-95 cursor-pointer flex items-center gap-2"
                   >
-                    Enregistrer au coffre 🔒
+                    {isProcessingUpload ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin text-[#130f26]" />
+                        <span>Chiffrement & Sauvegarde...</span>
+                      </>
+                    ) : (
+                      <span>Enregistrer au coffre 🔒</span>
+                    )}
                   </button>
                 </div>
               </div>
@@ -719,15 +881,46 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                       </div>
                     ) : (
                       <>
-                        <img
-                          src={item.type === 'video' ? (item.thumbnailUrl || item.mediaUrl) : item.mediaUrl}
-                          alt={item.title}
-                          className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-[#130f26] via-[#130f26]/30 to-transparent" />
+                        {(() => {
+                          const isVideo = item.type === 'video' || item.mediaType === 'video' || /\.(mp4|webm|mov|m4v|mkv|avi|flv|wmv|3gp|ts)$/i.test(item.mediaUrl || '') || (item.mediaUrl || '').startsWith('data:video');
+                          if (isVideo) {
+                            if (item.thumbnailUrl) {
+                              return (
+                                <img
+                                  src={item.thumbnailUrl}
+                                  alt={item.title}
+                                  className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                                  onError={(e) => {
+                                    (e.target as HTMLElement).style.display = 'none';
+                                  }}
+                                />
+                              );
+                            }
+                            return (
+                              <video
+                                src={item.mediaUrl}
+                                muted
+                                playsInline
+                                preload="metadata"
+                                className="absolute inset-0 w-full h-full object-cover pointer-events-none opacity-85"
+                              />
+                            );
+                          }
+                          return (
+                            <img
+                              src={item.mediaUrl}
+                              alt={item.title}
+                              className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                              onError={(e) => {
+                                (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1518199266791-5375a83190b7?w=500&auto=format&fit=crop&q=80';
+                              }}
+                            />
+                          );
+                        })()}
+                        <div className="absolute inset-0 bg-gradient-to-t from-[#130f26] via-[#130f26]/30 to-transparent pointer-events-none" />
 
                         {/* Video Play Overlay */}
-                        {item.type === 'video' && (
+                        {(item.type === 'video' || item.mediaType === 'video' || /\.(mp4|webm|mov|m4v|mkv|avi|flv|wmv|3gp|ts)$/i.test(item.mediaUrl || '')) && (
                           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
                             <div className="w-10 h-10 rounded-full bg-black/60 backdrop-blur-sm border border-white/40 flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform">
                               <Play size={16} fill="white" className="ml-0.5" />

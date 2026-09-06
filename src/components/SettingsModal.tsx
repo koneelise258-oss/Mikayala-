@@ -24,7 +24,9 @@ import {
   QrCode,
   Camera,
   Loader2,
-  Clock
+  Clock,
+  Copy,
+  Smartphone
 } from 'lucide-react';
 import { User, ChatSettings, AppThemeConfig, PairingState, UserProfile } from '../types';
 import { triggerHaptic } from '../utils/security';
@@ -567,20 +569,61 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                   {currentPairing?.pairingCode && (
                     <div className="flex items-center justify-between text-[#a29bfe]">
-                      <span>Code secret :</span>
-                      <span className="font-mono font-black text-[#55efc4] text-sm bg-[#1e173e] px-2 py-0.5 rounded-lg border border-[#2d2254]">
-                        {currentPairing.pairingCode}
-                      </span>
+                      <span>Code secret de couple :</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-black text-[#55efc4] text-sm bg-[#1e173e] px-2 py-0.5 rounded-lg border border-[#2d2254]">
+                          {currentPairing.pairingCode}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (currentPairing.pairingCode) {
+                              navigator.clipboard?.writeText(currentPairing.pairingCode);
+                              triggerHaptic(20);
+                            }
+                          }}
+                          className="p-1 hover:text-white text-[#a29bfe] cursor-pointer"
+                          title="Copier le code"
+                        >
+                          <Copy size={14} />
+                        </button>
+                      </div>
                     </div>
                   )}
                   {currentPairing?.coupleId && (
                     <div className="flex items-center justify-between text-[#a29bfe]">
-                      <span>ID Espace Couple :</span>
-                      <span className="font-mono text-[11px] text-[#f1f2f6] truncate max-w-[180px]">
-                        {currentPairing.coupleId}
-                      </span>
+                      <span>Clé d'espace unique :</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[10px] text-[#f1f2f6] truncate max-w-[140px] bg-[#1e173e] px-1.5 py-0.5 rounded border border-[#2d2254]">
+                          {currentPairing.coupleId}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (currentPairing.coupleId) {
+                              navigator.clipboard?.writeText(currentPairing.coupleId);
+                              triggerHaptic(20);
+                            }
+                          }}
+                          className="p-1 hover:text-white text-[#a29bfe] cursor-pointer"
+                          title="Copier la clé"
+                        >
+                          <Copy size={14} />
+                        </button>
+                      </div>
                     </div>
                   )}
+                </div>
+
+                {/* Transfer Info */}
+                <div className="p-3 bg-[#1e173e]/70 rounded-xl border border-[#ffeaa7]/20 text-[11px] text-[#a29bfe] space-y-1.5">
+                  <div className="flex items-center gap-1.5 font-bold text-white">
+                    <Smartphone size={14} className="text-[#ffeaa7]" />
+                    <span>Changement de téléphone ou tablette</span>
+                  </div>
+                  <p className="text-[10px] leading-relaxed">
+                    Sur votre nouveau téléphone, lancez Mikayla et choisissez <strong className="text-white">"Changer de téléphone / Récupérer mon espace"</strong> en saisissant votre Code <strong className="text-[#55efc4]">{currentPairing?.pairingCode || 'de jumelage'}</strong>.
+                  </p>
                 </div>
 
                 {onOpenPairingModal && (

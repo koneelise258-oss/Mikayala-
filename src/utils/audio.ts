@@ -245,8 +245,8 @@ class SoundManager {
     this.activeRingNodes.clear();
   }
 
-  // Calling Ringing Sound
-  playRingTone(): () => void {
+  // Ringtone styles: 'classic' | 'emerald' | 'soft_wave' | 'intimate_pulse'
+  playRingTone(style: 'classic' | 'emerald' | 'soft_wave' | 'intimate_pulse' = 'emerald'): () => void {
     try {
       // Always stop previous ringtones first to prevent stacking
       this.stopRingTone();
@@ -254,40 +254,101 @@ class SoundManager {
       const ctx = this.getContext();
       let isPlaying = true;
 
+      // Haptic vibration pulse if supported
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        try {
+          navigator.vibrate([300, 200, 300, 200, 600]);
+        } catch (_) {}
+      }
+
       const ringCycle = () => {
         if (!isPlaying) return;
         const now = ctx.currentTime;
-        
-        const osc1 = ctx.createOscillator();
-        const osc2 = ctx.createOscillator();
-        const gain = ctx.createGain();
 
-        const nodeGroup = { osc1, osc2, gain };
-        this.activeRingNodes.add(nodeGroup);
+        if (style === 'emerald') {
+          // Melodic romantic bell arpeggio
+          const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+          notes.forEach((freq, idx) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now + idx * 0.18);
+            gain.gain.setValueAtTime(0.18, now + idx * 0.18);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.18 + 0.9);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now + idx * 0.18);
+            osc.stop(now + idx * 0.18 + 0.95);
+          });
+        } else if (style === 'soft_wave') {
+          // Warm harmonic chime
+          const chord = [440, 554.37, 659.25]; // A4, C#5, E5
+          chord.forEach((freq) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, now);
+            gain.gain.setValueAtTime(0.12, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 1.6);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 1.7);
+          });
+        } else if (style === 'intimate_pulse') {
+          // Intimate rhythmic synth pulse
+          [0, 0.25, 0.5].forEach((offset, i) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(587.33 + i * 110, now + offset);
+            gain.gain.setValueAtTime(0.16, now + offset);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.28);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now + offset);
+            osc.stop(now + offset + 0.3);
+          });
+        } else {
+          // Classic standard dial ringtone
+          const osc1 = ctx.createOscillator();
+          const osc2 = ctx.createOscillator();
+          const gain = ctx.createGain();
 
-        osc1.frequency.setValueAtTime(440, now);
-        osc2.frequency.setValueAtTime(480, now);
+          const nodeGroup = { osc1, osc2, gain };
+          this.activeRingNodes.add(nodeGroup);
 
-        gain.gain.setValueAtTime(0.12, now);
-        gain.gain.setValueAtTime(0.12, now + 1.2);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 1.3);
+          osc1.frequency.setValueAtTime(440, now);
+          osc2.frequency.setValueAtTime(480, now);
 
-        osc1.connect(gain);
-        osc2.connect(gain);
-        gain.connect(ctx.destination);
+          gain.gain.setValueAtTime(0.12, now);
+          gain.gain.setValueAtTime(0.12, now + 1.2);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 1.3);
 
-        osc1.start(now);
-        osc2.start(now);
-        osc1.stop(now + 1.3);
-        osc2.stop(now + 1.3);
+          osc1.connect(gain);
+          osc2.connect(gain);
+          gain.connect(ctx.destination);
 
-        osc1.onended = () => {
-          this.activeRingNodes.delete(nodeGroup);
-        };
+          osc1.start(now);
+          osc2.start(now);
+          osc1.stop(now + 1.3);
+          osc2.stop(now + 1.3);
+
+          osc1.onended = () => {
+            this.activeRingNodes.delete(nodeGroup);
+          };
+        }
       };
 
       ringCycle();
-      const intervalId = window.setInterval(ringCycle, 3000);
+      const intervalId = window.setInterval(() => {
+        ringCycle();
+        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+          try {
+            navigator.vibrate([250, 150, 250]);
+          } catch (_) {}
+        }
+      }, 3000);
       this.activeRingIntervals.add(intervalId);
 
       return () => {

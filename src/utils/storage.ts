@@ -437,7 +437,19 @@ export const getStoredVault = (): VaultItem[] => {
 };
 
 export const saveVault = (items: VaultItem[]) => {
-  localStorage.setItem(STORAGE_KEYS.VAULT, JSON.stringify(items));
+  try {
+    localStorage.setItem(STORAGE_KEYS.VAULT, JSON.stringify(items));
+  } catch (err) {
+    console.warn('[Storage] Quota exceeded on saveVault, stripping large fields for localStorage:', err);
+    try {
+      // Si le quota est plein, conserver les métadonnées et vignettes
+      const lightweight = items.map(it => ({
+        ...it,
+        mediaUrl: it.mediaUrl.length > 500000 ? (it.thumbnailUrl || it.mediaUrl.slice(0, 100)) : it.mediaUrl
+      }));
+      localStorage.setItem(STORAGE_KEYS.VAULT, JSON.stringify(lightweight));
+    } catch (_) {}
+  }
 };
 
 // Wishlist Helpers

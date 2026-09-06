@@ -621,6 +621,27 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('discussions');
   const [isChatOpen, setIsChatOpen] = useState(false);
 
+  // Missed calls badge visibility: disappears once the user visits/leaves the calls tab
+  const [lastSeenCallsTimestamp, setLastSeenCallsTimestamp] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('mikayala_last_seen_calls_time');
+      return saved ? parseInt(saved, 10) : 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  const handleTabChange = (newTab: ActiveTab) => {
+    if (newTab === 'appels' || activeTab === 'appels') {
+      const now = Date.now();
+      setLastSeenCallsTimestamp(now);
+      try {
+        localStorage.setItem('mikayala_last_seen_calls_time', now.toString());
+      } catch (_) {}
+    }
+    setActiveTab(newTab);
+  };
+
   // Performance: Adaptive screen detection to avoid rendering duplicate desktop tree on mobile
   const [isMobileScreen, setIsMobileScreen] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
@@ -2299,9 +2320,9 @@ export default function App() {
                 <>
                   <TabsNav
                     activeTab={activeTab}
-                    onTabChange={setActiveTab}
+                    onTabChange={handleTabChange}
                     unreadCount={unreadCount}
-                    missedCallsCount={calls.filter(c => c.status === 'missed' && c.receiverId === currentUser.id).length}
+                    missedCallsCount={calls.filter(c => c.status === 'missed' && (c.receiverId === currentUser.id || !c.receiverId) && c.timestamp > lastSeenCallsTimestamp).length}
                   />
 
                   <div className="flex-1 overflow-y-auto relative">
@@ -2404,9 +2425,9 @@ export default function App() {
               <>
                 <TabsNav
                   activeTab={activeTab}
-                  onTabChange={setActiveTab}
+                  onTabChange={handleTabChange}
                   unreadCount={unreadCount}
-                  missedCallsCount={calls.filter(c => c.status === 'missed').length}
+                  missedCallsCount={calls.filter(c => c.status === 'missed' && (c.receiverId === currentUser.id || !c.receiverId) && c.timestamp > lastSeenCallsTimestamp).length}
                 />
 
                 <div className="flex-1 overflow-y-auto relative">
@@ -2684,6 +2705,7 @@ export default function App() {
           vaultItems={vaultItems}
           currentUser={currentUser}
           partnerUser={partnerUser}
+          coupleId={pairingState?.coupleId || getStoredPairingState().coupleId || ''}
           messages={messages}
           onAddItem={handleAddVaultItem}
           onDeleteItem={handleDeleteVaultItem}

@@ -488,3 +488,120 @@ export default {
     return null;
   }
 };
+
+/**
+ * Récupère et transfère un espace couple existant sur un nouvel appareil (téléphone, tablette)
+ * Fonctionne avec le Code Couple (ex: MIK-7842) ou l'identifiant UUID de l'espace.
+ */
+export async function restoreCoupleSpaceOnNewDevice(
+  codeOrId: string,
+  targetRole: 'user1' | 'user2' = 'user1',
+  userName?: string
+): Promise<{ success: boolean; couple?: CoupleSpace; error?: string }> {
+  const cleanInput = codeOrId.trim().toUpperCase();
+  if (!cleanInput) {
+    return { success: false, error: "Veuillez entrer votre Code Couple ou Identifiant d'espace." };
+  }
+
+  if (!isSupabaseConfigured()) {
+    // Mode hors-ligne / local
+    saveStoredPairingState({
+      isPaired: true,
+      coupleId: cleanInput,
+      pairingCode: cleanInput,
+      role: targetRole,
+      pairedAt: Date.now()
+    });
+    return { success: true };
+  }
+
+  try {
+    const currentUserId = await initAnonymousAuth();
+
+    // 1. Rechercher l'espace couple par pairing_code ou id
+    let query = supabase.from('couples').select('*');
+    if (cleanInput.startsWith('MIK-')) {
+      query = query.eq('pairing_code', cleanInput);
+    } else {
+      query = query.or(`id.eq.${cleanInput.toLowerCase()},pairing_code.eq.${cleanInput}`);
+    }
+
+    const { data, error } = await query.maybeSingle();
+
+    if (error && !data) {
+      console.warn('[authService] Direct query couple error:', error.message);
+    }
+
+    const coupleRow = data;
+    const coupleId = coupleRow?.id || (cleanInput.includes('-') && cleanInput.length > 20 ? cleanInput.toLowerCase() : null);
+
+    if (!coupleId && !coupleRow) {
+      return {
+        success: false,
+        error: "Espace couple introuvable. Vérifiez votre Code Couple (ex: MIK-7842) ou l'identifiant unique."
+      };
+    }
+
+    const effectiveCoupleId = coupleId || cleanInput.toLowerCase();
+
+    // 2. Mettre à jour l'utilisateur correspondant dans public.couples
+    if (coupleRow) {
+      try {
+        const updatePayload = targetRole === 'user1' 
+          ? { user1_id: currentUserId, status: 'paired' } 
+          : { user2_id: currentUserId, status: 'paired' };
+
+        await supabase
+          .from('couples')
+          .update(updatePayload)
+          .eq('id', coupleRow.id);
+      } catch (upErr) {
+        console.warn('[authService] Error updating couple row on device transfer:', upErr);
+      }
+    }
+
+    // 3. Sauvegarder l'état de jumelage restauré sur ce nouveau téléphone
+    const partnerId = targetRole === 'user1' ? (coupleRow?.user2_id || '') : (coupleRow?.user1_id || '');
+    const restoredState: PairingState = {
+      isPaired: true,
+      coupleId: effectiveCoupleId,
+      pairingCode: coupleRow?.pairing_code || (cleanInput.startsWith('MIK-') ? cleanInput : undefined),
+      role: targetRole,
+      partnerId: partnerId,
+      pairedAt: coupleRow?.paired_at ? new Date(coupleRow.paired_at).getTime() : Date.now()
+    };
+
+    saveStoredPairingState(restoredState);
+
+    // 4. Diffuser l'événement de transfert/reconnexion sur le canal broadcast du couple
+    try {
+      const bc = new BroadcastChannel(`couple-sync-${effectiveCoupleId}`);
+      bc.postMessage({
+        type: 'device_transferred',
+        role: targetRole,
+        newUserId: currentUserId,
+        userName
+      });
+      bc.close();
+    } catch (_) {}
+
+    const coupleSpace: CoupleSpace = {
+      id: effectiveCoupleId,
+      pairingCode: coupleRow?.pairing_code || cleanInput,
+      user1Id: targetRole === 'user1' ? currentUserId : (coupleRow?.user1_id || ''),
+      user2Id: targetRole === 'user2' ? currentUserId : (coupleRow?.user2_id || ''),
+      status: 'paired',
+      createdAt: coupleRow?.created_at ? new Date(coupleRow.created_at).getTime() : Date.now(),
+      pairedAt: Date.now()
+    };
+
+    return { success: true, couple: coupleSpace };
+  } catch (err: any) {
+    console.error('[authService] restoreCoupleSpace error:', err);
+    return {
+      success: false,
+      error: err.message || "Erreur lors de la récupération de l'espace."
+    };
+  }
+}
+

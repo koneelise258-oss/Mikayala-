@@ -22,7 +22,8 @@ import {
   createCoupleSpace, 
   joinCoupleSpace, 
   subscribeToCouplePairing, 
-  saveStoredPairingState
+  saveStoredPairingState,
+  restoreCoupleSpaceOnNewDevice
 } from '../../services/authService';
 import { CoupleSpace, PairingState } from '../../types';
 import { triggerHaptic } from '../../utils/security';
@@ -35,7 +36,7 @@ interface PairingModalProps {
   canDismiss?: boolean;
 }
 
-type Step = 'choice' | 'create' | 'join' | 'pin_setup';
+type Step = 'choice' | 'create' | 'join' | 'restore' | 'pin_setup';
 
 export const PairingModal: React.FC<PairingModalProps> = ({
   isOpen,
@@ -57,6 +58,10 @@ export const PairingModal: React.FC<PairingModalProps> = ({
   const [isScanningCamera, setIsScanningCamera] = useState<boolean>(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+
+  // Restore space state (Changer de téléphone / Tablette)
+  const [restoreCode, setRestoreCode] = useState<string>('');
+  const [restoreRole, setRestoreRole] = useState<'user1' | 'user2'>('user1');
 
   // PIN creation state
   const [pinStep, setPinStep] = useState<'create' | 'confirm'>('create');
@@ -236,6 +241,51 @@ export const PairingModal: React.FC<PairingModalProps> = ({
     }
   };
 
+  const handleStartRestore = () => {
+    triggerHaptic(20);
+    setErrorMsg(null);
+    setRestoreCode('');
+    setStep('restore');
+  };
+
+  const handleSubmitRestore = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const clean = restoreCode.trim().toUpperCase();
+    if (!clean) {
+      setErrorMsg("Veuillez saisir votre Code Couple (ex: MIK-7842) ou l'identifiant de votre espace.");
+      return;
+    }
+
+    setLoading(true);
+    setErrorMsg(null);
+    try {
+      const res = await restoreCoupleSpaceOnNewDevice(clean, restoreRole);
+      if (res.success && res.couple) {
+        triggerHaptic([100, 50, 100]);
+        soundEffects.playSent();
+        launchConfetti();
+
+        setTempPairingState({
+          isPaired: true,
+          coupleId: res.couple.id,
+          pairingCode: res.couple.pairingCode,
+          role: restoreRole,
+          partnerId: restoreRole === 'user1' ? res.couple.user2Id : res.couple.user1Id,
+          pairedAt: res.couple.pairedAt || Date.now()
+        });
+
+        setStep('pin_setup');
+      } else {
+        triggerHaptic([150, 100]);
+        setErrorMsg(res.error || "Espace couple introuvable. Vérifiez votre Code Couple.");
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || "Erreur lors de la récupération de l'espace.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // PIN Keyboard Input Handlers
   const handlePinDigit = (digit: string) => {
     triggerHaptic(30);
@@ -377,6 +427,24 @@ export const PairingModal: React.FC<PairingModalProps> = ({
                   </div>
                 </div>
                 <ArrowRight size={18} className="text-[#a29bfe]" />
+              </button>
+
+              {/* Option 3: Changer de téléphone / Récupérer mon espace */}
+              <button
+                onClick={handleStartRestore}
+                disabled={loading}
+                className="w-full p-3.5 rounded-2xl bg-[#130f26]/70 border border-[#a29bfe]/20 hover:border-[#ffeaa7] text-white font-semibold text-xs flex items-center justify-between hover:bg-[#1f183d] active:scale-[0.98] transition-all cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-[#ffeaa7]/15 flex items-center justify-center text-[#ffeaa7]">
+                    <RefreshCw size={16} />
+                  </div>
+                  <div className="text-left">
+                    <p className="font-bold text-xs text-white">Changer de téléphone / Tablette</p>
+                    <p className="text-[10px] text-[#a29bfe]">Récupérer un espace couple existant</p>
+                  </div>
+                </div>
+                <ArrowRight size={14} className="text-[#ffeaa7]" />
               </button>
             </div>
 
@@ -614,6 +682,116 @@ export const PairingModal: React.FC<PairingModalProps> = ({
                 ) : (
                   <>
                     <span>Valider et rejoindre notre espace</span>
+                    <ArrowRight size={18} />
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* STEP 3B: RESTORE SCREEN (Changement de téléphone / Récupération d'espace) */}
+        {/* ========================================================================= */}
+        {step === 'restore' && (
+          <div className="flex flex-col items-center text-center space-y-4 py-1 overflow-y-auto">
+            <div className="flex items-center justify-between w-full pb-2 border-b border-[#2d2254]">
+              <button
+                onClick={() => setStep('choice')}
+                className="p-1.5 text-[#a29bfe] hover:text-white rounded-xl hover:bg-[#130f26] flex items-center gap-1 text-xs font-semibold"
+              >
+                <ArrowLeft size={16} />
+                <span>Retour</span>
+              </button>
+              <span className="text-xs font-bold text-[#ffeaa7] flex items-center gap-1">
+                <RefreshCw size={14} /> Récupérer mon espace
+              </span>
+            </div>
+
+            <div className="space-y-1">
+              <h3 className="text-lg font-black text-white">Changement d'appareil 📱</h3>
+              <p className="text-xs text-[#a29bfe] max-w-xs mx-auto">
+                Entrez le Code Couple (ex: MIK-7842) ou l'identifiant de votre espace pour reconnecter ce téléphone.
+              </p>
+            </div>
+
+            <form onSubmit={handleSubmitRestore} className="w-full space-y-3.5 pt-1">
+              <div className="space-y-1.5 text-left">
+                <label className="text-[11px] font-bold text-[#a29bfe] uppercase tracking-wider block">
+                  Code Couple ou Identifiant d'espace
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={restoreCode}
+                    onChange={(e) => setRestoreCode(e.target.value.toUpperCase())}
+                    placeholder="MIK-7842 ou UUID"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="characters"
+                    spellCheck="false"
+                    className="w-full bg-[#130f26] border-2 border-[#2d2254] focus:border-[#ffeaa7] rounded-2xl py-3 px-4 text-center font-mono text-lg font-black text-white uppercase tracking-widest placeholder-[#a29bfe]/30 outline-none transition-all"
+                  />
+                  {restoreCode && (
+                    <button
+                      type="button"
+                      onClick={() => setRestoreCode('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-[#a29bfe] hover:text-white cursor-pointer"
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Rôle sur cet appareil */}
+              <div className="space-y-1.5 text-left">
+                <label className="text-[11px] font-bold text-[#a29bfe] uppercase tracking-wider block">
+                  Votre profil dans le couple
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRestoreRole('user1')}
+                    className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex flex-col items-center gap-1 ${
+                      restoreRole === 'user1'
+                        ? 'bg-[#00b894]/20 border-[#00b894] text-[#55efc4]'
+                        : 'bg-[#130f26] border-[#2d2254] text-[#a29bfe]'
+                    }`}
+                  >
+                    <span>Partenaire 1</span>
+                    <span className="text-[10px] font-normal opacity-70">Créateur de l'espace</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRestoreRole('user2')}
+                    className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex flex-col items-center gap-1 ${
+                      restoreRole === 'user2'
+                        ? 'bg-[#6c5ce7]/20 border-[#6c5ce7] text-[#a29bfe]'
+                        : 'bg-[#130f26] border-[#2d2254] text-[#a29bfe]'
+                    }`}
+                  >
+                    <span>Partenaire 2</span>
+                    <span className="text-[10px] font-normal opacity-70">Second membre</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-2.5 bg-[#130f26] rounded-xl border border-[#2d2254] text-[11px] text-[#a29bfe] text-left flex items-start gap-2">
+                <Info size={14} className="text-[#ffeaa7] shrink-0 mt-0.5" />
+                <span>Tous vos messages, photos du coffre-fort et souvenirs partagés seront automatiquement synchronisés sur ce nouvel appareil.</span>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading || !restoreCode.trim()}
+                className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-[#ffeaa7] to-[#fdcb6e] text-[#130f26] font-extrabold text-sm flex items-center justify-center gap-2 hover:opacity-95 active:scale-[0.98] transition-all shadow-[0_4px_20px_rgba(253,203,110,0.3)] cursor-pointer disabled:opacity-40"
+              >
+                {loading ? (
+                  <RefreshCw size={18} className="animate-spin text-[#130f26]" />
+                ) : (
+                  <>
+                    <span>Restaurer & Synchroniser l'appareil</span>
                     <ArrowRight size={18} />
                   </>
                 )}

@@ -17,6 +17,29 @@ export interface SendMessagePayload extends Partial<Message> {
 const STORAGE_BUCKET = 'messages-media';
 
 /**
+ * Diffuse un événement en temps réel à travers le canal Supabase partagé du couple
+ */
+export async function broadcastMessageToCouple(
+  coupleId: string,
+  eventName: 'new-message' | 'update-message' | 'delete-message',
+  payload: any
+): Promise<void> {
+  const targetCoupleId = coupleId || getStoredPairingState().coupleId;
+  if (!targetCoupleId || !isSupabaseConfigured()) return;
+  try {
+    const channelName = `couple-msgs-${targetCoupleId}`;
+    const channel = supabase.channel(channelName);
+    await channel.send({
+      type: 'broadcast',
+      event: eventName,
+      payload
+    });
+  } catch (err) {
+    console.debug('[messageService] Broadcast error non-bloquant:', err);
+  }
+}
+
+/**
  * Transforms a Postgres DB record from public.messages into an application Message object
  */
 export function mapDbRecordToMessage(row: any): Message {
@@ -561,7 +584,9 @@ export async function envoyerMessagePhoto(
       throw new Error(`La photo a été téléversée mais l'enregistrement du message a échoué : ${insertError?.message || 'Erreur base de données'}`);
     }
 
-    return mapDbRecordToMessage(messageData);
+    const mapped = mapDbRecordToMessage(messageData);
+    broadcastMessageToCouple(targetCoupleId, 'new-message', mapped);
+    return mapped;
   } catch (err: any) {
     console.error('[messageService] Échec insertion message après upload photo. Chemin:', storagePath, err);
     throw err;
@@ -636,7 +661,9 @@ export async function envoyerMessageTexte(coupleId: string, contenu: string): Pr
     // Non-bloquant
   }
 
-  return mapDbRecordToMessage(data);
+  const mapped = mapDbRecordToMessage(data);
+  broadcastMessageToCouple(targetCoupleId, 'new-message', mapped);
+  return mapped;
 }
 
 /**
@@ -713,7 +740,8 @@ export function sAbonnerAuxMessages(
     return () => {};
   }
 
-  const channelName = `msgs-${targetCoupleId}-${crypto.randomUUID()}`;
+  // Shared couple channel name so all devices of both partners receive broadcast events
+  const channelName = `couple-msgs-${targetCoupleId}`;
   const channel = supabase.channel(channelName);
 
   channel
@@ -738,22 +766,95 @@ export function sAbonnerAuxMessages(
         if (payload.old?.id && onDeleteMessage) onDeleteMessage(payload.old.id);
       }
     )
+    // Instant Realtime Broadcast listeners (< 30ms latency)
+    .on('broadcast', { event: 'new-message' }, (evt) => {
+      if (evt?.payload) {
+        onNewMessage(evt.payload);
+      }
+    })
+    .on('broadcast', { event: 'update-message' }, (evt) => {
+      if (evt?.payload) {
+        onNewMessage(evt.payload);
+      }
+    })
+    .on('broadcast', { event: 'delete-message' }, (evt) => {
+      if (evt?.payload?.id && onDeleteMessage) {
+        onDeleteMessage(evt.payload.id);
+      }
+    })
     .subscribe((status, err) => {
       if (status === 'SUBSCRIBED') {
-        console.log(`[Realtime] Connecté au canal: ${channelName}`);
+        console.log(`[Realtime] Connecté au canal partagé: ${channelName}`);
       } else if (status === 'CHANNEL_ERROR') {
         console.warn(`[Realtime] Problème de canal (${status}):`, err);
-        // Supabase Realtime se reconnecte automatiquement en cas de perte réseau.
-        // Inutile de lancer un setTimeout manuel.
       } else if (status === 'CLOSED') {
         console.log(`[Realtime] Canal fermé (${status}).`);
       }
     });
 
+  // Heartbeat polling every 3.5s to ensure total synchronization even if websocket packets drop
+  let isPolling = false;
+  const pollInterval = window.setInterval(async () => {
+    if (isPolling || typeof document === 'undefined' || document.hidden || !navigator.onLine) return;
+    try {
+      isPolling = true;
+      const latest = await getMessages(targetCoupleId);
+      if (latest && Array.isArray(latest)) {
+        latest.forEach(msg => onNewMessage(msg));
+      }
+    } catch {} finally {
+      isPolling = false;
+    }
+  }, 3500);
+
   return () => {
     console.log('[Realtime] Désabonnement demandé.');
+    window.clearInterval(pollInterval);
     supabase.removeChannel(channel);
   };
+}
+
+/**
+ * Met à jour les réactions d'un message avec diffusion instantanée et persistance Supabase
+ */
+export async function updateMessageReactions(
+  messageId: string,
+  reactions: Record<string, string>,
+  coupleId?: string
+): Promise<void> {
+  const targetCoupleId = coupleId || getStoredPairingState().coupleId;
+
+  // 1. Mise à jour optimiste du cache local
+  if (targetCoupleId) {
+    try {
+      const cachedStr = localStorage.getItem(`mikayala_cached_messages_${targetCoupleId}`);
+      if (cachedStr) {
+        const list: Message[] = JSON.parse(cachedStr);
+        const updated = list.map(m => m.id === messageId ? { ...m, reactions } : m);
+        localStorage.setItem(`mikayala_cached_messages_${targetCoupleId}`, JSON.stringify(updated));
+      }
+    } catch {}
+  }
+
+  // 2. Diffusion broadcast instantanée vers le partenaire
+  if (targetCoupleId) {
+    broadcastMessageToCouple(targetCoupleId, 'update-message', {
+      id: messageId,
+      reactions
+    });
+  }
+
+  // 3. Persistance dans la base Supabase
+  if (isSupabaseConfigured()) {
+    try {
+      await supabase
+        .from('messages')
+        .update({ reactions: JSON.stringify(reactions) })
+        .eq('id', messageId);
+    } catch (err) {
+      console.warn('[messageService] updateMessageReactions error:', err);
+    }
+  }
 }
 
 // Alias exact demandé dans l'énoncé
@@ -1293,6 +1394,20 @@ export async function deleteMessageForEveryone(
     } catch {}
   }
 
+  // 2b. Diffusion broadcast immédiate au partenaire
+  if (targetCoupleId) {
+    broadcastMessageToCouple(targetCoupleId, 'update-message', {
+      id: messageId,
+      content: 'Ce message a été supprimé',
+      isDeletedForEveryone: true,
+      deletedForEveryone: true,
+      deleted_for_everyone: true,
+      deletedAt: new Date().toISOString(),
+      mediaUrl: undefined,
+      storagePath: undefined
+    });
+  }
+
   // 3. En ligne : UPDATE dans Supabase et suppression du fichier média correspondant dans Supabase Storage
   if (isSupabaseConfigured() && typeof navigator !== 'undefined' && navigator.onLine) {
     try {
@@ -1399,7 +1514,9 @@ export async function envoyerMessageAudio(
     throw new Error(`Erreur DB : ${error.message}`);
   }
 
-  return mapDbRecordToMessage(data);
+  const mappedAudio = mapDbRecordToMessage(data);
+  broadcastMessageToCouple(targetCoupleId, 'new-message', mappedAudio);
+  return mappedAudio;
 }
 
 /**
@@ -1461,7 +1578,9 @@ export async function envoyerMessageVideo(
     throw new Error(`Erreur DB : ${error.message}`);
   }
 
-  return mapDbRecordToMessage(data);
+  const mappedVideo = mapDbRecordToMessage(data);
+  broadcastMessageToCouple(targetCoupleId, 'new-message', mappedVideo);
+  return mappedVideo;
 }
 
 

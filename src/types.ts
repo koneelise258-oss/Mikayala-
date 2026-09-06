@@ -245,7 +245,7 @@ export interface CallRecord {
 }
 
 export interface SignalingPayload {
-  type: 'offer' | 'answer' | 'candidate' | 'hangup' | 'request' | 'declined' | 'missed' | 'connected';
+  type: 'offer' | 'answer' | 'candidate' | 'hangup' | 'request' | 'declined' | 'missed' | 'connected' | 'switch_type' | 'media_state';
   callId?: string;
   senderId: string;
   receiverId: string;
@@ -253,6 +253,29 @@ export interface SignalingPayload {
   callType?: CallType;
   sdp?: RTCSessionDescriptionInit;
   candidate?: RTCIceCandidateInit;
+  mediaState?: {
+    isMuted?: boolean;
+    isCameraOff?: boolean;
+  };
+}
+
+export interface CallNetworkStats {
+  quality: 'excellent' | 'good' | 'fair' | 'poor';
+  rttMs: number;
+  packetLossPercent: number;
+  bitrateKbps: number;
+  frameRate?: number;
+  resolution?: string;
+  audioCodec?: string;
+  videoCodec?: string;
+}
+
+export interface AudioDeviceOption {
+  deviceId: string;
+  label: string;
+  kind: 'audioinput' | 'audiooutput';
+  isDefault?: boolean;
+  isBluetooth?: boolean;
 }
 
 /* --- GALLERY & MULTIMEDIA TYPES --- */
@@ -332,6 +355,48 @@ export interface CustomDiceConfig {
 
 export type CyclePhase = 'menstruelle' | 'folliculaire' | 'ovulatoire' | 'luteale';
 
+export type MenstrualFlow = 'none' | 'spotting' | 'light' | 'medium' | 'heavy';
+
+export interface DailySymptomLog {
+  date: string; // YYYY-MM-DD
+  flow?: MenstrualFlow;
+  symptoms?: string[]; // e.g. ['crampes', 'maux_de_tete', 'fatigue', 'ballonnements', 'acne', 'seins_sensibles']
+  moods?: string[]; // e.g. ['joyeuse', 'caline', 'sensible', 'irritable', 'fatiguee', 'calme', 'passionnee']
+  bbt?: number; // basal body temp in Celsius e.g. 36.6
+  cervicalMucus?: 'dry' | 'sticky' | 'creamy' | 'egg_white';
+  energyLevel?: number; // 1 to 5
+  notes?: string;
+  intimacy?: boolean;
+}
+
+export interface CycleHistoryItem {
+  id: string;
+  startDate: string; // YYYY-MM-DD
+  endDate?: string; // YYYY-MM-DD
+  cycleLength: number; // in days
+  periodLength: number; // in days
+  isIrregular?: boolean;
+  notes?: string;
+}
+
+export interface MenstrualPrediction {
+  nextPeriodStartDate: string; // YYYY-MM-DD
+  nextPeriodEndDate: string; // YYYY-MM-DD
+  ovulationDate: string; // YYYY-MM-DD
+  fertileWindowStart: string; // YYYY-MM-DD
+  fertileWindowEnd: string; // YYYY-MM-DD
+  currentPhase: CyclePhase;
+  currentCycleDay: number;
+  daysUntilNextPeriod: number;
+  daysUntilOvulation: number;
+  isFertileToday: boolean;
+  isOvulationToday: boolean;
+  isPeriodToday: boolean;
+  conceptionChance: 'faible' | 'moyenne' | 'haute' | 'très haute';
+  isLate: boolean;
+  daysLate: number;
+}
+
 export interface CycleData {
   dayOfCycle: number; // e.g. 14
   cycleLength: number; // e.g. 28
@@ -340,7 +405,13 @@ export interface CycleData {
   currentPhase: CyclePhase;
   mood: 'joyeuse' | 'câline' | 'sensible' | 'fatiguée' | 'passionnée' | 'calme';
   energyLevel: number; // 1 to 5
+  flow?: MenstrualFlow;
+  selectedSymptoms?: string[];
   notes?: string;
+  history?: CycleHistoryItem[];
+  dailyLogs?: Record<string, DailySymptomLog>; // keyed by YYYY-MM-DD
+  prediction?: MenstrualPrediction;
+  notificationsEnabled?: boolean;
   careTipsForPartner: {
     title: string;
     description: string;
