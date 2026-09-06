@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, safeCreateChannel } from '../lib/supabase';
 import { VaultItem, User } from '../types';
 import { getStoredVault, saveVault } from '../utils/storage';
 
@@ -48,9 +48,8 @@ class VaultService {
         supabase.removeChannel(this.channel);
       }
 
-      this.channel = supabase
-        .channel(`vault:${coupleId}`)
-        .on('broadcast', { event: 'vault_sync' }, (response) => {
+      this.channel = safeCreateChannel(`vault:${coupleId}`)
+        ?.on('broadcast', { event: 'vault_sync' }, (response) => {
           const payload = response.payload as VaultSyncPayload;
           if (payload && payload.senderId !== this.currentUserId) {
             this.notifySubscribers(payload);

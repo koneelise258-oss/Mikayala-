@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, safeCreateChannel } from '../lib/supabase';
 import { Message, MessageStatus, MessageType } from '../types';
 import { getStoredPairingState, initAnonymousAuth } from './authService';
 import { NotificationService } from './notificationService';
@@ -28,12 +28,19 @@ export async function broadcastMessageToCouple(
   if (!targetCoupleId || !isSupabaseConfigured()) return;
   try {
     const channelName = `couple-msgs-${targetCoupleId}`;
-    const channel = supabase.channel(channelName);
-    await channel.send({
-      type: 'broadcast',
-      event: eventName,
-      payload
-    });
+    const channel = safeCreateChannel(channelName);
+    if (channel) {
+      await channel.subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.send({
+            type: 'broadcast',
+            event: eventName,
+            payload
+          });
+          supabase.removeChannel(channel);
+        }
+      });
+    }
   } catch (err) {
     console.debug('[messageService] Broadcast error non-bloquant:', err);
   }
@@ -742,7 +749,10 @@ export function sAbonnerAuxMessages(
 
   // Shared couple channel name so all devices of both partners receive broadcast events
   const channelName = `couple-msgs-${targetCoupleId}`;
-  const channel = supabase.channel(channelName);
+  const channel = safeCreateChannel(channelName);
+  if (!channel) {
+    return () => {};
+  }
 
   channel
     .on(

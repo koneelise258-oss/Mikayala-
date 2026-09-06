@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, safeCreateChannel } from '../lib/supabase';
 import { BlindQuizQuestion, BlindQuizAnswer } from '../types';
 
 export interface QuizSessionState {
@@ -85,9 +85,8 @@ class QuizService {
         supabase.removeChannel(this.realtimeChannel);
       }
 
-      this.realtimeChannel = supabase
-        .channel(`game_sessions_realtime:${coupleId}`)
-        .on(
+      this.realtimeChannel = safeCreateChannel(`game_sessions_realtime:${coupleId}`)
+        ?.on(
           'postgres_changes',
           {
             event: '*',

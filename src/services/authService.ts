@@ -486,7 +486,10 @@ export default {
     if (user?.new_email) return user.new_email;
     if (user?.email && !user?.email_confirmed_at) return user.email;
     return null;
-  }
+  },
+
+  generateDeviceLinkCode,
+  loginWithDeviceLinkCode
 };
 
 /**
@@ -497,18 +500,67 @@ export async function restoreCoupleSpaceOnNewDevice(
   codeOrId: string,
   targetRole: 'user1' | 'user2' = 'user1',
   userName?: string
-): Promise<{ success: boolean; couple?: CoupleSpace; error?: string }> {
-  const cleanInput = codeOrId.trim().toUpperCase();
+): Promise<{ success: boolean; couple?: CoupleSpace; error?: string; forcedRole?: 'user1' | 'user2' }> {
+  const cleanInput = codeOrId.trim();
   if (!cleanInput) {
     return { success: false, error: "Veuillez entrer votre Code Couple ou Identifiant d'espace." };
   }
+
+  // --- NOUVELLE FONCTIONNALITÉ: LIAISON D'APPAREIL (PC / TABLETTE) ---
+  if (cleanInput.startsWith('MIK-LINK-')) {
+    const linkResult = await loginWithDeviceLinkCode(cleanInput);
+    if (!linkResult.success) return { success: false, error: linkResult.error };
+    
+    // On est maintenant connecté avec la MEME session que le téléphone principal
+    const { data: sessionData } = await supabase.auth.getSession();
+    const currentUserId = sessionData.session?.user.id;
+    
+    if (!currentUserId) return { success: false, error: 'Échec de session' };
+    
+    // Rechercher à quel espace couple on appartient
+    const { data: coupleRow } = await supabase.from('couples')
+      .select('*')
+      .or(`user1_id.eq.${currentUserId},user2_id.eq.${currentUserId}`)
+      .maybeSingle();
+      
+    if (!coupleRow) return { success: false, error: "Espace introuvable pour cet appareil." };
+    
+    // Déterminer automatiquement notre rôle en fonction de notre ID
+    const actualRole = coupleRow.user1_id === currentUserId ? 'user1' : 'user2';
+    const partnerId = actualRole === 'user1' ? coupleRow.user2_id : coupleRow.user1_id;
+    
+    const coupleSpace: CoupleSpace = {
+      id: coupleRow.id,
+      pairingCode: coupleRow.pairing_code,
+      user1Id: coupleRow.user1_id,
+      user2Id: coupleRow.user2_id,
+      status: coupleRow.status,
+      createdAt: new Date(coupleRow.created_at).getTime(),
+      pairedAt: coupleRow.paired_at ? new Date(coupleRow.paired_at).getTime() : Date.now()
+    };
+    
+    // Sauvegarde en local du rôle correct
+    saveStoredPairingState({
+      isPaired: true,
+      coupleId: coupleRow.id,
+      pairingCode: coupleRow.pairing_code,
+      role: actualRole,
+      partnerId: partnerId,
+      pairedAt: coupleSpace.pairedAt
+    });
+
+    return { success: true, couple: coupleSpace, forcedRole: actualRole };
+  }
+  // --- FIN LIAISON D'APPAREIL ---
+
+  const cleanInputUpper = cleanInput.toUpperCase();
 
   if (!isSupabaseConfigured()) {
     // Mode hors-ligne / local
     saveStoredPairingState({
       isPaired: true,
-      coupleId: cleanInput,
-      pairingCode: cleanInput,
+      coupleId: cleanInputUpper,
+      pairingCode: cleanInputUpper,
       role: targetRole,
       pairedAt: Date.now()
     });
@@ -520,10 +572,10 @@ export async function restoreCoupleSpaceOnNewDevice(
 
     // 1. Rechercher l'espace couple par pairing_code ou id
     let query = supabase.from('couples').select('*');
-    if (cleanInput.startsWith('MIK-')) {
-      query = query.eq('pairing_code', cleanInput);
+    if (cleanInputUpper.startsWith('MIK-')) {
+      query = query.eq('pairing_code', cleanInputUpper);
     } else {
-      query = query.or(`id.eq.${cleanInput.toLowerCase()},pairing_code.eq.${cleanInput}`);
+      query = query.or(`id.eq.${cleanInputUpper.toLowerCase()},pairing_code.eq.${cleanInputUpper}`);
     }
 
     const { data, error } = await query.maybeSingle();
@@ -602,6 +654,55 @@ export async function restoreCoupleSpaceOnNewDevice(
       success: false,
       error: err.message || "Erreur lors de la récupération de l'espace."
     };
+  }
+}
+
+/**
+ * Connecter plusieurs appareils sans conflits
+ * Permet de générer un jeton de liaison pour exporter la session actuelle
+ */
+export async function generateDeviceLinkCode(): Promise<string | null> {
+  if (!isSupabaseConfigured()) return null;
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) return null;
+  
+  const payload = JSON.stringify({
+    access_token: data.session.access_token,
+    refresh_token: data.session.refresh_token
+  });
+  
+  // Base64 encode
+  return 'MIK-LINK-' + btoa(payload);
+}
+
+/**
+ * Permet de se connecter avec un jeton de liaison (sur un PC ou Tablette)
+ */
+export async function loginWithDeviceLinkCode(linkCode: string): Promise<{ success: boolean; error?: string }> {
+  if (!isSupabaseConfigured()) return { success: false, error: 'Supabase non configuré' };
+  
+  if (!linkCode.startsWith('MIK-LINK-')) {
+    return { success: false, error: 'Code de liaison invalide.' };
+  }
+  
+  try {
+    const base64 = linkCode.replace('MIK-LINK-', '');
+    const payload = JSON.parse(atob(base64));
+    
+    if (!payload.access_token || !payload.refresh_token) {
+      return { success: false, error: 'Code de liaison corrompu.' };
+    }
+    
+    const { data, error } = await supabase.auth.setSession({
+      access_token: payload.access_token,
+      refresh_token: payload.refresh_token
+    });
+    
+    if (error) throw error;
+    
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: 'Code de liaison invalide ou expiré.' };
   }
 }
 

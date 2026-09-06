@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, safeCreateChannel } from '../lib/supabase';
 import { EventData } from '../types';
 
 export interface CoupleEvent extends EventData {
@@ -90,9 +90,8 @@ class CalendarService {
         supabase.removeChannel(this.realtimeChannel);
       }
 
-      this.realtimeChannel = supabase
-        .channel(`calendar_broadcast:${coupleId}`)
-        .on('broadcast', { event: 'sync_events' }, (response) => {
+      this.realtimeChannel = safeCreateChannel(`calendar_broadcast:${coupleId}`)
+        ?.on('broadcast', { event: 'sync_events' }, (response) => {
           const payload = response.payload;
           if (payload && payload.senderId !== this.currentUserId && Array.isArray(payload.events)) {
             this.applyEventsUpdate(payload.events, false);

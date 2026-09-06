@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, safeCreateChannel } from '../lib/supabase';
 
 export interface ScratchCardContent {
   title: string;
@@ -64,9 +64,8 @@ class ScratchCardService {
         supabase.removeChannel(this.realtimeChannel);
       }
 
-      this.realtimeChannel = supabase
-        .channel(`game_sessions_scratch:${coupleId}`)
-        .on(
+      this.realtimeChannel = safeCreateChannel(`game_sessions_scratch:${coupleId}`)
+        ?.on(
           'postgres_changes',
           {
             event: '*',

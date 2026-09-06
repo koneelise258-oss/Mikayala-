@@ -250,9 +250,9 @@ export const PairingModal: React.FC<PairingModalProps> = ({
 
   const handleSubmitRestore = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    const clean = restoreCode.trim().toUpperCase();
+    const clean = restoreCode.trim();
     if (!clean) {
-      setErrorMsg("Veuillez saisir votre Code Couple (ex: MIK-7842) ou l'identifiant de votre espace.");
+      setErrorMsg("Veuillez saisir votre Code Couple ou le Code de Liaison.");
       return;
     }
 
@@ -265,12 +265,14 @@ export const PairingModal: React.FC<PairingModalProps> = ({
         soundEffects.playSent();
         launchConfetti();
 
+        const actualRole = res.forcedRole || restoreRole;
+
         setTempPairingState({
           isPaired: true,
           coupleId: res.couple.id,
           pairingCode: res.couple.pairingCode,
-          role: restoreRole,
-          partnerId: restoreRole === 'user1' ? res.couple.user2Id : res.couple.user1Id,
+          role: actualRole,
+          partnerId: actualRole === 'user1' ? res.couple.user2Id : res.couple.user1Id,
           pairedAt: res.couple.pairedAt || Date.now()
         });
 
@@ -718,19 +720,18 @@ export const PairingModal: React.FC<PairingModalProps> = ({
             <form onSubmit={handleSubmitRestore} className="w-full space-y-3.5 pt-1">
               <div className="space-y-1.5 text-left">
                 <label className="text-[11px] font-bold text-[#a29bfe] uppercase tracking-wider block">
-                  Code Couple ou Identifiant d'espace
+                  Code Couple ou Code de Liaison
                 </label>
                 <div className="relative">
                   <input
                     type="text"
                     value={restoreCode}
-                    onChange={(e) => setRestoreCode(e.target.value.toUpperCase())}
-                    placeholder="MIK-7842 ou UUID"
+                    onChange={(e) => setRestoreCode(e.target.value)}
+                    placeholder="MIK-7842 ou MIK-LINK-..."
                     autoComplete="off"
                     autoCorrect="off"
-                    autoCapitalize="characters"
                     spellCheck="false"
-                    className="w-full bg-[#130f26] border-2 border-[#2d2254] focus:border-[#ffeaa7] rounded-2xl py-3 px-4 text-center font-mono text-lg font-black text-white uppercase tracking-widest placeholder-[#a29bfe]/30 outline-none transition-all"
+                    className="w-full bg-[#130f26] border-2 border-[#2d2254] focus:border-[#ffeaa7] rounded-2xl py-3 px-4 text-center font-mono text-sm md:text-lg font-black text-white tracking-widest placeholder-[#a29bfe]/30 outline-none transition-all"
                   />
                   {restoreCode && (
                     <button

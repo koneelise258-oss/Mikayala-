@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, safeCreateChannel } from '../lib/supabase';
 import { SignalingPayload, CallType } from '../types';
 import { proximityService } from './proximityService';
 
@@ -57,9 +57,8 @@ class CallService {
       this.signalingChannel = null;
     }
 
-    this.signalingChannel = supabase
-      .channel(topic)
-      .on('broadcast', { event: 'signal' }, (response) => {
+    this.signalingChannel = safeCreateChannel(topic)
+      ?.on('broadcast', { event: 'signal' }, (response) => {
         const payload = response.payload as SignalingPayload;
         console.log('[Call signal received]', {
           type: payload.type,

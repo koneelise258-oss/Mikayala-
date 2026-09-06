@@ -37,4 +37,23 @@ export const supabase: SupabaseClient = createClient(
   }
 );
 
+/**
+ * Safely creates a Supabase channel by cleaning up any existing channel with the same topic first
+ * preventing "cannot add callbacks after subscribe()" errors.
+ */
+export function safeCreateChannel(topic: string, opts?: any) {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const existingChannels = supabase.getChannels();
+    existingChannels.forEach((c) => {
+      if (c.topic === topic) {
+        supabase.removeChannel(c);
+      }
+    });
+  } catch (e) {
+    console.debug('[Supabase] safeCreateChannel cleanup warning:', e);
+  }
+  return opts ? supabase.channel(topic, opts) : supabase.channel(topic);
+}
+
 export default supabase;

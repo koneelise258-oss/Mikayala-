@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, safeCreateChannel } from '../lib/supabase';
 
 export interface GameEventPayload {
   type: 'roll_dice' | 'spin_wheel' | 'draw_tod' | 'game_start' | 'game_state_update' | 'challenge_completed' | 'sync_challenges' | 'sync_dice_config';
@@ -67,9 +67,8 @@ class GameService {
         supabase.removeChannel(this.channel);
       }
 
-      this.channel = supabase
-        .channel(`game_broadcast:${coupleId}`)
-        .on('broadcast', { event: 'game_event' }, (response) => {
+      this.channel = safeCreateChannel(`game_broadcast:${coupleId}`)
+        ?.on('broadcast', { event: 'game_event' }, (response) => {
           const payload = response.payload as GameEventPayload;
           if (payload && payload.senderId !== this.currentUserId) {
             this.handleIncomingEvent(payload);
@@ -82,9 +81,8 @@ class GameService {
         supabase.removeChannel(this.dbRealtimeChannel);
       }
 
-      this.dbRealtimeChannel = supabase
-        .channel(`game_sessions_realtime_all:${coupleId}`)
-        .on(
+      this.dbRealtimeChannel = safeCreateChannel(`game_sessions_realtime_all:${coupleId}`)
+        ?.on(
           'postgres_changes',
           {
             event: '*',

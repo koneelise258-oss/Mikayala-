@@ -658,7 +658,7 @@ export default function App() {
   }, []);
 
   // Centralized Navigation states moved from children for History management
-  const [activeSettingsSection, setActiveSettingsSection] = useState<'main' | 'couple' | 'appearance' | 'profile' | 'privacy' | 'supabase' | 'security_auth' | 'notifications'>('main');
+  const [activeSettingsSection, setActiveSettingsSection] = useState<'main' | 'couple' | 'appearance' | 'profile' | 'privacy' | 'supabase' | 'security_auth' | 'notifications' | 'link_device'>('main');
   const [isPhotoEditorOpen, setIsPhotoEditorOpen] = useState<boolean>(false);
   const [isDirectCameraOpen, setIsDirectCameraOpen] = useState<boolean>(false);
   const [isPhotoPreviewOpen, setIsPhotoPreviewOpen] = useState<boolean>(false);

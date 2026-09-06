@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, safeCreateChannel } from '../lib/supabase';
 import { getStoredPairingState } from './authService';
 
 export interface PresencePayload {
@@ -167,13 +167,16 @@ export function setupCouplePresence(
   }
 
   const channelName = `presence:couple:${coupleId}`;
-  const channel = supabase.channel(channelName, {
+  const channel = safeCreateChannel(channelName, {
     config: {
       presence: {
         key: currentUserId
       }
     }
   });
+  if (!channel) {
+    return () => {};
+  }
 
   const checkPartnerOnline = () => {
     const presenceState = channel.presenceState();
@@ -248,9 +251,8 @@ export function setupCoupleTyping(
   let lastSentTyping: boolean | null = null;
   let isChannelReady = false;
 
-  const channel = supabase
-    .channel(channelName)
-    .on('broadcast', { event: 'typing_status' }, (response) => {
+  const channel = safeCreateChannel(channelName)
+    ?.on('broadcast', { event: 'typing_status' }, (response) => {
       const payload = response.payload as TypingPayload;
       if (
         payload &&

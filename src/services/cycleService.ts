@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, safeCreateChannel } from '../lib/supabase';
 import { CycleData, CycleHistoryItem, CyclePhase, DailySymptomLog, MenstrualPrediction } from '../types';
 
 const STORAGE_KEY = 'mikayla_cycle_data';
@@ -45,9 +45,8 @@ export class CycleService {
       if (this.realtimeChannel) {
         supabase.removeChannel(this.realtimeChannel);
       }
-      this.realtimeChannel = supabase
-        .channel(`cycle_broadcast:${coupleId}`)
-        .on('broadcast', { event: 'sync_cycle' }, (response) => {
+      this.realtimeChannel = safeCreateChannel(`cycle_broadcast:${coupleId}`)
+        ?.on('broadcast', { event: 'sync_cycle' }, (response) => {
           const payload = response.payload;
           if (payload && payload.senderId !== this.currentUserId && payload.data) {
             this.applyIncomingCycleData(payload.data);

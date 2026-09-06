@@ -54,8 +54,8 @@ interface SettingsModalProps {
   myProfile?: UserProfile | null;
   onProfileUpdated?: () => void;
   // Centralized section management
-  activeSection: 'main' | 'couple' | 'appearance' | 'profile' | 'privacy' | 'supabase' | 'security_auth' | 'notifications';
-  onSetActiveSection: (section: 'main' | 'couple' | 'appearance' | 'profile' | 'privacy' | 'supabase' | 'security_auth' | 'notifications') => void;
+  activeSection: 'main' | 'couple' | 'appearance' | 'profile' | 'privacy' | 'supabase' | 'security_auth' | 'notifications' | 'link_device';
+  onSetActiveSection: (section: 'main' | 'couple' | 'appearance' | 'profile' | 'privacy' | 'supabase' | 'security_auth' | 'notifications' | 'link_device') => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -361,6 +361,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {activeSection === 'notifications' && 'Notifications Push & Alertes'}
               {activeSection === 'security_auth' && 'Sécurité & Accès'}
               {activeSection === 'supabase' && 'Synchronisation Cloud Supabase'}
+              {activeSection === 'link_device' && 'Appareils Connectés'}
             </h3>
           </div>
           <button
@@ -433,6 +434,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </p>
                   </div>
                 </button>
+
+                {/* 1.5 Appareils Connectés */}
+                {currentPairing?.isPaired && (
+                  <button
+                    onClick={() => onSetActiveSection('link_device')}
+                    className="w-full p-3.5 rounded-2xl bg-gradient-to-r from-[#171235] to-[#241747] hover:from-[#211949] hover:to-[#2c1d56] border border-[#6c5ce7]/50 flex items-center gap-3.5 text-left transition-all cursor-pointer group shadow-sm"
+                  >
+                    <div className="p-2.5 rounded-xl bg-[#0984e3]/20 text-[#74b9ff] group-hover:text-white transition-transform">
+                      <Smartphone size={22} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-bold text-sm text-white">Appareils Connectés & Web</p>
+                      </div>
+                      <p className="text-xs text-[#a29bfe] truncate">
+                        Connecter un PC, une tablette ou un autre téléphone
+                      </p>
+                    </div>
+                  </button>
+                )}
 
                 {/* 2. MOTEUR DE PERSONNALISATION ET DESIGN SYSTEM */}
                 <button
@@ -1195,6 +1216,65 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
                 <p className="text-[10px] text-blue-300/80 leading-relaxed">
                   Votre e-mail sert uniquement à la récupération technique. Il n'est jamais visible par votre partenaire ni utilisé pour des notifications non sollicitées.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Appareils Connectés & Web */}
+          {activeSection === 'link_device' && (
+            <div className="space-y-4">
+              <div className="p-4 bg-gradient-to-br from-[#1b1435] to-[#251846] rounded-2xl border border-[#6c5ce7]/30 shadow-lg">
+                <h4 className="font-bold text-white mb-2 flex items-center gap-2">
+                  <Smartphone size={18} className="text-[#0984e3]" />
+                  Connecter un nouvel appareil
+                </h4>
+                <p className="text-xs text-[#a29bfe] leading-relaxed mb-4">
+                  Pour utiliser Mikayla sur votre PC, votre tablette ou un autre téléphone sans perdre votre compte actuel, suivez ces étapes simples :
+                </p>
+                <ol className="text-xs text-white space-y-3 list-decimal list-inside opacity-90 mb-4">
+                  <li>Ouvrez <strong className="text-[#74b9ff]">mikayla.app</strong> sur le nouvel appareil.</li>
+                  <li>Cliquez sur <strong>"J'ai déjà un espace"</strong> (Code Secret).</li>
+                  <li>Saisissez exactement le <strong>Code de Liaison</strong> généré ci-dessous.</li>
+                </ol>
+                
+                <div className="bg-[#0a0714] border border-[#2d2254] rounded-xl p-4 flex flex-col items-center justify-center relative overflow-hidden">
+                  <span className="text-[10px] text-[#a29bfe] uppercase tracking-wider mb-2 font-bold">
+                    Votre Code de Liaison (PC / Tablette)
+                  </span>
+                  
+                  <button 
+                    onClick={async () => {
+                      try {
+                        const code = await authService.generateDeviceLinkCode();
+                        if (code) {
+                          await navigator.clipboard.writeText(code);
+                          alert('Code copié ! Envoyez-le vous de manière sécurisée (Notes, Email...) pour le coller sur votre PC/Tablette.');
+                        } else {
+                          alert('Synchronisation cloud requise pour cette fonctionnalité.');
+                        }
+                      } catch (err) {
+                        alert('Erreur de génération');
+                      }
+                    }}
+                    className="py-2.5 px-4 bg-gradient-to-r from-[#ffeaa7] to-[#fdcb6e] text-[#130f26] font-bold rounded-xl text-xs hover:opacity-90 active:scale-95 transition-all shadow-md flex items-center gap-2 cursor-pointer"
+                  >
+                    <Copy size={16} />
+                    Générer & Copier le Code de Liaison
+                  </button>
+                  
+                  <div className="mt-4 flex items-center gap-2">
+                    <span className="text-[10px] bg-[#6c5ce7]/20 text-[#a29bfe] px-2 py-1 rounded-md font-bold text-center">
+                      Ce code permet de cloner votre session en cours. Ne le partagez à personne d'autre.
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl flex items-start gap-3">
+                <AlertTriangle size={18} className="text-red-400 shrink-0 mt-0.5" />
+                <p className="text-[10px] text-red-200 leading-relaxed">
+                  <strong>Attention :</strong> Utilisez bien le <strong>Code de Liaison</strong> généré. Si vous utilisez votre ancien <strong>Code Couple</strong> classique pour vous reconnecter, cela déconnectera ce téléphone principal !
                 </p>
               </div>
             </div>
