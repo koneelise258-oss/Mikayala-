@@ -14,7 +14,9 @@ import {
   ChevronRight, 
   Lock, 
   ShieldCheck, 
-  Activity 
+  Activity,
+  Image as ImageIcon,
+  CloudSun
 } from 'lucide-react';
 import { User, CoupleCoupon, BlindQuizQuestion, WishlistItem } from '../types';
 import { triggerHaptic } from '../utils/security';
@@ -33,6 +35,9 @@ interface CoupleHubViewProps {
   onOpenHeartbeat: () => void;
   onOpenCycleCare: () => void;
   onOpenScratchCard: () => void;
+  onOpenTimeline?: () => void;
+  onOpenTimeCapsule?: () => void;
+  onOpenEmotionalMood?: () => void;
   coupons?: CoupleCoupon[];
   quizzes?: BlindQuizQuestion[];
   wishlistItems?: WishlistItem[];
@@ -51,6 +56,9 @@ export const CoupleHubView: React.FC<CoupleHubViewProps> = ({
   onOpenHeartbeat,
   onOpenCycleCare,
   onOpenScratchCard,
+  onOpenTimeline,
+  onOpenTimeCapsule,
+  onOpenEmotionalMood,
   coupons = [],
   quizzes = [],
   wishlistItems = []
@@ -184,6 +192,39 @@ export const CoupleHubView: React.FC<CoupleHubViewProps> = ({
       borderColor: 'border-[#a29bfe]/40 hover:border-[#a29bfe]',
       badgeColor: 'bg-[#a29bfe]/20 text-[#f1f2f6]',
       action: onOpenScratchCard
+    },
+    {
+      id: 'timeline',
+      title: 'Album Souvenirs & Timeline',
+      badge: 'Nostalgie & Moments',
+      description: 'Ligne du temps chronologique de nos plus beaux instants',
+      icon: ImageIcon,
+      gradient: 'from-[#fd79a8] to-[#6c5ce7]',
+      borderColor: 'border-[#fd79a8]/40 hover:border-[#fd79a8]',
+      badgeColor: 'bg-[#fd79a8]/20 text-[#fd79a8]',
+      action: onOpenTimeline || (() => {})
+    },
+    {
+      id: 'time_capsule',
+      title: 'Capsule Temporelle',
+      badge: 'Secrets Scellés',
+      description: 'Mots d’amour & photos verrouillés pour une date future',
+      icon: Lock,
+      gradient: 'from-[#ffeaa7] to-[#fd79a8]',
+      borderColor: 'border-[#ffeaa7]/40 hover:border-[#ffeaa7]',
+      badgeColor: 'bg-[#ffeaa7]/20 text-[#ffeaa7]',
+      action: onOpenTimeCapsule || (() => {})
+    },
+    {
+      id: 'emotional_mood',
+      title: 'Météo Émotionnelle',
+      badge: 'Humeur Live',
+      description: 'Partagez votre état d’esprit et envoyez des câlins instantanés',
+      icon: CloudSun,
+      gradient: 'from-[#fdcb6e] to-[#e17055]',
+      borderColor: 'border-[#fdcb6e]/40 hover:border-[#fdcb6e]',
+      badgeColor: 'bg-[#fdcb6e]/20 text-[#ffeaa7]',
+      action: onOpenEmotionalMood || (() => {})
     }
   ];
 

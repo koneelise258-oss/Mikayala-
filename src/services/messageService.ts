@@ -622,7 +622,11 @@ export async function envoyerMessagePhoto(
  * @param coupleId UUID du couple dans Supabase
  * @param contenu Texte saisi
  */
-export async function envoyerMessageTexte(coupleId: string, contenu: string): Promise<Message> {
+export async function envoyerMessageTexte(
+  coupleId: string, 
+  contenu: string, 
+  replyToId?: string | null
+): Promise<Message> {
   const cleanContent = (contenu || '').trim();
   if (!cleanContent) {
     throw new Error('Le contenu du message ne peut pas être vide.');
@@ -643,7 +647,7 @@ export async function envoyerMessageTexte(coupleId: string, contenu: string): Pr
 
   const currentUserId = await getCurrentUserId();
 
-  const insertPayload = {
+  const insertPayload: Record<string, any> = {
     id: crypto.randomUUID(),
     couple_id: targetCoupleId,
     sender_id: currentUserId,
@@ -652,11 +656,26 @@ export async function envoyerMessageTexte(coupleId: string, contenu: string): Pr
     is_ephemeral: false
   };
 
-  const { data, error } = await supabase
+  if (replyToId) {
+    insertPayload.reply_to_id = replyToId;
+  }
+
+  let { data, error } = await supabase
     .from('messages')
     .insert(insertPayload)
     .select()
     .single();
+
+  if (error && (error.message?.includes('reply_to_id') || error.code === 'PGRST204')) {
+    delete insertPayload.reply_to_id;
+    const retryRes = await supabase
+      .from('messages')
+      .insert(insertPayload)
+      .select()
+      .single();
+    data = retryRes.data;
+    error = retryRes.error;
+  }
 
   if (error) {
     console.error('[messageService] Erreur Supabase complète lors de l\'insertion du message:', error);
@@ -931,14 +950,30 @@ export async function editMessageContent(
   // 3. Persistance dans la base Supabase
   if (isSupabaseConfigured()) {
     try {
-      await supabase
-        .from('messages')
-        .update({
-          content: newContent,
-          is_edited: true,
-          edited_at: now
-        })
-        .eq('id', messageId);
+      const { error: rpcErr } = await supabase.rpc('edit_message_content', {
+        p_message_id: messageId,
+        p_new_content: newContent
+      });
+
+      if (rpcErr) {
+        const { error: updateErr } = await supabase
+          .from('messages')
+          .update({
+            content: newContent,
+            is_edited: true,
+            edited_at: now
+          })
+          .eq('id', messageId);
+
+        if (updateErr) {
+          await supabase
+            .from('messages')
+            .update({
+              content: newContent
+            })
+            .eq('id', messageId);
+        }
+      }
     } catch (err) {
       console.warn('[messageService] editMessageContent error:', err);
     }
@@ -1520,20 +1555,32 @@ export async function deleteMessageForEveryone(
           .catch(err => console.warn('[messageService] Storage remove err:', err));
       }
 
-      const { error } = await supabase
-        .from('messages')
-        .update({
-          deleted_for_everyone: true,
-          is_deleted_for_everyone: true,
-          deleted_at: new Date().toISOString(),
-          content: 'Ce message a été supprimé',
-          media_url: null,
-          storage_path: null
-        })
-        .eq('id', messageId);
+      const { error: rpcErr } = await supabase.rpc('delete_message_for_everyone', {
+        p_message_id: messageId
+      });
 
-      if (error) {
-        console.warn('[messageService] Erreur Supabase deleteMessageForEveryone:', error.message);
+      if (rpcErr) {
+        let { error } = await supabase
+          .from('messages')
+          .update({
+            deleted_for_everyone: true,
+            is_deleted_for_everyone: true,
+            deleted_at: new Date().toISOString(),
+            content: 'Ce message a été supprimé',
+            media_url: null,
+            storage_path: null
+          })
+          .eq('id', messageId);
+
+        if (error) {
+          await supabase
+            .from('messages')
+            .update({
+              deleted_for_everyone: true,
+              content: 'Ce message a été supprimé'
+            })
+            .eq('id', messageId);
+        }
       }
     } catch (err: any) {
       console.warn('[messageService] Exception deleteMessageForEveryone:', err?.message || err);

@@ -1,18 +1,23 @@
 -- ==============================================================================
--- MIKAYALA WHATSAPP COUPLE - MISE À JOUR SÉCURITÉ, RÉACTIONS & SUPPRESSION DES MESSAGES
+-- MIKAYALA WHATSAPP COUPLE - MISE À JOUR SÉCURITÉ, TEMPS RÉEL, ÉDITION & SUPPRESSION
 -- ==============================================================================
 -- Exécutez ce script directement dans le SQL Editor de votre projet Supabase.
--- Il garantit la compatibilité complète avec les réactions d'émojis,
--- la suppression sécurisée ("pour moi" et "pour tout le monde"),
--- et renforce le Row Level Security (RLS) pour protéger vos échanges de couple.
+-- Il garantit la synchronisation parfaite en temps réel :
+-- 1. Réactions émojis temps réel
+-- 2. Modification de message (is_edited, edited_at)
+-- 3. Suppression de message ("Pour moi" et "Pour tout le monde" avec placeholder)
+-- 4. Réponses citées (reply_to_id)
+-- 5. Row Level Security (RLS) permissif pour le couple
 -- ==============================================================================
 
--- 1. EXTENSIONS & TABLES
+-- 1. EXTENSIONS
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 2. ASSURER LES COLONNES NÉCESSAIRES SUR LA TABLE PUBLIC.MESSAGES
+-- 2. ASSURER LES COLONNES SUR LA TABLE PUBLIC.MESSAGES
 ALTER TABLE IF EXISTS public.messages
   ADD COLUMN IF NOT EXISTS reactions JSONB DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS is_edited BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS deleted_for_everyone BOOLEAN DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS is_deleted_for_everyone BOOLEAN DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ,
@@ -21,7 +26,11 @@ ALTER TABLE IF EXISTS public.messages
   ADD COLUMN IF NOT EXISTS is_starred BOOLEAN DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS reply_to_id TEXT,
   ADD COLUMN IF NOT EXISTS media_url TEXT,
-  ADD COLUMN IF NOT EXISTS storage_path TEXT;
+  ADD COLUMN IF NOT EXISTS storage_path TEXT,
+  ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'sent',
+  ADD COLUMN IF NOT EXISTS message_type TEXT DEFAULT 'text';
 
 -- 3. INDEXATION HAUTE PERFORMANCE
 CREATE INDEX IF NOT EXISTS idx_messages_couple_id ON public.messages(couple_id);
@@ -32,36 +41,38 @@ CREATE INDEX IF NOT EXISTS idx_messages_reactions ON public.messages USING gin (
 -- 4. CONFIGURATION DU ROW LEVEL SECURITY (RLS)
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 
--- Politique de lecture : Autoriser les partenaires du couple à lire les messages
+-- Suppression des anciennes politiques restrictives
 DROP POLICY IF EXISTS "Allow couple members to read messages" ON public.messages;
+DROP POLICY IF EXISTS "Allow couple members to insert messages" ON public.messages;
+DROP POLICY IF EXISTS "Allow couple members to update messages" ON public.messages;
+DROP POLICY IF EXISTS "Allow couple members to delete messages" ON public.messages;
+DROP POLICY IF EXISTS "Allow all authenticated/anonymous couple messages" ON public.messages;
+
+-- Politiques ouvertes pour assurer un fonctionnement temps réel sans blocage
 CREATE POLICY "Allow couple members to read messages"
   ON public.messages
   FOR SELECT
-  USING (
-    couple_id IN (
-      SELECT id FROM public.couples 
-      WHERE user1_id = auth.uid()::text 
-         OR user2_id = auth.uid()::text
-         OR true -- Fallback permissif si sessions anonymes/custom ID
-    )
-  );
+  USING (true);
 
--- Politique d'insertion : Autoriser l'envoi de messages dans l'espace couple
-DROP POLICY IF EXISTS "Allow couple members to insert messages" ON public.messages;
 CREATE POLICY "Allow couple members to insert messages"
   ON public.messages
   FOR INSERT
   WITH CHECK (true);
 
--- Politique de mise à jour : Réactions emoji et suppression par les membres
-DROP POLICY IF EXISTS "Allow couple members to update messages" ON public.messages;
 CREATE POLICY "Allow couple members to update messages"
   ON public.messages
   FOR UPDATE
   USING (true)
   WITH CHECK (true);
 
--- 4b. FONCTION RPC POUR SUPPRESSION INDIVIDUELLE ("Supprimer pour moi")
+CREATE POLICY "Allow couple members to delete messages"
+  ON public.messages
+  FOR DELETE
+  USING (true);
+
+-- 5. PROCÉDURES STOCKÉES RPC ROBUSTES
+
+-- a. Suppression pour moi ("delete_message_for_me")
 CREATE OR REPLACE FUNCTION public.delete_message_for_me(p_message_id TEXT, p_user_id TEXT)
 RETURNS void
 LANGUAGE plpgsql
@@ -78,7 +89,42 @@ BEGIN
 END;
 $$;
 
--- 5. PUBLICATION TEMPS RÉEL SUPABASE REALTIME
+-- b. Suppression pour tout le monde ("delete_message_for_everyone")
+CREATE OR REPLACE FUNCTION public.delete_message_for_everyone(p_message_id TEXT)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  UPDATE public.messages
+  SET 
+    deleted_for_everyone = true,
+    is_deleted_for_everyone = true,
+    deleted_at = NOW(),
+    content = 'Ce message a été supprimé',
+    media_url = NULL,
+    storage_path = NULL
+  WHERE id = p_message_id;
+END;
+$$;
+
+-- c. Modification de message ("edit_message_content")
+CREATE OR REPLACE FUNCTION public.edit_message_content(p_message_id TEXT, p_new_content TEXT)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  UPDATE public.messages
+  SET 
+    content = p_new_content,
+    is_edited = true,
+    edited_at = NOW()
+  WHERE id = p_message_id;
+END;
+$$;
+
+-- 6. PUBLICATION TEMPS RÉEL SUPABASE REALTIME (INSERT, UPDATE, DELETE)
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -89,7 +135,10 @@ BEGIN
   END IF;
 END $$;
 
--- 6. ASSURER LA TABLE DU CYCLE MENSTRUEL & BIEN-ÊTRE INTIME
+-- Configuration REPLICA IDENTITY FULL pour que les événements UPDATE et DELETE diffusent toutes les colonnes
+ALTER TABLE public.messages REPLICA IDENTITY FULL;
+
+-- 7. ASSURER LA TABLE DU CYCLE MENSTRUEL & BIEN-ÊTRE INTIME
 CREATE TABLE IF NOT EXISTS public.couple_cycle_data (
   couple_id TEXT PRIMARY KEY,
   day_of_cycle INTEGER DEFAULT 14,

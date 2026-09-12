@@ -183,13 +183,42 @@ export const authenticateWithBiometrics = async (
   }
 };
 
-// Trigger Haptic Vibration if supported
+// Trigger Haptic Vibration with Custom Couple Patterns
 export const triggerHaptic = (pattern: number | number[] = [80, 40, 80]) => {
   try {
-    if ('vibrate' in navigator) {
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       navigator.vibrate(pattern);
     }
   } catch {
     // Haptics safety ignore
   }
 };
+
+/**
+ * Vibrations romantiques personnalisées pour le couple
+ */
+export const coupleVibrations = {
+  heartbeat: () => triggerHaptic([100, 60, 200, 80, 300]),
+  lovePulse: () => triggerHaptic([80, 40, 80, 40, 160]),
+  whisper: () => triggerHaptic([40, 30, 40]),
+  celebration: () => triggerHaptic([60, 40, 80, 40, 120, 60, 200]),
+  unlockSuccess: () => triggerHaptic([30, 20, 60])
+};
+
+/**
+ * PWA App Badge (Affichage du compteur de messages non lus sur l'icône de l'app)
+ */
+export const updateAppBadge = async (unreadCount: number): Promise<void> => {
+  try {
+    if (typeof navigator !== 'undefined') {
+      if (unreadCount > 0 && 'setAppBadge' in navigator) {
+        await (navigator as any).setAppBadge(unreadCount);
+      } else if (unreadCount === 0 && 'clearAppBadge' in navigator) {
+        await (navigator as any).clearAppBadge();
+      }
+    }
+  } catch (err) {
+    // Silently ignore badge errors on unsupported devices
+  }
+};
+

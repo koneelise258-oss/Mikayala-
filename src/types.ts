@@ -521,3 +521,47 @@ export interface PairingState {
   partnerId?: string;
   pairedAt?: number;
 }
+
+/* --- COUPLE MEMORIES & SOUVENIRS TYPES --- */
+export interface CoupleMemory {
+  id: string;
+  title: string;
+  date: string; // YYYY-MM-DD
+  description?: string;
+  category: 'first_meet' | 'first_date' | 'trip' | 'anniversary' | 'milestone' | 'romantic_dinner' | 'special_moment';
+  imageUrl?: string;
+  audioUrl?: string;
+  location?: string;
+  likesCount?: number;
+  tags?: string[];
+  createdAt: string;
+  createdBy: string;
+}
+
+/* --- TIME CAPSULE TYPES --- */
+export interface TimeCapsule {
+  id: string;
+  title: string;
+  secretMessage: string;
+  mediaUrl?: string;
+  mediaType?: 'photo' | 'audio' | 'video';
+  unlockDate: string; // ISO date string
+  isUnlocked: boolean;
+  unlockedAt?: string;
+  themeColor?: string;
+  createdAt: string;
+  createdBy: string;
+}
+
+/* --- EMOTIONAL MOOD / WEATHER TYPES --- */
+export type MoodEmojiType = 'in_love' | 'cuddle' | 'tired' | 'energized' | 'sad_comfort' | 'flirty' | 'peaceful' | 'miss_you';
+
+export interface EmotionalMood {
+  userId: string;
+  mood: MoodEmojiType;
+  label: string;
+  note?: string;
+  intensity: 1 | 2 | 3 | 4 | 5;
+  updatedAt: string;
+}
+

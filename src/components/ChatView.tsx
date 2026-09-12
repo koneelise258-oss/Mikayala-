@@ -44,6 +44,7 @@ import {
   canMarkConversationAsRead as canMarkConversationAsReadGlobal,
   uploadMediaToStorage,
   updateMessageReactions,
+  editMessageContent,
   broadcastMessageToCouple
 } from '../services/messageService';
 import {
@@ -200,6 +201,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
   const typingTimeoutRef = useRef<number | null>(null);
 
+  const textInputRef = useRef<HTMLInputElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -208,6 +210,12 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const chatMenuRef = useRef<HTMLDivElement>(null);
   const attachMenuRef = useRef<HTMLDivElement>(null);
   const attachButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Swipe-to-Reply gesture state (WhatsApp style)
+  const [swipingMsgId, setSwipingMsgId] = useState<string | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState<number>(0);
+  const [hasTriggeredSwipeHaptic, setHasTriggeredSwipeHaptic] = useState<boolean>(false);
+  const touchStartPosRef = useRef<{ x: number; y: number; msgId: string; time: number } | null>(null);
 
   /**
    * Vérifie STRICTEMENT les 6 conditions obligatoires avant de marquer comme lu :
@@ -522,7 +530,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
     };
   }, [pairingState?.coupleId, currentAuthUserId, isChatActive, isPhotoPreviewOpen, isDirectCameraOpen]);
 
-  // Synchroniser les mises à jour de parentMessages (ex: suppressions optimistes, réactions) dans realMessages
+  // Synchroniser les mises à jour de parentMessages (ex: suppressions optimistes, réactions, modifications de texte) dans realMessages
   useEffect(() => {
     if (!parentMessages || parentMessages.length === 0) return;
     setRealMessages(prev => {
@@ -535,8 +543,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
         const isParentDel = Boolean(parentMatch.isDeletedForEveryone || parentMatch.deletedForEveryone || parentMatch.deleted_for_everyone);
         const isCurrentDel = Boolean(m.isDeletedForEveryone || m.deletedForEveryone || m.deleted_for_everyone);
         const reactionsDiffer = JSON.stringify(parentMatch.reactions || {}) !== JSON.stringify(m.reactions || {});
+        const contentDiffer = parentMatch.content !== m.content;
+        const editedDiffer = Boolean(parentMatch.isEdited || parentMatch.is_edited) !== Boolean(m.isEdited || m.is_edited);
 
-        if (isParentDel !== isCurrentDel || reactionsDiffer) {
+        if (isParentDel !== isCurrentDel || reactionsDiffer || contentDiffer || editedDiffer) {
           hasChange = true;
           return {
             ...m,
@@ -545,6 +555,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
             deletedForEveryone: isParentDel,
             deleted_for_everyone: isParentDel,
             content: isParentDel ? 'Ce message a été supprimé' : (parentMatch.content || m.content),
+            isEdited: Boolean(parentMatch.isEdited || parentMatch.is_edited || m.isEdited || m.is_edited),
+            is_edited: Boolean(parentMatch.isEdited || parentMatch.is_edited || m.isEdited || m.is_edited),
             mediaUrl: isParentDel ? undefined : (parentMatch.mediaUrl ?? m.mediaUrl),
             storagePath: isParentDel ? undefined : (parentMatch.storagePath ?? m.storagePath),
             reactions: parentMatch.reactions || m.reactions
@@ -726,12 +738,33 @@ export const ChatView: React.FC<ChatViewProps> = ({
     sendTypingStatus(false);
 
     if (editingMessage) {
-      onUpdateMessage(editingMessage.id, {
+      const editId = editingMessage.id;
+      const targetCoupleId = coupleId || pairingState?.coupleId || getStoredPairingState().coupleId;
+
+      // 1. Optimistic immediate update of realMessages in ChatView
+      setRealMessages(prev => prev.map(m => m.id === editId ? {
+        ...m,
+        content: textToSend,
+        isEdited: true,
+        is_edited: true,
+        editedAt: new Date().toISOString()
+      } : m));
+
+      // 2. Call parent onUpdateMessage
+      onUpdateMessage(editId, {
         content: textToSend,
         isEdited: true
       });
+
+      // 3. Persist and broadcast
+      if (targetCoupleId) {
+        editMessageContent(editId, textToSend, targetCoupleId);
+      }
+
       setEditingMessage(null);
       setInputText('');
+      soundEffects.playSent();
+      triggerHaptic(20);
       return;
     }
 
@@ -743,14 +776,15 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }
 
     const targetCoupleId = pairingState?.coupleId;
+    const currentReplyId = replyingTo?.id || null;
 
     setIsSending(true);
     setChatError(null);
 
     try {
       if (targetCoupleId && isSupabaseConfigured()) {
-        // Direct insertion into Supabase public.messages
-        const sentMessage = await envoyerMessageTexte(targetCoupleId, textToSend);
+        // Direct insertion into Supabase public.messages with optional reply_to_id
+        const sentMessage = await envoyerMessageTexte(targetCoupleId, textToSend, currentReplyId);
 
         // Add to local realMessages state immediately if not already present
         setRealMessages(prev => {
@@ -767,7 +801,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
           type: 'text',
           senderId: currentUser.id,
           receiverId: partnerUser.id,
-          status: 'sent'
+          status: 'sent',
+          replyToId: currentReplyId || undefined
         });
       }
 
@@ -784,7 +819,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
         type: 'text',
         senderId: currentUser.id,
         receiverId: partnerUser.id,
-        status: 'sent'
+        status: 'sent',
+        replyToId: currentReplyId || undefined
       });
       setInputText('');
       setReplyingTo(null);
@@ -893,13 +929,87 @@ export const ChatView: React.FC<ChatViewProps> = ({
   };
 
   const checkIsMyMessage = (msg?: Message | null) => {
-    if (!msg) return false;
+    if (!msg) return true; // Par défaut autoriser si l'objet n'est pas fourni
     const myId = currentUser.id;
     const authId = currentAuthUserId;
     if (msg.senderId === myId) return true;
     if (authId && msg.senderId === authId) return true;
     if (msg.senderId && partnerUser?.id && msg.senderId === partnerUser.id) return false;
+    if (partnerUser?.id && msg.receiverId === partnerUser.id) return true;
     return true;
+  };
+
+  const handleTouchStartMessage = (e: React.TouchEvent | React.MouseEvent, msg: Message) => {
+    if (msg.isDeletedForEveryone || msg.deletedForEveryone || msg.deleted_for_everyone) return;
+    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+
+    touchStartPosRef.current = {
+      x: clientX,
+      y: clientY,
+      msgId: msg.id,
+      time: Date.now()
+    };
+
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      triggerHaptic(40);
+      setActiveContextMenuMsgId(msg.id);
+      touchStartPosRef.current = null;
+    }, 450);
+  };
+
+  const handleTouchMoveMessage = (e: React.TouchEvent | React.MouseEvent, msg: Message) => {
+    if (!touchStartPosRef.current || touchStartPosRef.current.msgId !== msg.id) return;
+    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+
+    const dx = clientX - touchStartPosRef.current.x;
+    const dy = clientY - touchStartPosRef.current.y;
+
+    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    }
+
+    // Swipe horizontal vers la droite (style WhatsApp)
+    if (dx > 0 && Math.abs(dx) > Math.abs(dy) * 1.1) {
+      const distance = Math.min(dx * 0.7, 75);
+      setSwipingMsgId(msg.id);
+      setSwipeOffset(distance);
+
+      if (distance >= 45 && !hasTriggeredSwipeHaptic) {
+        triggerHaptic(25);
+        setHasTriggeredSwipeHaptic(true);
+      } else if (distance < 45 && hasTriggeredSwipeHaptic) {
+        setHasTriggeredSwipeHaptic(false);
+      }
+    }
+  };
+
+  const handleTouchEndMessage = (msg: Message) => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+
+    if (swipingMsgId === msg.id) {
+      if (swipeOffset >= 45) {
+        triggerHaptic([25, 20, 25]);
+        soundEffects.playPop();
+        setReplyingTo(msg);
+        setEditingMessage(null);
+        setTimeout(() => {
+          textInputRef.current?.focus();
+        }, 60);
+      }
+      setSwipingMsgId(null);
+      setSwipeOffset(0);
+      setHasTriggeredSwipeHaptic(false);
+    }
+    touchStartPosRef.current = null;
   };
 
   const handleDeleteMessageInternal = (msgId: string, forEveryone: boolean) => {
@@ -1641,9 +1751,23 @@ export const ChatView: React.FC<ChatViewProps> = ({
                   </div>
                 )}
 
+                {/* Swipe-to-reply visual indicator badge */}
+                {swipingMsgId === msg.id && swipeOffset > 5 && (
+                  <div 
+                    className="absolute left-1 top-1/2 -translate-y-1/2 flex items-center justify-center w-8 h-8 rounded-full bg-[#00b894]/20 border border-[#00b894]/40 text-[#00b894] transition-opacity pointer-events-none z-10 shadow-lg"
+                    style={{
+                      opacity: Math.min(swipeOffset / 45, 1),
+                      transform: `translateY(-50%) scale(${Math.min(0.6 + (swipeOffset / 45) * 0.5, 1.15)})`
+                    }}
+                  >
+                    <CornerUpLeft size={16} />
+                  </div>
+                )}
+
                 {/* Message Bubble Card */}
                 <div
                   onClick={() => {
+                    if (swipingMsgId === msg.id && swipeOffset > 10) return;
                     setActiveReactionMsgId(activeReactionMsgId === msg.id ? null : msg.id);
                   }}
                   onContextMenu={(e) => {
@@ -1651,24 +1775,22 @@ export const ChatView: React.FC<ChatViewProps> = ({
                     triggerHaptic(30);
                     setActiveContextMenuMsgId(msg.id);
                   }}
-                  onTouchStart={() => {
-                    longPressTimerRef.current = setTimeout(() => {
-                      triggerHaptic(40);
-                      setActiveContextMenuMsgId(msg.id);
-                    }, 450);
-                  }}
-                  onTouchEnd={() => {
-                    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
-                  }}
-                  onTouchMove={() => {
-                    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
-                  }}
-                  className={`message-bubble relative max-w-[85%] sm:max-w-[65%] p-3 shadow-md cursor-pointer transition-all ${getBubbleShapeClass(isMe)}`}
+                  onTouchStart={(e) => handleTouchStartMessage(e, msg)}
+                  onTouchMove={(e) => handleTouchMoveMessage(e, msg)}
+                  onTouchEnd={() => handleTouchEndMessage(msg)}
+                  onTouchCancel={() => handleTouchEndMessage(msg)}
+                  onMouseDown={(e) => handleTouchStartMessage(e, msg)}
+                  onMouseMove={(e) => handleTouchMoveMessage(e, msg)}
+                  onMouseUp={() => handleTouchEndMessage(msg)}
+                  onMouseLeave={() => handleTouchEndMessage(msg)}
+                  className={`message-bubble relative max-w-[85%] sm:max-w-[65%] p-3 shadow-md cursor-pointer select-none ${getBubbleShapeClass(isMe)}`}
                   style={{
                     backgroundColor: isMe ? 'var(--mk-bubble-sent-bg)' : 'var(--mk-bubble-recv-bg)',
                     color: isMe ? 'var(--mk-bubble-sent-text)' : 'var(--mk-bubble-recv-text)',
                     borderRadius: bubbleShape === 'capsule' ? '9999px' : 'var(--mk-bubble-radius, 16px)',
-                    fontFamily: 'var(--mk-font-family)'
+                    fontFamily: 'var(--mk-font-family)',
+                    transform: swipingMsgId === msg.id ? `translateX(${swipeOffset}px)` : 'translateX(0px)',
+                    transition: swipingMsgId === msg.id ? 'none' : 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)'
                   }}
                 >
                   {/* Recv Sender Name */}
@@ -2334,7 +2456,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                         <Bluetooth size={8} /> Prox
                       </span>
                     )}
-                    {msg.isEdited && <span className="italic mr-0.5">modifié</span>}
+                    {Boolean(msg.isEdited || msg.is_edited) && <span className="italic mr-0.5 text-[9px] opacity-80">modifié</span>}
                     {msg.isPinned && <Pin size={10} className="text-[#00b894] rotate-45" />}
                     {msg.isStarred && <Star size={10} className="text-[#ffeaa7] fill-[#ffeaa7]" />}
                     <span>{formatTime(msg.timestamp)}</span>
@@ -2783,6 +2905,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
             {/* Text input with auto-formatting support & mode indication */}
             <div className="flex-1 relative flex items-center min-w-0">
               <input
+                ref={textInputRef}
                 type="text"
                 disabled={!pairingState?.isPaired || !pairingState?.coupleId || isSending}
                 placeholder={
@@ -3061,9 +3184,11 @@ export const ChatView: React.FC<ChatViewProps> = ({
             </p>
 
             <div className="space-y-2.5">
-              {/* Si l'utilisateur est l'auteur du message, proposer Supprimer pour tout le monde */}
+              {/* Option 1: Supprimer pour tout le monde (affiché si auteur) */}
               {(() => {
-                const target = activeMessages.find(m => m.id === deleteConfirmMsgId);
+                const target = activeMessages.find(m => m.id === deleteConfirmMsgId) || 
+                  realMessages.find(m => m.id === deleteConfirmMsgId) || 
+                  parentMessages?.find(m => m.id === deleteConfirmMsgId);
                 const isMyMsg = checkIsMyMessage(target);
                 if (!isMyMsg) return null;
 
@@ -3082,6 +3207,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 onClick={() => handleDeleteMessageInternal(deleteConfirmMsgId, false)}
                 className="w-full py-3 px-4 rounded-2xl bg-[#281e4b] hover:bg-[#34275f] text-white font-medium text-sm border border-[#3f316e] active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
+                <Trash2 size={15} className="text-[#a29bfe]" />
                 <span>Supprimer pour moi</span>
               </button>
 

@@ -117,11 +117,14 @@ import { ScratchCardModal } from './components/ScratchCardModal';
 import { CoupleHubView } from './components/CoupleHubView';
 import { LoveTimerModal } from './components/LoveTimerModal';
 import { CoupleCalendarModal } from './components/CoupleCalendarModal';
+import { CoupleTimelineModal } from './components/CoupleTimelineModal';
+import { TimeCapsuleModal } from './components/TimeCapsuleModal';
+import { EmotionalMoodModal } from './components/EmotionalMoodModal';
 import { vaultService } from './services/vaultService';
 import { Lock, Star, X, CheckCheck } from 'lucide-react';
 import { formatTime, formatDateDivider } from './utils/formatters';
 import { soundEffects } from './utils/audio';
-import { triggerHaptic } from './utils/security';
+import { triggerHaptic, updateAppBadge, coupleVibrations } from './utils/security';
 
 export default function App() {
   // Single Authenticated User & Partner Profiles
@@ -646,6 +649,11 @@ export default function App() {
   const unreadCount = useMemo(() => {
     return messages.filter(m => (m.receiverId === currentUser.id || m.senderId === partnerUser.id) && m.status !== 'read' && !m.readAt && !m.isDeletedForEveryone).length;
   }, [messages, currentUser.id, partnerUser.id]);
+
+  // Synchronisation PWA App Badge (Icône de l'application sur l'écran d'accueil)
+  useEffect(() => {
+    updateAppBadge(unreadCount);
+  }, [unreadCount]);
 
   // Call States
   const [isCallOpen, setIsCallOpen] = useState(false);
@@ -1197,6 +1205,9 @@ export default function App() {
   const [isHeartbeatOpen, setIsHeartbeatOpen] = useState(false);
   const [isCouponsOpen, setIsCouponsOpen] = useState(false);
   const [isBlindQuizOpen, setIsBlindQuizOpen] = useState(false);
+  const [isTimelineOpen, setIsTimelineOpen] = useState(false);
+  const [isTimeCapsuleOpen, setIsTimeCapsuleOpen] = useState(false);
+  const [isEmotionalMoodOpen, setIsEmotionalMoodOpen] = useState(false);
   const [activeQuizSession, setActiveQuizSession] = useState<QuizSession | null>(null);
 
   // Setup Quiz Realtime channel & session updates
@@ -2393,6 +2404,9 @@ export default function App() {
                     onOpenHeartbeat={() => setIsHeartbeatOpen(true)}
                     onOpenCycleCare={() => setIsCycleCareOpen(true)}
                     onOpenScratchCard={() => setIsScratchCardOpen(true)}
+                    onOpenTimeline={() => setIsTimelineOpen(true)}
+                    onOpenTimeCapsule={() => setIsTimeCapsuleOpen(true)}
+                    onOpenEmotionalMood={() => setIsEmotionalMoodOpen(true)}
                     coupons={coupons as any}
                     quizzes={quizzes as any}
                     wishlistItems={wishlistItems}
@@ -2498,6 +2512,9 @@ export default function App() {
                     onOpenHeartbeat={() => { setIsHeartbeatOpen(true); openView('heartbeat'); }}
                     onOpenCycleCare={() => { setIsCycleCareOpen(true); openView('cycle'); }}
                     onOpenScratchCard={() => { setIsScratchCardOpen(true); openView('scratch'); }}
+                    onOpenTimeline={() => { setIsTimelineOpen(true); openView('timeline'); }}
+                    onOpenTimeCapsule={() => { setIsTimeCapsuleOpen(true); openView('capsule'); }}
+                    onOpenEmotionalMood={() => { setIsEmotionalMoodOpen(true); openView('mood'); }}
                     coupons={coupons as any}
                     quizzes={quizzes as any}
                     wishlistItems={wishlistItems}
@@ -3180,6 +3197,45 @@ export default function App() {
               locationData
             });
             soundEffects.playSent();
+          }}
+        />
+      )}
+
+      {/* Album Souvenirs & Ligne du Temps */}
+      {isTimelineOpen && (
+        <CoupleTimelineModal
+          isOpen={isTimelineOpen}
+          onClose={() => setIsTimelineOpen(false)}
+          currentUser={currentUser}
+          partnerUser={partnerUser}
+          coupleId={pairingState?.coupleId}
+        />
+      )}
+
+      {/* Capsule Temporelle */}
+      {isTimeCapsuleOpen && (
+        <TimeCapsuleModal
+          isOpen={isTimeCapsuleOpen}
+          onClose={() => setIsTimeCapsuleOpen(false)}
+          currentUser={currentUser}
+          partnerUser={partnerUser}
+          coupleId={pairingState?.coupleId}
+        />
+      )}
+
+      {/* Météo Émotionnelle */}
+      {isEmotionalMoodOpen && (
+        <EmotionalMoodModal
+          isOpen={isEmotionalMoodOpen}
+          onClose={() => setIsEmotionalMoodOpen(false)}
+          currentUser={currentUser}
+          partnerUser={partnerUser}
+          coupleId={pairingState?.coupleId}
+          onSendInstantHug={() => {
+            handleSendMessage({
+              type: 'text',
+              content: 'Te fait un gros câlin virtuel rempli de tendresse et d’amour ! 🤗❤️'
+            });
           }}
         />
       )}
