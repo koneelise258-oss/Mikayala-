@@ -3180,9 +3180,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
       {/* Message Actions Context Menu Overlay */}
       {activeContextMenuMsgId && (() => {
-        const targetMsg = filteredMessages.find(m => m.id === activeContextMenuMsgId) ||
+        const targetMsg = realMessages.find(m => m.id === activeContextMenuMsgId) ||
           activeMessages.find(m => m.id === activeContextMenuMsgId) ||
-          realMessages.find(m => m.id === activeContextMenuMsgId);
+          messages.find(m => m.id === activeContextMenuMsgId) ||
+          filteredMessages.find(m => m.id === activeContextMenuMsgId);
         
         if (!targetMsg) return null;
 
@@ -3388,22 +3389,41 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
                 <div className="h-px bg-[#2d2254] my-1 mx-2" />
                 
-                {/* 9. Supprimer le message */}
+                {/* 9. Supprimer pour moi */}
                 <button 
                   onClick={() => {
-                    setDeleteConfirmMsgId(targetMsg.id);
+                    onDeleteMessage(targetMsg.id, false);
                     setActiveContextMenuMsgId(null);
                   }}
-                  className="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-[#ff7675]/20 text-sm text-[#ff7675] transition-colors text-left cursor-pointer"
+                  className="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-[#ff7675]/15 text-sm text-[#ff7675] transition-colors text-left cursor-pointer"
                 >
                   <div className="w-8 h-8 rounded-xl bg-[#ff7675]/20 flex items-center justify-center shrink-0">
                     <Trash2 size={16} className="text-[#ff7675]" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <span className="font-semibold block">Supprimer le message</span>
-                    <span className="text-[10px] text-[#ff7675]/70">Supprimer pour vous ou pour tout le monde</span>
+                    <span className="font-semibold block">Supprimer pour moi</span>
+                    <span className="text-[10px] text-[#ff7675]/70">Effacer de votre vue uniquement</span>
                   </div>
                 </button>
+
+                {/* 10. Supprimer pour tous (si mon message) */}
+                {isMyMsg && (
+                  <button 
+                    onClick={() => {
+                      onDeleteMessage(targetMsg.id, true);
+                      setActiveContextMenuMsgId(null);
+                    }}
+                    className="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-[#ff7675]/25 text-sm text-[#ff7675] transition-colors text-left cursor-pointer"
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-[#ff7675]/30 flex items-center justify-center shrink-0">
+                      <Trash2 size={16} className="text-[#ff7675]" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="font-semibold block">Supprimer pour tout le monde</span>
+                      <span className="text-[10px] text-[#ff7675]/70">Retirer pour vous et votre partenaire</span>
+                    </div>
+                  </button>
+                )}
               </div>
             </div>
           </div>

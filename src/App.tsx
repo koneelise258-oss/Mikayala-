@@ -1841,6 +1841,9 @@ export default function App() {
     }
 
     if (updates.reactions) {
+      updateMessageReactions(msgId, updates.reactions, coupleId).catch(err => {
+        console.warn('[App] updateMessageReactions error:', err);
+      });
       try {
         proximityService.broadcastPayload({
           type: 'reaction_update',
