@@ -1603,7 +1603,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
                 {/* Quick Action Trigger Buttons on Hover */}
                 {!msg.isDeletedForEveryone && (
-                  <div className={`opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute top-1/2 -translate-y-1/2 ${isMe ? '-left-16' : '-right-16'} hidden sm:flex items-center gap-1 z-20`}>
+                  <div className={`opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute top-1/2 -translate-y-1/2 ${isMe ? '-left-24' : '-right-24'} hidden sm:flex items-center gap-1 z-20`}>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1614,6 +1614,20 @@ export const ChatView: React.FC<ChatViewProps> = ({
                     >
                       <Smile size={14} />
                     </button>
+                    {isMe && (!msg.type || msg.type === 'text') && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingMessage(msg);
+                          setInputText(msg.content);
+                          setReplyingTo(null);
+                        }}
+                        className="p-1.5 rounded-full bg-[#1b1435]/90 hover:bg-[#74b9ff]/20 border border-[#2d2254] text-[#a29bfe] hover:text-[#74b9ff] shadow-md transition-all hover:scale-110 cursor-pointer"
+                        title="Modifier ce message"
+                      >
+                        <Edit3 size={14} />
+                      </button>
+                    )}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -2395,6 +2409,33 @@ export const ChatView: React.FC<ChatViewProps> = ({
         </div>
       )}
 
+      {/* Edit Message Banner */}
+      {editingMessage && (
+        <div className="bg-[#1b1435] border-t border-[#2d2254] p-3 z-30">
+          <div className="max-w-4xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-2 border-l-4 border-[#74b9ff] pl-2 text-xs truncate">
+              <Edit3 size={16} className="text-[#74b9ff] shrink-0" />
+              <div className="truncate">
+                <p className="font-bold text-[#74b9ff]">
+                  Modifier le message
+                </p>
+                <p className="text-white/80 truncate">{editingMessage.content}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setEditingMessage(null);
+                setInputText('');
+              }}
+              className="p-1 text-[#a29bfe] hover:text-white rounded-full cursor-pointer"
+              title="Annuler la modification"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Attachments Menu Drawer */}
       {showAttachMenu && (
         <div
@@ -2939,6 +2980,32 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 <CornerUpLeft size={18} className="text-[#00b894]" />
                 <span>Répondre</span>
               </button>
+
+              {(() => {
+                const targetMsg = filteredMessages.find(m => m.id === activeContextMenuMsgId);
+                const isMyMsg = checkIsMyMessage(targetMsg);
+                const canEdit = isMyMsg && (!targetMsg?.type || targetMsg?.type === 'text') && !targetMsg?.isDeletedForEveryone;
+                if (!canEdit) return null;
+                return (
+                  <button 
+                    onClick={() => {
+                      if (targetMsg) {
+                        setEditingMessage(targetMsg);
+                        setInputText(targetMsg.content);
+                        setReplyingTo(null);
+                      }
+                      setActiveContextMenuMsgId(null);
+                    }}
+                    className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-white/5 text-sm text-[#74b9ff] transition-colors text-left cursor-pointer"
+                  >
+                    <Edit3 size={18} />
+                    <div className="flex flex-col">
+                      <span className="font-semibold">Modifier le message</span>
+                      <span className="text-[10px] text-[#74b9ff]/70">Corriger ou ajuster le texte</span>
+                    </div>
+                  </button>
+                );
+              })()}
               
               <button 
                 onClick={() => {

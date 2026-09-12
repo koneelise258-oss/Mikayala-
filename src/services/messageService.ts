@@ -889,6 +889,62 @@ export async function updateMessageReactions(
   }
 }
 
+/**
+ * Modifie le contenu d'un message textuel avec diffusion instantanée et persistance Supabase
+ */
+export async function editMessageContent(
+  messageId: string,
+  newContent: string,
+  coupleId?: string
+): Promise<void> {
+  const targetCoupleId = coupleId || getStoredPairingState().coupleId;
+  const now = new Date().toISOString();
+
+  // 1. Mise à jour optimiste du cache local
+  if (targetCoupleId) {
+    try {
+      const cachedStr = localStorage.getItem(`mikayala_cached_messages_${targetCoupleId}`);
+      if (cachedStr) {
+        const list: Message[] = JSON.parse(cachedStr);
+        const updated = list.map(m =>
+          m.id === messageId
+            ? { ...m, content: newContent, isEdited: true, editedAt: now }
+            : m
+        );
+        localStorage.setItem(`mikayala_cached_messages_${targetCoupleId}`, JSON.stringify(updated));
+      }
+    } catch {}
+  }
+
+  // 2. Diffusion broadcast instantanée vers le partenaire
+  if (targetCoupleId) {
+    broadcastMessageToCouple(targetCoupleId, 'update-message', {
+      id: messageId,
+      content: newContent,
+      isEdited: true,
+      is_edited: true,
+      editedAt: now,
+      edited_at: now
+    });
+  }
+
+  // 3. Persistance dans la base Supabase
+  if (isSupabaseConfigured()) {
+    try {
+      await supabase
+        .from('messages')
+        .update({
+          content: newContent,
+          is_edited: true,
+          edited_at: now
+        })
+        .eq('id', messageId);
+    } catch (err) {
+      console.warn('[messageService] editMessageContent error:', err);
+    }
+  }
+}
+
 // Alias exact demandé dans l'énoncé
 export const s_abonnerAuxMessages = sAbonnerAuxMessages;
 

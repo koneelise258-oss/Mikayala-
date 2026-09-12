@@ -60,6 +60,7 @@ import {
   deleteMessage,
   deleteMessageForMe,
   deleteMessageForEveryone,
+  editMessageContent,
   sendMessage
 } from './services/messageService';
 import { 
@@ -1755,6 +1756,14 @@ export default function App() {
     setMessages(prev =>
       prev.map(m => (m.id === msgId ? { ...m, ...updates } : m))
     );
+    const coupleId = pairingState?.coupleId || getStoredPairingState().coupleId;
+
+    if (updates.content && updates.isEdited) {
+      editMessageContent(msgId, updates.content, coupleId).catch(err => {
+        console.warn('[App] editMessageContent error:', err);
+      });
+    }
+
     if (updates.reactions) {
       try {
         proximityService.broadcastPayload({

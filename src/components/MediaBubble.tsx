@@ -41,6 +41,24 @@ export const MediaBubble: React.FC<MediaBubbleProps> = ({
   const [totalDuration, setTotalDuration] = useState<number>(audioDuration);
   const [hasAudioError, setHasAudioError] = useState<boolean>(false);
   const [isWebAudioMode, setIsWebAudioMode] = useState<boolean>(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
+
+  const togglePlaybackSpeed = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const speeds = [1, 1.5, 2];
+    const currentIndex = speeds.indexOf(playbackSpeed);
+    const nextSpeed = speeds[(currentIndex + 1) % speeds.length];
+    setPlaybackSpeed(nextSpeed);
+
+    if (audioRef.current) {
+      audioRef.current.playbackRate = nextSpeed;
+    }
+    if (webAudioSourceRef.current && 'playbackRate' in webAudioSourceRef.current) {
+      try {
+        (webAudioSourceRef.current as any).playbackRate.value = nextSpeed;
+      } catch (_) {}
+    }
+  };
 
   const stopWebAudio = useCallback(() => {
     if (webAudioSourceRef.current) {
@@ -328,6 +346,13 @@ export const MediaBubble: React.FC<MediaBubbleProps> = ({
                   ? formatDuration(Math.floor(currentTime))
                   : formatDuration(effectiveDuration)}
               </span>
+              <button
+                onClick={togglePlaybackSpeed}
+                className="px-1.5 py-0.5 rounded-md bg-[#281e4b] hover:bg-[#3f316e] text-white/90 font-bold text-[9px] border border-[#3f316e] transition-colors cursor-pointer"
+                title="Changer la vitesse de lecture"
+              >
+                {playbackSpeed}x
+              </button>
             </div>
           </div>
         </>
