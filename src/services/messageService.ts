@@ -14,6 +14,67 @@ export interface SendMessagePayload extends Partial<Message> {
   mediaMimeType?: string;
 }
 
+const DELETED_FOR_EVERYONE_KEY_PREFIX = 'mikayala_deleted_for_everyone_';
+const DELETED_FOR_ME_KEY_PREFIX = 'mikayala_deleted_for_me_';
+const EDITED_MESSAGES_KEY_PREFIX = 'mikayala_edited_messages_';
+
+export function getLocalDeletedForEveryoneIds(coupleId?: string): Set<string> {
+  const cId = coupleId || getStoredPairingState().coupleId || 'default';
+  try {
+    const raw = localStorage.getItem(`${DELETED_FOR_EVERYONE_KEY_PREFIX}${cId}`);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+export function addLocalDeletedForEveryoneId(messageId: string, coupleId?: string): void {
+  const cId = coupleId || getStoredPairingState().coupleId || 'default';
+  try {
+    const set = getLocalDeletedForEveryoneIds(cId);
+    set.add(messageId);
+    localStorage.setItem(`${DELETED_FOR_EVERYONE_KEY_PREFIX}${cId}`, JSON.stringify(Array.from(set)));
+  } catch {}
+}
+
+export function getLocalDeletedForMeIds(coupleId?: string): Set<string> {
+  const cId = coupleId || getStoredPairingState().coupleId || 'default';
+  try {
+    const raw = localStorage.getItem(`${DELETED_FOR_ME_KEY_PREFIX}${cId}`);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+export function addLocalDeletedForMeId(messageId: string, coupleId?: string): void {
+  const cId = coupleId || getStoredPairingState().coupleId || 'default';
+  try {
+    const set = getLocalDeletedForMeIds(cId);
+    set.add(messageId);
+    localStorage.setItem(`${DELETED_FOR_ME_KEY_PREFIX}${cId}`, JSON.stringify(Array.from(set)));
+  } catch {}
+}
+
+export function getLocalEditedMessages(coupleId?: string): Record<string, { content: string; editedAt: string }> {
+  const cId = coupleId || getStoredPairingState().coupleId || 'default';
+  try {
+    const raw = localStorage.getItem(`${EDITED_MESSAGES_KEY_PREFIX}${cId}`);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function addLocalEditedMessage(messageId: string, content: string, editedAt: string, coupleId?: string): void {
+  const cId = coupleId || getStoredPairingState().coupleId || 'default';
+  try {
+    const map = getLocalEditedMessages(cId);
+    map[messageId] = { content, editedAt };
+    localStorage.setItem(`${EDITED_MESSAGES_KEY_PREFIX}${cId}`, JSON.stringify(map));
+  } catch {}
+}
+
 const STORAGE_BUCKET = 'messages-media';
 
 let activeCoupleMessageChannel: any = null;
@@ -120,7 +181,16 @@ export function mapDbRecordToMessage(row: any): Message {
     }
   }
 
-  const isDeletedForEveryone = Boolean(
+  const rowId = String(row.id || '');
+  const deletedForEveryoneSet = getLocalDeletedForEveryoneIds(row.couple_id || row.coupleId);
+  const deletedForMeSet = getLocalDeletedForMeIds(row.couple_id || row.coupleId);
+  const editedMap = getLocalEditedMessages(row.couple_id || row.coupleId);
+
+  const isLocallyDeletedForEveryone = rowId ? deletedForEveryoneSet.has(rowId) : false;
+  const isLocallyDeletedForMe = rowId ? deletedForMeSet.has(rowId) : false;
+  const localEdit = rowId ? editedMap[rowId] : null;
+
+  const isDeletedForEveryone = isLocallyDeletedForEveryone || Boolean(
     row.deleted_for_everyone ?? 
     row.is_deleted_for_everyone ?? 
     row.deletedForEveryone ?? 
@@ -128,6 +198,11 @@ export function mapDbRecordToMessage(row: any): Message {
     false
   );
   const deletedAt = row.deleted_at || row.deletedAt || null;
+
+  const isEdited = Boolean(localEdit || row.is_edited || row.isEdited);
+  const finalContent = isDeletedForEveryone 
+    ? 'Ce message a été supprimé' 
+    : (localEdit ? localEdit.content : (row.content || ''));
 
   return {
     id: row.id,
@@ -138,7 +213,7 @@ export function mapDbRecordToMessage(row: any): Message {
     readAt: rawReadAt || (isRead ? new Date(createdTime).toISOString() : null),
     status: status,
     type: mappedType,
-    content: isDeletedForEveryone ? 'Ce message a été supprimé' : (row.content || ''),
+    content: finalContent,
     storagePath: isDeletedForEveryone ? undefined : (row.storage_path || row.storagePath || null),
     mediaUrl: isDeletedForEveryone ? undefined : (row.media_url || row.mediaUrl),
     fileName: row.file_name || row.fileName,
@@ -161,7 +236,7 @@ export function mapDbRecordToMessage(row: any): Message {
     replyToId: row.reply_to_id || row.replyToId,
     isStarred: row.is_starred ?? row.isStarred ?? false,
     isPinned: row.is_pinned ?? row.isPinned ?? false,
-    isEdited: row.is_edited ?? row.isEdited ?? false,
+    isEdited: isEdited,
     isDeletedForEveryone,
     deletedForEveryone: isDeletedForEveryone,
     deleted_for_everyone: isDeletedForEveryone,
@@ -169,7 +244,7 @@ export function mapDbRecordToMessage(row: any): Message {
     deleted_at: deletedAt,
     deletedForUsers,
     deleted_for_users: deletedForUsers,
-    isDeletedForMe: row.is_deleted_for_me ?? row.isDeletedForMe ?? false,
+    isDeletedForMe: isLocallyDeletedForMe || (row.is_deleted_for_me ?? row.isDeletedForMe ?? false),
     ephemeralDuration: row.ephemeral_duration || row.ephemeralDuration,
     expiresAt: row.expires_at || row.expiresAt,
     transportMode: row.transport_mode || row.transportMode || 'cloud'
@@ -919,7 +994,10 @@ export async function editMessageContent(
   const targetCoupleId = coupleId || getStoredPairingState().coupleId;
   const now = new Date().toISOString();
 
-  // 1. Mise à jour optimiste du cache local
+  // 1. Enregistrement local persistant (survit aux refreshs et aux polling)
+  addLocalEditedMessage(messageId, newContent, now, targetCoupleId);
+
+  // 2. Mise à jour optimiste du cache local
   if (targetCoupleId) {
     try {
       const cachedStr = localStorage.getItem(`mikayala_cached_messages_${targetCoupleId}`);
@@ -927,15 +1005,15 @@ export async function editMessageContent(
         const list: Message[] = JSON.parse(cachedStr);
         const updated = list.map(m =>
           m.id === messageId
-            ? { ...m, content: newContent, isEdited: true, editedAt: now }
+            ? { ...m, content: newContent, isEdited: true, is_edited: true, editedAt: now, edited_at: now }
             : m
         );
-        localStorage.setItem(`mikayala_cached_messages_${targetCoupleId}`, JSON.stringify(updated));
+        saveMessagesToCache(targetCoupleId, updated);
       }
     } catch {}
   }
 
-  // 2. Diffusion broadcast instantanée vers le partenaire
+  // 3. Diffusion broadcast instantanée vers le partenaire
   if (targetCoupleId) {
     broadcastMessageToCouple(targetCoupleId, 'update-message', {
       id: messageId,
@@ -947,16 +1025,27 @@ export async function editMessageContent(
     });
   }
 
-  // 3. Persistance dans la base Supabase
+  // 4. Persistance dans la base Supabase (tentative RPC multi-signatures puis UPDATE)
   if (isSupabaseConfigured()) {
     try {
-      const { error: rpcErr } = await supabase.rpc('edit_message_content', {
-        p_message_id: messageId,
-        p_new_content: newContent
+      // Test signature 1: message_id & new_content
+      let { error: rpcErr1 } = await supabase.rpc('edit_message_content', {
+        message_id: messageId,
+        new_content: newContent
       });
 
-      if (rpcErr) {
-        const { error: updateErr } = await supabase
+      if (rpcErr1) {
+        // Test signature 2: p_message_id & p_new_content
+        const { error: rpcErr2 } = await supabase.rpc('edit_message_content', {
+          p_message_id: messageId,
+          p_new_content: newContent
+        });
+        rpcErr1 = rpcErr2;
+      }
+
+      if (rpcErr1) {
+        // Fallback 1: avec is_edited et edited_at
+        const { error: updateErr1 } = await supabase
           .from('messages')
           .update({
             content: newContent,
@@ -965,7 +1054,8 @@ export async function editMessageContent(
           })
           .eq('id', messageId);
 
-        if (updateErr) {
+        if (updateErr1) {
+          // Fallback 2: uniquement content
           await supabase
             .from('messages')
             .update({
@@ -1419,7 +1509,10 @@ export async function deleteMessageForMe(
     return { success: false, error: "Identifiant utilisateur introuvable" };
   }
 
-  // 1. Sauvegarde locale hors-ligne dans IndexedDB (action en attente de sync)
+  // 1. Enregistrement local persistant (bloque définitivement la réapparition)
+  addLocalDeletedForMeId(messageId, targetCoupleId);
+
+  // 2. Sauvegarde locale hors-ligne dans IndexedDB (action en attente de sync)
   offlineStorageService.saveOfflineDeleteAction({
     action: 'delete_for_me',
     messageId,
@@ -1427,37 +1520,35 @@ export async function deleteMessageForMe(
     coupleId: targetCoupleId || ''
   }).catch(() => {});
 
-  // 2. Mise à jour immédiate du cache local (masquage instantané)
+  // 3. Mise à jour immédiate du cache local (masquage instantané)
   if (targetCoupleId) {
     try {
       const cachedStr = localStorage.getItem(`mikayala_cached_messages_${targetCoupleId}`);
       if (cachedStr) {
         const list: Message[] = JSON.parse(cachedStr);
-        const updated = list.map(m => {
-          if (m.id === messageId) {
-            const arr = m.deletedForUsers || [];
-            return {
-              ...m,
-              isDeletedForMe: true,
-              deletedForUsers: arr.includes(activeUserId) ? arr : [...arr, activeUserId],
-              deleted_for_users: arr.includes(activeUserId) ? arr : [...arr, activeUserId]
-            };
-          }
-          return m;
-        });
+        const updated = list.filter(m => m.id !== messageId);
         saveMessagesToCache(targetCoupleId, updated);
       }
     } catch {}
   }
 
-  // 3. Mise à jour de la base de données Supabase si en ligne
+  // 4. Mise à jour de la base de données Supabase si en ligne
   if (isSupabaseConfigured() && typeof navigator !== 'undefined' && navigator.onLine) {
     try {
-      // Tenter la procédure stockée RPC si disponible
-      const { error: rpcErr } = await supabase.rpc('delete_message_for_me', {
-        p_message_id: messageId,
-        p_user_id: activeUserId
+      // Signature 1: message_id & user_id
+      let { error: rpcErr } = await supabase.rpc('delete_message_for_me', {
+        message_id: messageId,
+        user_id: activeUserId
       });
+
+      if (rpcErr) {
+        // Signature 2: p_message_id & p_user_id
+        const { error: rpcErr2 } = await supabase.rpc('delete_message_for_me', {
+          p_message_id: messageId,
+          p_user_id: activeUserId
+        });
+        rpcErr = rpcErr2;
+      }
 
       if (rpcErr) {
         // Fallback: SELECT puis UPDATE de deleted_for_users
@@ -1495,8 +1586,12 @@ export async function deleteMessageForEveryone(
 ): Promise<{ success: boolean; error?: string }> {
   const targetCoupleId = coupleId || getStoredPairingState().coupleId;
   const activeUserId = currentUserId || getActiveUserId();
+  const now = new Date().toISOString();
 
-  // 1. Sauvegarde locale hors-ligne dans IndexedDB (action en attente de sync)
+  // 1. Enregistrement local persistant (empêche tout retour en arrière lors des fetchs/pollings)
+  addLocalDeletedForEveryoneId(messageId, targetCoupleId);
+
+  // 2. Sauvegarde locale hors-ligne dans IndexedDB (action en attente de sync)
   offlineStorageService.saveOfflineDeleteAction({
     action: 'delete_for_everyone',
     messageId,
@@ -1505,7 +1600,7 @@ export async function deleteMessageForEveryone(
     storagePath
   }).catch(() => {});
 
-  // 2. Mise à jour optimiste du cache local
+  // 3. Mise à jour optimiste du cache local
   if (targetCoupleId) {
     try {
       const cachedStr = localStorage.getItem(`mikayala_cached_messages_${targetCoupleId}`);
@@ -1519,7 +1614,8 @@ export async function deleteMessageForEveryone(
               isDeletedForEveryone: true,
               deletedForEveryone: true,
               deleted_for_everyone: true,
-              deletedAt: new Date().toISOString(),
+              deletedAt: now,
+              deleted_at: now,
               mediaUrl: undefined,
               storagePath: undefined
             };
@@ -1531,7 +1627,7 @@ export async function deleteMessageForEveryone(
     } catch {}
   }
 
-  // 2b. Diffusion broadcast immédiate au partenaire
+  // 4. Diffusion broadcast immédiate au partenaire
   if (targetCoupleId) {
     broadcastMessageToCouple(targetCoupleId, 'update-message', {
       id: messageId,
@@ -1539,13 +1635,14 @@ export async function deleteMessageForEveryone(
       isDeletedForEveryone: true,
       deletedForEveryone: true,
       deleted_for_everyone: true,
-      deletedAt: new Date().toISOString(),
+      deletedAt: now,
+      deleted_at: now,
       mediaUrl: undefined,
       storagePath: undefined
     });
   }
 
-  // 3. En ligne : UPDATE dans Supabase et suppression du fichier média correspondant dans Supabase Storage
+  // 5. En ligne : UPDATE dans Supabase et suppression du fichier média correspondant dans Supabase Storage
   if (isSupabaseConfigured() && typeof navigator !== 'undefined' && navigator.onLine) {
     try {
       if (storagePath) {
@@ -1555,17 +1652,26 @@ export async function deleteMessageForEveryone(
           .catch(err => console.warn('[messageService] Storage remove err:', err));
       }
 
-      const { error: rpcErr } = await supabase.rpc('delete_message_for_everyone', {
-        p_message_id: messageId
+      // Tentative RPC avec les deux formats d'arguments
+      let { error: rpcErr } = await supabase.rpc('delete_message_for_everyone', {
+        message_id: messageId
       });
 
       if (rpcErr) {
+        const { error: rpcErr2 } = await supabase.rpc('delete_message_for_everyone', {
+          p_message_id: messageId
+        });
+        rpcErr = rpcErr2;
+      }
+
+      if (rpcErr) {
+        // Fallback 1: avec toutes les colonnes possibles
         let { error } = await supabase
           .from('messages')
           .update({
             deleted_for_everyone: true,
             is_deleted_for_everyone: true,
-            deleted_at: new Date().toISOString(),
+            deleted_at: now,
             content: 'Ce message a été supprimé',
             media_url: null,
             storage_path: null
@@ -1573,13 +1679,26 @@ export async function deleteMessageForEveryone(
           .eq('id', messageId);
 
         if (error) {
-          await supabase
+          // Fallback 2: colonnes simplifiées
+          const { error: error2 } = await supabase
             .from('messages')
             .update({
               deleted_for_everyone: true,
-              content: 'Ce message a été supprimé'
+              content: 'Ce message a été supprimé',
+              media_url: null,
+              storage_path: null
             })
             .eq('id', messageId);
+
+          if (error2) {
+            // Fallback 3: content uniquement
+            await supabase
+              .from('messages')
+              .update({
+                content: 'Ce message a été supprimé'
+              })
+              .eq('id', messageId);
+          }
         }
       }
     } catch (err: any) {

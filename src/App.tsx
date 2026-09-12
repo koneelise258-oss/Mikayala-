@@ -61,7 +61,10 @@ import {
   deleteMessageForMe,
   deleteMessageForEveryone,
   editMessageContent,
-  sendMessage
+  sendMessage,
+  getLocalDeletedForEveryoneIds,
+  getLocalDeletedForMeIds,
+  getLocalEditedMessages
 } from './services/messageService';
 import { 
   formatLastSeen,
@@ -433,8 +436,9 @@ export default function App() {
           return;
         }
 
-        // Filtrer si supprimé pour moi
-        if (newMsg.isDeletedForMe) {
+        // Filtrer si supprimé pour moi (local ou distant)
+        const isLocallyDeletedForMe = getLocalDeletedForMeIds(coupleId).has(newMsg.id);
+        if (newMsg.isDeletedForMe || isLocallyDeletedForMe) {
           setMessages(prev => prev.filter(m => m.id !== newMsg.id));
           return;
         }
@@ -443,14 +447,34 @@ export default function App() {
           return;
         }
 
+        const isLocallyDeletedForEveryone = getLocalDeletedForEveryoneIds(coupleId).has(newMsg.id);
+        const localEdit = getLocalEditedMessages(coupleId)[newMsg.id];
+
         let isNew = false;
         setMessages(prev => {
           const idx = prev.findIndex(m => m.id === newMsg.id);
           if (idx >= 0) {
+            const prevMsg = prev[idx];
+            const wasDeletedForEveryone = isLocallyDeletedForEveryone || Boolean(prevMsg.isDeletedForEveryone || prevMsg.deletedForEveryone || prevMsg.deleted_for_everyone);
+            const isDelForEveryone = wasDeletedForEveryone || Boolean(newMsg.isDeletedForEveryone || newMsg.deletedForEveryone || newMsg.deleted_for_everyone);
+
+            const isMsgEdited = Boolean(localEdit || prevMsg.isEdited || prevMsg.is_edited || newMsg.isEdited || newMsg.is_edited);
+            const content = isDelForEveryone 
+              ? 'Ce message a été supprimé' 
+              : (localEdit ? localEdit.content : (newMsg.content || prevMsg.content));
+
             const updated = [...prev];
             updated[idx] = {
               ...prev[idx],
               ...newMsg,
+              content,
+              isEdited: isMsgEdited,
+              is_edited: isMsgEdited,
+              isDeletedForEveryone: isDelForEveryone,
+              deletedForEveryone: isDelForEveryone,
+              deleted_for_everyone: isDelForEveryone,
+              mediaUrl: isDelForEveryone ? undefined : (newMsg.mediaUrl ?? prevMsg.mediaUrl),
+              storagePath: isDelForEveryone ? undefined : (newMsg.storagePath ?? prevMsg.storagePath),
               deliveredAt: newMsg.deliveredAt || prev[idx].deliveredAt,
               readAt: newMsg.readAt || prev[idx].readAt,
               status: (newMsg.readAt || newMsg.status === 'read' || prev[idx].readAt || prev[idx].status === 'read')
@@ -462,7 +486,26 @@ export default function App() {
             return updated.sort((a, b) => a.timestamp - b.timestamp);
           }
           isNew = true;
-          return [...prev, newMsg].sort((a, b) => a.timestamp - b.timestamp);
+
+          const isDelForEveryone = isLocallyDeletedForEveryone || Boolean(newMsg.isDeletedForEveryone || newMsg.deletedForEveryone || newMsg.deleted_for_everyone);
+          const isMsgEdited = Boolean(localEdit || newMsg.isEdited || newMsg.is_edited);
+          const content = isDelForEveryone 
+            ? 'Ce message a été supprimé' 
+            : (localEdit ? localEdit.content : (newMsg.content || ''));
+
+          const initialMsg: Message = {
+            ...newMsg,
+            content,
+            isEdited: isMsgEdited,
+            is_edited: isMsgEdited,
+            isDeletedForEveryone: isDelForEveryone,
+            deletedForEveryone: isDelForEveryone,
+            deleted_for_everyone: isDelForEveryone,
+            mediaUrl: isDelForEveryone ? undefined : newMsg.mediaUrl,
+            storagePath: isDelForEveryone ? undefined : newMsg.storagePath
+          };
+
+          return [...prev, initialMsg].sort((a, b) => a.timestamp - b.timestamp);
         });
 
       // Side effects for NEW messages should be OUTSIDE setMessages

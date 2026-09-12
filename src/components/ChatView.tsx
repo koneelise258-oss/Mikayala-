@@ -45,7 +45,10 @@ import {
   uploadMediaToStorage,
   updateMessageReactions,
   editMessageContent,
-  broadcastMessageToCouple
+  broadcastMessageToCouple,
+  getLocalDeletedForEveryoneIds,
+  getLocalDeletedForMeIds,
+  getLocalEditedMessages
 } from '../services/messageService';
 import {
   formatLastSeen,
@@ -414,7 +417,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
           // Si le message a été supprimé pour l'utilisateur actuel
           const activeUid = currentAuthUserId || currentUser.id;
-          if (incomingMessage.isDeletedForMe || (incomingMessage.deletedForUsers && incomingMessage.deletedForUsers.includes(activeUid))) {
+          const isLocallyDelForMe = getLocalDeletedForMeIds(coupleId).has(incomingMessage.id);
+          if (incomingMessage.isDeletedForMe || isLocallyDelForMe || (incomingMessage.deletedForUsers && incomingMessage.deletedForUsers.includes(activeUid))) {
             return prev.filter(m => m.id !== incomingMessage.id);
           }
 
@@ -442,8 +446,11 @@ export const ChatView: React.FC<ChatViewProps> = ({
             });
           }
 
+          const isLocallyDeletedForEveryone = getLocalDeletedForEveryoneIds(coupleId).has(incomingMessage.id);
+          const localEdit = getLocalEditedMessages(coupleId)[incomingMessage.id];
+
           const existingIdx = prev.findIndex(m => m.id === incomingMessage.id);
-          const isDelForEveryone = Boolean(
+          const isDelForEveryone = isLocallyDeletedForEveryone || Boolean(
             incomingMessage.isDeletedForEveryone ||
             incomingMessage.deletedForEveryone ||
             incomingMessage.deleted_for_everyone
@@ -451,7 +458,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
           if (existingIdx >= 0) {
             const existing = prev[existingIdx];
-            if (isDelForEveryone) {
+            const wasDeleted = isDelForEveryone || Boolean(existing.isDeletedForEveryone || existing.deletedForEveryone || existing.deleted_for_everyone);
+            if (wasDeleted) {
               const updated = [...prev];
               updated[existingIdx] = {
                 ...existing,
@@ -459,7 +467,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 isDeletedForEveryone: true,
                 deletedForEveryone: true,
                 deleted_for_everyone: true,
-                deletedAt: incomingMessage.deletedAt || new Date().toISOString(),
+                deletedAt: incomingMessage.deletedAt || existing.deletedAt || new Date().toISOString(),
                 content: 'Ce message a été supprimé',
                 mediaUrl: undefined,
                 storagePath: undefined
@@ -467,13 +475,18 @@ export const ChatView: React.FC<ChatViewProps> = ({
               return updated;
             }
 
+            const finalIsEdited = Boolean(localEdit || incomingMessage.isEdited || incomingMessage.is_edited || existing.isEdited || existing.is_edited);
+            const finalContent = localEdit ? localEdit.content : (incomingMessage.content || existing.content);
+
             const merged: Message = {
               ...existing,
               ...incomingMessage,
               reactions: incomingMessage.reactions !== undefined ? incomingMessage.reactions : existing.reactions,
               storagePath: incomingMessage.storagePath || existing.storagePath,
               mediaUrl: incomingMessage.mediaUrl || existing.mediaUrl,
-              content: incomingMessage.content || existing.content,
+              content: finalContent,
+              isEdited: finalIsEdited,
+              is_edited: finalIsEdited,
               senderId: incomingMessage.senderId || existing.senderId,
               type: incomingMessage.type || existing.type,
               deliveredAt: incomingMessage.deliveredAt || existing.deliveredAt,
@@ -489,7 +502,23 @@ export const ChatView: React.FC<ChatViewProps> = ({
             return updated;
           }
           // Append new incoming message
-          return [...prev, incomingMessage].sort((a, b) => a.timestamp - b.timestamp);
+          const finalIsEdited = Boolean(localEdit || incomingMessage.isEdited || incomingMessage.is_edited);
+          const finalContent = isDelForEveryone 
+            ? 'Ce message a été supprimé' 
+            : (localEdit ? localEdit.content : (incomingMessage.content || ''));
+
+          const initialMsg: Message = {
+            ...incomingMessage,
+            content: finalContent,
+            isEdited: finalIsEdited,
+            is_edited: finalIsEdited,
+            isDeletedForEveryone: isDelForEveryone,
+            deletedForEveryone: isDelForEveryone,
+            deleted_for_everyone: isDelForEveryone,
+            mediaUrl: isDelForEveryone ? undefined : incomingMessage.mediaUrl,
+            storagePath: isDelForEveryone ? undefined : incomingMessage.storagePath
+          };
+          return [...prev, initialMsg].sort((a, b) => a.timestamp - b.timestamp);
         });
 
         // Lorsqu'un nouveau message du partenaire arrive par Realtime :
