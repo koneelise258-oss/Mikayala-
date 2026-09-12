@@ -929,7 +929,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
   };
 
   const handleToggleReaction = (msgId: string, emoji: string) => {
-    const msg = activeMessages.find(m => m.id === msgId);
+    const msg = realMessages.find(m => m.id === msgId) || 
+      activeMessages.find(m => m.id === msgId) || 
+      messages.find(m => m.id === msgId) ||
+      filteredMessages.find(m => m.id === msgId);
     if (!msg) return;
 
     const myId = currentAuthUserId || currentUser.id;
