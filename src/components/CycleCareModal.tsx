@@ -200,6 +200,46 @@ export const CycleCareModal: React.FC<CycleCareModalProps> = ({
 
   if (!isOpen) return null;
 
+  // Quick Start Period Today
+  const handleQuickStartPeriodToday = async () => {
+    triggerHaptic(50);
+    soundEffects.playHeart();
+    const todayStr = new Date().toISOString().split('T')[0];
+    setInputLastStartDate(todayStr);
+    setSelectedFlow('medium');
+
+    const updatedData: CycleData = {
+      ...cycleData,
+      lastPeriodStartDate: todayStr,
+      flow: 'medium',
+      cycleLength: Number(inputCycleLength),
+      periodLength: Number(inputPeriodLength)
+    };
+
+    const saved = await cycleService.saveCycleData(currentUser.id, coupleId, updatedData);
+    onUpdateCycleData(saved);
+    setIsSavedBannerVisible(true);
+    setTimeout(() => setIsSavedBannerVisible(false), 3000);
+  };
+
+  const quickRomanticAttentions = [
+    {
+      title: 'Bouillotte & Infusion douce ☕',
+      desc: 'Apaiser les crampes et réchauffer',
+      text: 'Mon amour, je t’ai préparé une boisson chaude bien réconfortante et une bouillotte toute douce pour apaiser ton ventre ❤️☕'
+    },
+    {
+      title: 'Massage relaxant & Câlin 🧸',
+      desc: 'Détendre le bas du dos et les épaules',
+      text: 'Je suis là pour toi mon cœur. Ce soir, massage tout doux et que des câlins bien au chaud sans aucune pression 🫂✨'
+    },
+    {
+      title: 'Chocolat & Douceur 🍫',
+      desc: 'Réconfort moral et tendresse sucrée',
+      text: 'Petite surprise pour toi mon amour : je t’apporte ta douceur préférée pour te redonner le sourire et toute la tendresse que tu mérites 🥰🍫'
+    }
+  ];
+
   // Save Settings
   const handleSaveSettings = async () => {
     triggerHaptic(40);
@@ -426,6 +466,57 @@ export const CycleCareModal: React.FC<CycleCareModalProps> = ({
                       {prediction.conceptionChance}
                     </span>
                   </div>
+                </div>
+              </div>
+
+              {/* Instant Period Start Button */}
+              <div className="bg-[#ff7675]/15 border border-[#ff7675]/30 rounded-2xl p-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md">
+                <div className="flex items-center gap-3">
+                  <span className="w-9 h-9 rounded-xl bg-[#ff7675]/20 text-xl flex items-center justify-center shrink-0">
+                    🩸
+                  </span>
+                  <div className="text-left">
+                    <h4 className="text-xs font-bold text-white">Début de cycle</h4>
+                    <p className="text-[11px] text-[#a29bfe]">Tes règles ont débuté aujourd'hui ?</p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleQuickStartPeriodToday}
+                  className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-[#ff7675] to-[#d63031] hover:brightness-110 active:scale-95 text-white font-bold text-xs rounded-xl shadow-md transition-transform cursor-pointer"
+                >
+                  Marquer début aujourd'hui
+                </button>
+              </div>
+
+              {/* Romantiques Attentions & Câlins en 1 clic */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-[#a29bfe]">
+                  <span className="flex items-center gap-1.5">
+                    <Sparkles size={14} className="text-[#fdcb6e]" />
+                    Petites attentions rapides pour {partnerUser.name}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {quickRomanticAttentions.map((att, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        triggerHaptic(30);
+                        soundEffects.playHeart();
+                        onShareCareToChat(att.text);
+                        onClose();
+                      }}
+                      className="p-3 bg-[#1e173e] hover:bg-[#251d4d] border border-[#2d2254] hover:border-[#fd79a8]/50 rounded-2xl text-left transition-all active:scale-95 cursor-pointer flex flex-col justify-between"
+                    >
+                      <div>
+                        <span className="font-bold text-xs text-white block mb-1">{att.title}</span>
+                        <span className="text-[10px] text-[#a29bfe] leading-snug block">{att.desc}</span>
+                      </div>
+                      <span className="mt-2 text-[10px] text-[#55efc4] font-semibold flex items-center gap-1">
+                        <Send size={10} /> Proposer dans le chat
+                      </span>
+                    </button>
+                  ))}
                 </div>
               </div>
 

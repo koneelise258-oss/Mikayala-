@@ -28,8 +28,9 @@ export async function broadcastMessageToCouple(
 ): Promise<void> {
   const targetCoupleId = coupleId || getStoredPairingState().coupleId;
   if (!targetCoupleId || !isSupabaseConfigured()) return;
+  const channelName = `couple-msgs-${targetCoupleId}`;
   try {
-    if (activeCoupleMessageChannel && (activeCoupleMessageChannel.state === 'joined' || activeCoupleMessageChannel.state === 'joining')) {
+    if (activeCoupleMessageChannel && (activeCoupleMessageChannel.state === 'joined' || activeCoupleMessageChannel.state === 'joining' || (activeCoupleMessageChannel as any).subState === 'joined')) {
       await activeCoupleMessageChannel.send({
         type: 'broadcast',
         event: eventName,
@@ -38,7 +39,6 @@ export async function broadcastMessageToCouple(
       return;
     }
 
-    const channelName = `couple-msgs-send-${targetCoupleId}`;
     const channel = safeCreateChannel(channelName);
     if (channel) {
       await channel.subscribe(async (status) => {
@@ -48,7 +48,13 @@ export async function broadcastMessageToCouple(
             event: eventName,
             payload
           });
-          supabase.removeChannel(channel);
+          setTimeout(() => {
+            try {
+              if (activeCoupleMessageChannel !== channel) {
+                supabase.removeChannel(channel);
+              }
+            } catch {}
+          }, 1500);
         }
       });
     }
@@ -898,6 +904,14 @@ export async function marquerMessagesCommeLivrés(coupleId: string): Promise<voi
 
   const now = new Date().toISOString();
 
+  // Instant Realtime broadcast to partner device so tick turns to double-grey (✓✓) instantly
+  broadcastMessageToCouple(targetCoupleId, 'update-message', {
+    eventType: 'status_update',
+    coupleId: targetCoupleId,
+    status: 'delivered',
+    deliveredAt: now
+  });
+
   // 1. Essai via fonction RPC SQL avec diverses signatures possibles
   let rpcSuccess = false;
   const rpcParamVariants: Record<string, any>[] = [
@@ -1009,6 +1023,15 @@ export async function marquerMessagesCommeLus(coupleId: string): Promise<void> {
   }
 
   const now = new Date().toISOString();
+
+  // Instant Realtime broadcast to partner device so ticks turn to double-blue (✓✓) instantly
+  broadcastMessageToCouple(targetCoupleId, 'update-message', {
+    eventType: 'status_update',
+    coupleId: targetCoupleId,
+    status: 'read',
+    deliveredAt: now,
+    readAt: now
+  });
 
   // 1. Essai via fonction RPC SQL avec diverses signatures possibles
   let rpcSuccess = false;
@@ -1129,9 +1152,6 @@ export const markMessagesAsRead = marquerMessagesCommeLus;
 export function canMarkConversationAsRead(targetCoupleId?: string): boolean {
   if (typeof document !== 'undefined') {
     if (document.visibilityState !== 'visible') {
-      return false;
-    }
-    if (typeof document.hasFocus === 'function' && !document.hasFocus()) {
       return false;
     }
   }

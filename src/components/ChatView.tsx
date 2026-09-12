@@ -23,6 +23,7 @@ import { DirectCameraModal } from './DirectCameraModal';
 import { PhotoEditor } from './photo/PhotoEditor';
 import { ChatThemeDrawer } from './ChatThemeDrawer';
 import { MediaGalleryPickerModal } from './media/MediaGalleryPickerModal';
+import { EmojiReactionPickerModal } from './chat/EmojiReactionPickerModal';
 import { GalleryMediaItem } from '../types';
 import { getStoredPairingState, initAnonymousAuth, fetchActiveCoupleFromSupabase } from '../services/authService';
 import { 
@@ -167,6 +168,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [isThemeDrawerOpen, setIsThemeDrawerOpen] = useState(false);
   const [activeReactionMsgId, setActiveReactionMsgId] = useState<string | null>(null);
   const [activeContextMenuMsgId, setActiveContextMenuMsgId] = useState<string | null>(null);
+  const [emojiPickerMsgId, setEmojiPickerMsgId] = useState<string | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [searchInChat, setSearchInChat] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState('');
   const [isGalleryPickerOpen, setIsGalleryPickerOpen] = useState(false);
@@ -396,8 +399,32 @@ export const ChatView: React.FC<ChatViewProps> = ({
     // Realtime Postgres Changes Subscription with filter: couple_id=eq.${coupleId}
     const unsubscribe = sAbonnerAuxMessages(
       coupleId,
-      (incomingMessage: Message) => {
+      (incomingMessage: any) => {
         setRealMessages(prev => {
+          if (incomingMessage && incomingMessage.eventType === 'status_update') {
+            const status = incomingMessage.status;
+            const updatedTime = incomingMessage.readAt || incomingMessage.deliveredAt || new Date().toISOString();
+            return prev.map(m => {
+              if (status === 'read') {
+                return {
+                  ...m,
+                  status: 'read',
+                  readAt: m.readAt || updatedTime,
+                  deliveredAt: m.deliveredAt || updatedTime
+                };
+              } else if (status === 'delivered') {
+                if (m.status === 'sent' || m.status === 'pending' || !m.deliveredAt) {
+                  return {
+                    ...m,
+                    status: 'delivered',
+                    deliveredAt: m.deliveredAt || updatedTime
+                  };
+                }
+              }
+              return m;
+            });
+          }
+
           const existingIdx = prev.findIndex(m => m.id === incomingMessage.id);
           if (existingIdx >= 0) {
             // Update existing message (ex: delivered_at / read_at mis à jour par Realtime UPDATE)
@@ -429,11 +456,17 @@ export const ChatView: React.FC<ChatViewProps> = ({
         });
 
         // Lorsqu'un nouveau message du partenaire arrive par Realtime :
-        const activeUid = currentAuthUserId || currentUser.id;
-        if (incomingMessage.senderId && activeUid && incomingMessage.senderId !== activeUid) {
+        const isFromPartner = Boolean(
+          incomingMessage?.senderId &&
+          incomingMessage.senderId !== currentUser.id &&
+          (!currentAuthUserId || incomingMessage.senderId !== currentAuthUserId) &&
+          (partnerUser.id ? incomingMessage.senderId === partnerUser.id : true)
+        );
+
+        if (isFromPartner) {
           // 1. Toujours marquer comme reçu / délivré (✓✓ gris)
           marquerMessagesCommeLivrés(coupleId);
-          // 2. Marquer comme lu (✓✓ turquoise) UNIQUEMENT si la discussion est ouverte, réellement visible et avec focus
+          // 2. Marquer comme lu (✓✓ turquoise) si la discussion est active et visible
           if (canMarkConversationAsRead(coupleId)) {
             marquerMessagesCommeLus(coupleId);
           }
@@ -791,6 +824,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
     setActiveReactionMsgId(null);
     setActiveContextMenuMsgId(null);
+    setEmojiPickerMsgId(null);
   };
 
   const handleDeleteMessageInternal = (msgId: string, forEveryone: boolean) => {
@@ -1404,7 +1438,14 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
         {filteredMessages.map((msg, index) => {
           const authenticatedId = currentAuthUserId || currentUser.id;
-          const isMe = Boolean(authenticatedId && msg.senderId === authenticatedId);
+          const isMe = Boolean(
+            msg.senderId && (
+              msg.senderId === currentUser.id ||
+              (currentAuthUserId && msg.senderId === currentAuthUserId) ||
+              (authenticatedId && msg.senderId === authenticatedId) ||
+              (partnerUser.id ? msg.senderId !== partnerUser.id : false)
+            )
+          );
           const showDateDivider = index === 0 || 
             new Date(msg.timestamp).toDateString() !== new Date(filteredMessages[index - 1].timestamp).toDateString();
           
@@ -1430,18 +1471,30 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 {/* Floating Reaction Bar */}
                 {activeReactionMsgId === msg.id && (
                   <div className="reaction-bar-container absolute -top-11 z-40 bg-[#171b26]/95 backdrop-blur-xl border border-white/10 rounded-full px-2.5 py-1 shadow-2xl flex items-center gap-1.5 animate-in zoom-in-95 duration-100">
-                    {['❤️', '🔥', '😘', '🥺', '✨', '😂'].map(emoji => (
+                    {['❤️', '🔥', '😘', '🥺', '✨', '😂', '😍'].map(emoji => (
                       <button
                         key={emoji}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleToggleReaction(msg.id, emoji);
                         }}
-                        className="text-base hover:scale-130 transition-transform p-1 cursor-pointer"
+                        className="text-base hover:scale-130 active:scale-95 transition-transform p-1 cursor-pointer"
                       >
                         {emoji}
                       </button>
                     ))}
+                    {/* Plus button to open full emoji & system emoji palette */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEmojiPickerMsgId(msg.id);
+                        setActiveReactionMsgId(null);
+                      }}
+                      className="p-1 text-[#fd79a8] hover:scale-125 rounded-full transition-transform cursor-pointer"
+                      title="Tous les émojis système & couple"
+                    >
+                      <Plus size={16} />
+                    </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1460,6 +1513,23 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 <div
                   onClick={() => {
                     setActiveReactionMsgId(activeReactionMsgId === msg.id ? null : msg.id);
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    triggerHaptic(30);
+                    setActiveContextMenuMsgId(msg.id);
+                  }}
+                  onTouchStart={() => {
+                    longPressTimerRef.current = setTimeout(() => {
+                      triggerHaptic(40);
+                      setActiveContextMenuMsgId(msg.id);
+                    }, 450);
+                  }}
+                  onTouchEnd={() => {
+                    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+                  }}
+                  onTouchMove={() => {
+                    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
                   }}
                   className={`message-bubble relative max-w-[85%] sm:max-w-[65%] p-3 shadow-md cursor-pointer transition-all ${getBubbleShapeClass(isMe)}`}
                   style={{
@@ -2162,11 +2232,18 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 {/* Reactions list badge below bubble */}
                 {msg.reactions && Object.keys(msg.reactions).length > 0 && (
                   <div className={`flex items-center -mt-2 z-20 ${isMe ? 'mr-2' : 'ml-2'}`}>
-                    <div className="bg-[#171230] border border-[#2d2254] rounded-full px-2 py-0.5 text-xs shadow-md flex items-center gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEmojiPickerMsgId(msg.id);
+                      }}
+                      className="bg-[#171230] border border-[#2d2254] hover:border-[#fd79a8]/50 rounded-full px-2 py-0.5 text-xs shadow-md flex items-center gap-1 cursor-pointer transition-transform hover:scale-105"
+                      title="Gérer les réactions"
+                    >
                       {Object.entries(msg.reactions).map(([userId, emoji]) => (
                         <span key={userId} className="leading-none">{emoji}</span>
                       ))}
-                    </div>
+                    </button>
                   </div>
                 )}
               </div>
@@ -2720,14 +2797,17 @@ export const ChatView: React.FC<ChatViewProps> = ({
               <button 
                 onClick={() => {
                   if (activeContextMenuMsgId) {
-                    setActiveReactionMsgId(activeContextMenuMsgId);
+                    setEmojiPickerMsgId(activeContextMenuMsgId);
                     setActiveContextMenuMsgId(null);
                   }
                 }}
-                className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-white/5 text-sm text-[#fdcb6e] font-medium transition-colors text-left"
+                className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-white/5 text-sm text-[#fd79a8] font-medium transition-colors text-left cursor-pointer"
               >
-                <Smile size={18} className="text-[#fdcb6e]" />
-                <span>Réagir au message</span>
+                <Smile size={18} className="text-[#fd79a8]" />
+                <div className="flex flex-col">
+                  <span className="font-bold">Réagir au message</span>
+                  <span className="text-[10px] text-[#a29bfe]/70 font-normal">Émojis couple & clavier système</span>
+                </div>
               </button>
 
               <button 
@@ -2736,7 +2816,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                   if (msg) setReplyingTo(msg);
                   setActiveContextMenuMsgId(null);
                 }}
-                className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-white/5 text-sm text-white transition-colors text-left"
+                className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-white/5 text-sm text-white transition-colors text-left cursor-pointer"
               >
                 <CornerUpLeft size={18} className="text-[#00b894]" />
                 <span>Répondre</span>
@@ -2824,6 +2904,22 @@ export const ChatView: React.FC<ChatViewProps> = ({
           maxSelection={10}
         />
       )}
+
+      {/* Emoji Reaction & System Emoji Picker Modal */}
+      <EmojiReactionPickerModal
+        isOpen={Boolean(emojiPickerMsgId)}
+        onClose={() => setEmojiPickerMsgId(null)}
+        onSelectEmoji={(emoji) => {
+          if (emojiPickerMsgId) {
+            handleToggleReaction(emojiPickerMsgId, emoji);
+          }
+        }}
+        currentReaction={
+          emojiPickerMsgId
+            ? activeMessages.find(m => m.id === emojiPickerMsgId)?.reactions?.[currentAuthUserId || currentUser.id]
+            : undefined
+        }
+      />
     </div>
   );
 };

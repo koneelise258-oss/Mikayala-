@@ -299,6 +299,7 @@ export interface VaultItem {
   mediaType?: 'photo' | 'video' | 'secret_note';
   mediaUrl: string;
   thumbnailUrl?: string;
+  storagePath?: string;
   duration?: number; // durée en secondes si vidéo
   description?: string;
   category: 'intime' | 'souvenirs' | 'voyages' | 'capsule';

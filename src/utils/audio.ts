@@ -179,6 +179,38 @@ class SoundManager {
     }
   }
 
+  // Romantic heart sound
+  playHeart() {
+    try {
+      const ctx = this.getContext();
+      const now = ctx.currentTime;
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc1.type = 'sine';
+      osc2.type = 'sine';
+      osc1.frequency.setValueAtTime(523.25, now); // C5
+      osc1.frequency.exponentialRampToValueAtTime(659.25, now + 0.1); // E5
+      osc2.frequency.setValueAtTime(783.99, now); // G5
+      osc2.frequency.exponentialRampToValueAtTime(1046.50, now + 0.12); // C6
+
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc1.start(now);
+      osc2.start(now);
+      osc1.stop(now + 0.36);
+      osc2.stop(now + 0.36);
+    } catch {
+      // fallback
+    }
+  }
+
   // Biometric Unlock Success sound
   playBiometricSuccess() {
     try {

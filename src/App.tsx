@@ -98,6 +98,11 @@ import { EventModal } from './components/EventModal';
 import { LocationModal } from './components/LocationModal';
 import { BiometricAuthModal } from './components/BiometricAuthModal';
 import { PairingModal } from './components/auth/PairingModal';
+import { DeviceApprovalPromptModal } from './components/auth/DeviceApprovalPromptModal';
+import { 
+  DeviceAuthRequest, 
+  listenForIncomingDeviceRequests 
+} from './services/deviceSyncService';
 import { VaultModal } from './components/VaultModal';
 import { WishlistModal } from './components/WishlistModal';
 import { CoupleGameModal } from './components/CoupleGameModal';
@@ -141,6 +146,7 @@ export default function App() {
   const [pairingState, setPairingState] = useState<PairingState>(getStoredPairingState);
   const [isPairingModalOpen, setIsPairingModalOpen] = useState<boolean>(() => !getStoredPairingState().isPaired);
   const [hasNewVersion, setHasNewVersion] = useState<boolean>(false);
+  const [incomingDeviceRequest, setIncomingDeviceRequest] = useState<DeviceAuthRequest | null>(null);
 
   // Global Partner Presence & Activity states
   const [isPartnerOnline, setIsPartnerOnline] = useState<boolean>(false);
@@ -367,6 +373,22 @@ export default function App() {
     };
   }, [currentUser.id]);
 
+  // Écoute en temps réel des demandes d'autorisation de nouveaux appareils (Style WhatsApp)
+  useEffect(() => {
+    const uid = currentUser.id;
+    if (!uid || !isSupabaseConfigured()) return;
+
+    const cleanup = listenForIncomingDeviceRequests(uid, (request) => {
+      triggerHaptic([100, 50, 100, 50, 200]);
+      soundEffects.playReceived();
+      setIncomingDeviceRequest(request);
+    });
+
+    return () => {
+      cleanup();
+    };
+  }, [currentUser.id]);
+
   // Synchronize messages with Supabase public.messages in real time
   useEffect(() => {
     const coupleId = pairingState?.coupleId || getStoredPairingState().coupleId;
@@ -381,7 +403,32 @@ export default function App() {
 
     const unsubscribe = sAbonnerAuxMessages(
       coupleId,
-      (newMsg: Message) => {
+      (newMsg: any) => {
+        if (newMsg && newMsg.eventType === 'status_update') {
+          const status = newMsg.status;
+          const updatedTime = newMsg.readAt || newMsg.deliveredAt || new Date().toISOString();
+          setMessages(prev => prev.map(m => {
+            if (status === 'read') {
+              return {
+                ...m,
+                status: 'read',
+                readAt: m.readAt || updatedTime,
+                deliveredAt: m.deliveredAt || updatedTime
+              };
+            } else if (status === 'delivered') {
+              if (m.status === 'sent' || m.status === 'pending' || !m.deliveredAt) {
+                return {
+                  ...m,
+                  status: 'delivered',
+                  deliveredAt: m.deliveredAt || updatedTime
+                };
+              }
+            }
+            return m;
+          }));
+          return;
+        }
+
         // Filtrer si supprimé pour moi
         if (newMsg.isDeletedForMe) {
           setMessages(prev => prev.filter(m => m.id !== newMsg.id));
@@ -397,7 +444,17 @@ export default function App() {
           const idx = prev.findIndex(m => m.id === newMsg.id);
           if (idx >= 0) {
             const updated = [...prev];
-            updated[idx] = newMsg;
+            updated[idx] = {
+              ...prev[idx],
+              ...newMsg,
+              deliveredAt: newMsg.deliveredAt || prev[idx].deliveredAt,
+              readAt: newMsg.readAt || prev[idx].readAt,
+              status: (newMsg.readAt || newMsg.status === 'read' || prev[idx].readAt || prev[idx].status === 'read')
+                ? 'read'
+                : (newMsg.deliveredAt || newMsg.status === 'delivered' || prev[idx].deliveredAt || prev[idx].status === 'delivered')
+                ? 'delivered'
+                : (newMsg.status || prev[idx].status)
+            };
             return updated.sort((a, b) => a.timestamp - b.timestamp);
           }
           isNew = true;
@@ -407,7 +464,11 @@ export default function App() {
       // Side effects for NEW messages should be OUTSIDE setMessages
       if (isNew) {
         const { isChatOpen: chatOpen, activeBottomTab: bottomTab, isAnyOverlayOpen: overlayOpen, partnerNickname: nick } = appStateRef.current;
-        const isFromOther = newMsg.senderId !== currentUser.id;
+        const isFromOther = Boolean(
+          newMsg.senderId &&
+          newMsg.senderId !== currentUser.id &&
+          (partnerUser.id ? newMsg.senderId === partnerUser.id : true)
+        );
         
         if (isFromOther) {
           const isAppVisible = typeof document !== 'undefined' && document.visibilityState === 'visible';
@@ -2582,6 +2643,21 @@ export default function App() {
           }}
           onClose={() => setIsPairingModalOpen(false)}
           canDismiss={pairingState.isPaired}
+        />
+      )}
+
+      {/* Pop-up d'approbation d'un nouvel appareil (Tablette / PC) style WhatsApp */}
+      {incomingDeviceRequest && (
+        <DeviceApprovalPromptModal
+          request={incomingDeviceRequest}
+          onClose={() => setIncomingDeviceRequest(null)}
+          onApproved={() => {
+            setIncomingDeviceRequest(null);
+            soundEffects.playSent();
+          }}
+          onRejected={() => {
+            setIncomingDeviceRequest(null);
+          }}
         />
       )}
 

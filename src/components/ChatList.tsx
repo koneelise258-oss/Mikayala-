@@ -7,7 +7,6 @@ import {
   Image, 
   Mic, 
   Video, 
-  MessageSquarePlus,
   Heart,
   Lock,
   Sparkles,
@@ -99,7 +98,12 @@ export const ChatList: React.FC<ChatListProps> = ({
       );
     }
 
-    const isMe = Boolean(currentUser.id && lastMessage.senderId === currentUser.id);
+    const isMe = Boolean(
+      lastMessage.senderId && (
+        lastMessage.senderId === currentUser.id ||
+        (partnerUser.id ? lastMessage.senderId !== partnerUser.id : false)
+      )
+    );
 
     const renderTicks = () => {
       if (!isMe) return null;
@@ -373,19 +377,6 @@ export const ChatList: React.FC<ChatListProps> = ({
           <p className="text-sm font-semibold">Aucun message trouvé pour « {searchQuery} »</p>
         </div>
       )}
-
-      {/* Floating Action Button */}
-      <button
-        onClick={() => {
-          triggerHaptic(20);
-          soundEffects.playTap();
-          onOpenNewChat();
-        }}
-        className="absolute bottom-6 right-6 w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#6c5ce7] to-[#a29bfe] hover:brightness-110 active:scale-95 text-white shadow-[0_4px_25px_rgba(108,92,231,0.4)] flex items-center justify-center transition-all hover:scale-105 z-10 cursor-pointer border border-white/20"
-        title="Sanctuaire / Scanner QR"
-      >
-        <MessageSquarePlus size={24} className="stroke-[2.5]" />
-      </button>
     </div>
   );
 };

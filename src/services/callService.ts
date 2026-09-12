@@ -473,11 +473,15 @@ class CallService {
 
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
         video: type === 'video' ? {
-          width: { ideal: 640 },
-          height: { ideal: 480 },
-          frameRate: { ideal: 20 },
+          width: { ideal: 1280, max: 1920, min: 640 },
+          height: { ideal: 720, max: 1080, min: 480 },
+          frameRate: { ideal: 30, max: 60, min: 24 },
           facingMode: 'user'
         } : false
       });
@@ -493,7 +497,22 @@ class CallService {
 
     this.localStream.getTracks().forEach(track => {
       console.log('[CallService startCall] Adding track:', track.kind, track.label);
-      this.peerConnection?.addTrack(track, this.localStream!);
+      const sender = this.peerConnection?.addTrack(track, this.localStream!);
+      if (track.kind === 'video' && sender) {
+        try {
+          const params = sender.getParameters();
+          if (!params.encodings || params.encodings.length === 0) {
+            params.encodings = [{}];
+          }
+          params.encodings[0].maxBitrate = 2500000;
+          if ('degradationPreference' in params) {
+            (params as any).degradationPreference = 'maintain-framerate';
+          }
+          sender.setParameters(params).catch(() => {});
+        } catch (e) {
+          // degradationPreference or bitrate config optional on some browsers
+        }
+      }
     });
 
     this.sendSignal({
@@ -538,19 +557,23 @@ class CallService {
 
     if (!this.localStream) {
       try {
-      this.localStream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: type === 'video' ? {
-          width: { ideal: 640 },
-          height: { ideal: 480 },
-          frameRate: { ideal: 20 },
-          facingMode: 'user'
-        } : false
-      });
-    } catch (error: any) {
-      console.error(`[CallService] getUserMedia error: ${error.name} - ${error.message}`);
-      throw error;
-    }
+        this.localStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+          video: type === 'video' ? {
+            width: { ideal: 1280, max: 1920, min: 640 },
+            height: { ideal: 720, max: 1080, min: 480 },
+            frameRate: { ideal: 30, max: 60, min: 24 },
+            facingMode: 'user'
+          } : false
+        });
+      } catch (error: any) {
+        console.error(`[CallService] getUserMedia error: ${error.name} - ${error.message}`);
+        throw error;
+      }
     }
 
     const audioTracks = this.localStream.getAudioTracks();
@@ -562,7 +585,22 @@ class CallService {
 
     this.localStream.getTracks().forEach(track => {
       console.log('[CallService acceptCall] Adding track:', track.kind, track.label);
-      this.peerConnection?.addTrack(track, this.localStream!);
+      const sender = this.peerConnection?.addTrack(track, this.localStream!);
+      if (track.kind === 'video' && sender) {
+        try {
+          const params = sender.getParameters();
+          if (!params.encodings || params.encodings.length === 0) {
+            params.encodings = [{}];
+          }
+          params.encodings[0].maxBitrate = 2500000;
+          if ('degradationPreference' in params) {
+            (params as any).degradationPreference = 'maintain-framerate';
+          }
+          sender.setParameters(params).catch(() => {});
+        } catch (e) {
+          // degradationPreference optional
+        }
+      }
     });
 
     this.isCallActive = true;

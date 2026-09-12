@@ -44,8 +44,21 @@ interface CoupleGameModalProps {
   coupleId: string;
   onShareChallengeToChat: (text: string) => void;
   onShareGameResultToChat?: (payload: any) => void;
-  initialTab?: 'truth_or_dare' | 'wheel' | 'dice' | 'customizer';
+  initialTab?: 'truth_or_dare' | 'wheel' | 'dice' | 'customizer' | 'quiz';
 }
+
+const QUIZ_QUESTIONS = [
+  { id: 1, text: "Qui de nous deux est tombé amoureux en premier ?", emoji: "💘" },
+  { id: 2, text: "Qui est le plus jaloux ou protecteur dans notre couple ?", emoji: "👀" },
+  { id: 3, text: "Qui fait les meilleurs câlins le matin au réveil ?", emoji: "🧸" },
+  { id: 4, text: "Qui de nous deux s'endort toujours en premier le soir devant un film ?", emoji: "😴" },
+  { id: 5, text: "Qui boude le plus vite quand il y a un désaccord ?", emoji: "🥺" },
+  { id: 6, text: "Qui prépare les meilleures surprises ou cadeaux romantiques ?", emoji: "🎁" },
+  { id: 7, text: "Qui dit « Je t'aime » le plus spontanément dans la journée ?", emoji: "💌" },
+  { id: 8, text: "Qui a le plus d'imagination pour pimenter nos moments intimes ?", emoji: "🔥" },
+  { id: 9, text: "Qui est le plus dépensier pour nos sorties en amoureux ?", emoji: "💳" },
+  { id: 10, text: "Qui est le plus gourmand devant les desserts et sucreries ?", emoji: "🍰" },
+];
 
 export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
   isOpen,
@@ -57,7 +70,7 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
   coupleId,
   initialTab = 'wheel'
 }) => {
-  const [activeTab, setActiveTab] = useState<'truth_or_dare' | 'wheel' | 'dice' | 'customizer'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'truth_or_dare' | 'wheel' | 'dice' | 'customizer' | 'quiz'>(initialTab);
 
   useEffect(() => {
     if (isOpen && initialTab) {
@@ -143,6 +156,10 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
   // --- DICE STATE ---
   const [isRollingDice, setIsRollingDice] = useState<boolean>(false);
   const [diceResult, setDiceResult] = useState<{ action: string; zone: string; duration: string } | null>(null);
+
+  // --- QUIZ TELEPATHIE STATE ---
+  const [currentQuizIndex, setCurrentQuizIndex] = useState<number>(0);
+  const [quizAnswers, setQuizAnswers] = useState<Record<number, 'me' | 'partner' | 'both'>>({});
 
   // --- CUSTOMIZER STATE ---
   const [customizerSubTab, setCustomizerSubTab] = useState<'challenges' | 'dice'>('challenges');
@@ -510,6 +527,14 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
             }`}
           >
             Dés Intimes
+          </button>
+          <button
+            onClick={() => setActiveTab('quiz')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+              activeTab === 'quiz' ? 'bg-gradient-to-r from-[#fd79a8] to-[#fdcb6e] text-[#130f26]' : 'text-[#a29bfe] hover:bg-[#2d2254]'
+            }`}
+          >
+            Quiz Complice 🔮
           </button>
           <button
             onClick={() => setActiveTab('customizer')}
@@ -1126,6 +1151,119 @@ export const CoupleGameModal: React.FC<CoupleGameModalProps> = ({
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* TAB 5: QUIZ TELEPATHIE & COMPLICES */}
+          {activeTab === 'quiz' && (
+            <div className="flex flex-col items-center justify-center min-h-[300px] gap-4 animate-in fade-in duration-200">
+              <div className="text-center w-full max-w-md">
+                <div className="flex items-center justify-between text-xs text-[#a29bfe] font-bold mb-2">
+                  <span className="flex items-center gap-1.5 text-[#fd79a8]">
+                    <Sparkles size={14} />
+                    Quiz Complice & Télépathie
+                  </span>
+                  <span className="bg-[#1b1435] px-2.5 py-1 rounded-full border border-[#2d2254]">
+                    Question {currentQuizIndex + 1} / {QUIZ_QUESTIONS.length}
+                  </span>
+                </div>
+
+                {/* Progress bar */}
+                <div className="w-full bg-[#130f26] h-2 rounded-full overflow-hidden border border-[#2d2254] mb-4">
+                  <div 
+                    className="h-full bg-gradient-to-r from-[#fd79a8] to-[#fdcb6e] transition-all duration-300 rounded-full"
+                    style={{ width: `${((currentQuizIndex + 1) / QUIZ_QUESTIONS.length) * 100}%` }}
+                  />
+                </div>
+
+                {/* Question Card */}
+                <div className="bg-gradient-to-br from-[#20183e] via-[#171230] to-[#120e29] border border-[#ff7675]/40 p-6 rounded-3xl text-center shadow-2xl relative overflow-hidden mb-4">
+                  <span className="text-4xl mb-3 block animate-bounce">
+                    {QUIZ_QUESTIONS[currentQuizIndex].emoji}
+                  </span>
+                  <h3 className="text-lg sm:text-xl font-black text-white leading-snug mb-2">
+                    {QUIZ_QUESTIONS[currentQuizIndex].text}
+                  </h3>
+                  <p className="text-xs text-[#a29bfe]">Répondez sincèrement et voyez si vos pensées sont connectées</p>
+                </div>
+
+                {/* 3 Interactive Choices */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 w-full mb-4">
+                  {[
+                    { key: 'me', label: `Moi (${currentUser.name})`, icon: '🙋' },
+                    { key: 'partner', label: `Toi (${partnerUser.name})`, icon: '🥰' },
+                    { key: 'both', label: 'Les deux à 100%', icon: '💑' }
+                  ].map(opt => {
+                    const isSelected = quizAnswers[currentQuizIndex] === opt.key;
+                    return (
+                      <button
+                        key={opt.key}
+                        onClick={() => {
+                          triggerHaptic(30);
+                          soundEffects.playTap();
+                          setQuizAnswers(prev => ({ ...prev, [currentQuizIndex]: opt.key as any }));
+                          if (currentQuizIndex === QUIZ_QUESTIONS.length - 1) {
+                            confetti({ particleCount: 70, spread: 70, origin: { y: 0.6 } });
+                          }
+                        }}
+                        className={`p-3.5 rounded-2xl border text-xs font-bold transition-all flex sm:flex-col items-center justify-center gap-2 cursor-pointer ${
+                          isSelected
+                            ? 'bg-gradient-to-r sm:bg-gradient-to-b from-[#fd79a8] to-[#e84393] text-white border-transparent shadow-lg scale-105'
+                            : 'bg-[#1b1435] hover:bg-[#251d4d] text-white border-[#2d2254] hover:border-[#fd79a8]/40'
+                        }`}
+                      >
+                        <span className="text-xl">{opt.icon}</span>
+                        <span>{opt.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Question navigation & Share in Chat */}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      disabled={currentQuizIndex === 0}
+                      onClick={() => {
+                        triggerHaptic(15);
+                        setCurrentQuizIndex(prev => Math.max(0, prev - 1));
+                      }}
+                      className="px-3 py-2 rounded-xl bg-[#1b1435] border border-[#2d2254] text-xs text-[#a29bfe] hover:text-white disabled:opacity-30 cursor-pointer"
+                    >
+                      ⬅ Précédente
+                    </button>
+                    <button
+                      disabled={currentQuizIndex === QUIZ_QUESTIONS.length - 1}
+                      onClick={() => {
+                        triggerHaptic(15);
+                        setCurrentQuizIndex(prev => Math.min(QUIZ_QUESTIONS.length - 1, prev + 1));
+                      }}
+                      className="px-3 py-2 rounded-xl bg-[#1b1435] border border-[#2d2254] text-xs text-[#a29bfe] hover:text-white disabled:opacity-30 cursor-pointer"
+                    >
+                      Suivante ➡️
+                    </button>
+                  </div>
+
+                  {quizAnswers[currentQuizIndex] && (
+                    <button
+                      onClick={() => {
+                        triggerHaptic(40);
+                        soundEffects.playHeart();
+                        const q = QUIZ_QUESTIONS[currentQuizIndex];
+                        const aKey = quizAnswers[currentQuizIndex];
+                        const aText = aKey === 'me' ? `Moi (${currentUser.name})` : aKey === 'partner' ? `Toi (${partnerUser.name})` : 'Les deux à 100% !';
+                        const text = `🔮 *Quiz Télépathie Mikayla :*\n❓ *${q.text}*\n👉 Ma réponse : *${aText}*\nEt toi mon amour, qu'est-ce que tu aurais répondu ? 😉💬`;
+                        onShareChallengeToChat(text);
+                        onClose();
+                      }}
+                      className="px-4 py-2 bg-gradient-to-r from-[#00b894] to-[#55efc4] text-[#130f26] font-bold text-xs rounded-xl shadow-md flex items-center gap-1.5 hover:brightness-110 active:scale-95 transition-transform cursor-pointer"
+                    >
+                      <Send size={13} />
+                      <span>Défier {partnerUser.name} dans le chat</span>
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </div>

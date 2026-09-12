@@ -15,7 +15,8 @@ import {
   AlertCircle,
   Smartphone,
   X,
-  Info
+  Info,
+  Radio
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { 
@@ -25,6 +26,10 @@ import {
   saveStoredPairingState,
   restoreCoupleSpaceOnNewDevice
 } from '../../services/authService';
+import { 
+  createDeviceApprovalRequest, 
+  listenForDeviceApproval 
+} from '../../services/deviceSyncService';
 import { CoupleSpace, PairingState } from '../../types';
 import { triggerHaptic } from '../../utils/security';
 import { soundEffects } from '../../utils/audio';
@@ -36,7 +41,7 @@ interface PairingModalProps {
   canDismiss?: boolean;
 }
 
-type Step = 'choice' | 'create' | 'join' | 'restore' | 'pin_setup';
+type Step = 'choice' | 'create' | 'join' | 'restore' | 'waiting_approval' | 'pin_setup';
 
 export const PairingModal: React.FC<PairingModalProps> = ({
   isOpen,
@@ -62,6 +67,8 @@ export const PairingModal: React.FC<PairingModalProps> = ({
   // Restore space state (Changer de téléphone / Tablette)
   const [restoreCode, setRestoreCode] = useState<string>('');
   const [restoreRole, setRestoreRole] = useState<'user1' | 'user2'>('user1');
+  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
+  const [approvalCountdown, setApprovalCountdown] = useState<number>(180);
 
   // PIN creation state
   const [pinStep, setPinStep] = useState<'create' | 'confirm'>('create');
@@ -261,21 +268,45 @@ export const PairingModal: React.FC<PairingModalProps> = ({
     try {
       const res = await restoreCoupleSpaceOnNewDevice(clean, restoreRole);
       if (res.success && res.couple) {
-        triggerHaptic([100, 50, 100]);
-        soundEffects.playSent();
-        launchConfetti();
-
         const actualRole = res.forcedRole || restoreRole;
+        const targetUserId = actualRole === 'user1' ? res.couple.user1Id : res.couple.user2Id;
 
-        setTempPairingState({
+        const nextPairingState: PairingState = {
           isPaired: true,
           coupleId: res.couple.id,
           pairingCode: res.couple.pairingCode,
           role: actualRole,
           partnerId: actualRole === 'user1' ? res.couple.user2Id : res.couple.user1Id,
           pairedAt: res.couple.pairedAt || Date.now()
-        });
+        };
 
+        // Si l'utilisateur a renseigné un code de liaison MIK-LINK, accès direct
+        if (clean.startsWith('MIK-LINK-')) {
+          triggerHaptic([100, 50, 100]);
+          soundEffects.playSent();
+          launchConfetti();
+          setTempPairingState(nextPairingState);
+          setStep('pin_setup');
+          return;
+        }
+
+        // Sinon (WhatsApp style) : Envoyer une demande d'approbation au téléphone principal
+        if (targetUserId) {
+          const reqRes = await createDeviceApprovalRequest(res.couple.id, targetUserId, actualRole);
+          if (reqRes.success && reqRes.requestId) {
+            setPendingRequestId(reqRes.requestId);
+            setTempPairingState(nextPairingState);
+            setApprovalCountdown(180);
+            setStep('waiting_approval');
+            return;
+          }
+        }
+
+        // Fallback standard sécurisé si pas de targetUserId disponible
+        triggerHaptic([100, 50, 100]);
+        soundEffects.playSent();
+        launchConfetti();
+        setTempPairingState(nextPairingState);
         setStep('pin_setup');
       } else {
         triggerHaptic([150, 100]);
@@ -287,6 +318,51 @@ export const PairingModal: React.FC<PairingModalProps> = ({
       setLoading(false);
     }
   };
+
+  // Écoute de l'approbation en temps réel sur la tablette/nouveau téléphone
+  useEffect(() => {
+    if (step !== 'waiting_approval' || !pendingRequestId) return;
+
+    const interval = setInterval(() => {
+      setApprovalCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          setErrorMsg("Délai d'approbation expiré. Veuillez relancer la demande.");
+          setStep('restore');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    const cleanup = listenForDeviceApproval(
+      pendingRequestId,
+      (authPayload) => {
+        clearInterval(interval);
+        triggerHaptic([100, 50, 100]);
+        soundEffects.playSent();
+        launchConfetti();
+
+        if (authPayload.pairingState) {
+          setTempPairingState(authPayload.pairingState);
+          saveStoredPairingState(authPayload.pairingState);
+        }
+
+        setStep('pin_setup');
+      },
+      () => {
+        clearInterval(interval);
+        triggerHaptic([150, 100]);
+        setErrorMsg("Connexion refusée depuis votre téléphone principal.");
+        setStep('restore');
+      }
+    );
+
+    return () => {
+      clearInterval(interval);
+      cleanup();
+    };
+  }, [step, pendingRequestId]);
 
   // PIN Keyboard Input Handlers
   const handlePinDigit = (digit: string) => {
@@ -792,12 +868,71 @@ export const PairingModal: React.FC<PairingModalProps> = ({
                   <RefreshCw size={18} className="animate-spin text-[#130f26]" />
                 ) : (
                   <>
-                    <span>Restaurer & Synchroniser l'appareil</span>
+                    <span>Demander l'accès & Synchroniser</span>
                     <ArrowRight size={18} />
                   </>
                 )}
               </button>
             </form>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* STEP 3C: WAITING APPROVAL SCREEN (Attente d'autorisation WhatsApp) */}
+        {/* ========================================================================= */}
+        {step === 'waiting_approval' && (
+          <div className="flex flex-col items-center text-center space-y-4 py-4">
+            {/* Animated Radio Signal Icon */}
+            <div className="relative">
+              <div className="w-20 h-20 rounded-full bg-[#6c5ce7]/20 border-2 border-[#6c5ce7] flex items-center justify-center text-[#a29bfe]">
+                <Smartphone size={36} />
+              </div>
+              <div className="absolute -top-1 -right-1 w-7 h-7 rounded-full bg-[#fdcb6e] flex items-center justify-center text-[#130f26] font-black animate-pulse shadow-md">
+                <Radio size={16} />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#fdcb6e] bg-[#fdcb6e]/10 px-3 py-1 rounded-full border border-[#fdcb6e]/30">
+                Validation WhatsApp
+              </span>
+              <h3 className="text-xl font-black text-white">
+                Vérifiez votre téléphone 📱
+              </h3>
+              <p className="text-xs text-[#a29bfe] max-w-xs mx-auto leading-relaxed">
+                Une notification de sécurité a été envoyée sur votre téléphone principal. Ouvrez l'application et confirmez avec votre code PIN pour autoriser cet appareil.
+              </p>
+            </div>
+
+            {/* Countdown timer & Realtime pulse */}
+            <div className="p-4 bg-[#130f26] border border-[#2d2254] rounded-2xl w-full max-w-xs space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-[#a29bfe] font-medium flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-[#00b894] animate-ping" />
+                  En attente du signal...
+                </span>
+                <span className="font-mono font-black text-[#ffeaa7]">
+                  {Math.floor(approvalCountdown / 60)}:{(approvalCountdown % 60).toString().padStart(2, '0')}
+                </span>
+              </div>
+              <div className="w-full bg-[#2d2254] h-1.5 rounded-full overflow-hidden">
+                <div 
+                  className="bg-gradient-to-r from-[#ffeaa7] to-[#00b894] h-full transition-all duration-1000"
+                  style={{ width: `${(approvalCountdown / 180) * 100}%` }}
+                />
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setStep('restore');
+                setPendingRequestId(null);
+              }}
+              className="text-xs text-[#a29bfe] hover:text-white font-semibold py-2 px-4 rounded-xl hover:bg-[#130f26] transition-colors cursor-pointer"
+            >
+              Annuler la demande
+            </button>
           </div>
         )}
 

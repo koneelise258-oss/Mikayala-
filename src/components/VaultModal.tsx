@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Lock, 
   Image as ImageIcon, 
@@ -33,6 +33,7 @@ import { soundEffects } from '../utils/audio';
 import { formatVideoDuration, extractVideoMetadata, compressImageFile } from '../utils/mediaProcessor';
 import { MediaGalleryPickerModal } from './media/MediaGalleryPickerModal';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { obtenirSignedUrl } from '../services/messageService';
 
 interface VaultModalProps {
   isOpen: boolean;
@@ -50,6 +51,122 @@ interface VaultModalProps {
   onShareToChat?: (text: string, mediaUrl?: string) => void;
   onLock?: () => void;
 }
+
+const VaultMediaThumbnail: React.FC<{ item: VaultItem }> = ({ item }) => {
+  const [src, setSrc] = useState<string>(item.thumbnailUrl || item.mediaUrl);
+  const isVideo = item.type === 'video' || item.mediaType === 'video' || /\.(mp4|webm|mov|m4v|mkv|avi|flv|wmv|3gp|ts)$/i.test(item.mediaUrl || '');
+
+  useEffect(() => {
+    let active = true;
+    if (item.storagePath) {
+      obtenirSignedUrl(item.storagePath).then(signedUrl => {
+        if (active && signedUrl) {
+          setSrc(signedUrl);
+        }
+      }).catch(() => {});
+    } else {
+      setSrc(item.thumbnailUrl || item.mediaUrl);
+    }
+    return () => { active = false; };
+  }, [item.storagePath, item.thumbnailUrl, item.mediaUrl]);
+
+  const handleMediaError = () => {
+    if (item.storagePath) {
+      obtenirSignedUrl(item.storagePath).then(signedUrl => {
+        if (signedUrl && signedUrl !== src) {
+          setSrc(signedUrl);
+        }
+      }).catch(() => {});
+    }
+  };
+
+  if (isVideo) {
+    if (item.thumbnailUrl) {
+      return (
+        <img
+          src={src}
+          alt={item.title}
+          className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+          onError={handleMediaError}
+        />
+      );
+    }
+    return (
+      <video
+        src={src}
+        muted
+        playsInline
+        preload="metadata"
+        className="absolute inset-0 w-full h-full object-cover pointer-events-none opacity-85"
+      />
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={item.title}
+      className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+      onError={(e) => {
+        handleMediaError();
+        (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1518199266791-5375a83190b7?w=500&auto=format&fit=crop&q=80';
+      }}
+    />
+  );
+};
+
+const VaultViewerMedia: React.FC<{ item: VaultItem }> = ({ item }) => {
+  const [src, setSrc] = useState<string>(item.mediaUrl);
+  const isVideo = item.type === 'video' || item.mediaType === 'video' || /\.(mp4|webm|mov|m4v|mkv|avi|flv|wmv|3gp|ts|ogv)$/i.test(item.mediaUrl || '') || (item.mediaUrl || '').startsWith('data:video');
+
+  useEffect(() => {
+    let active = true;
+    if (item.storagePath) {
+      obtenirSignedUrl(item.storagePath).then(signedUrl => {
+        if (active && signedUrl) {
+          setSrc(signedUrl);
+        }
+      }).catch(() => {});
+    } else {
+      setSrc(item.mediaUrl);
+    }
+    return () => { active = false; };
+  }, [item.storagePath, item.mediaUrl]);
+
+  if (isVideo) {
+    return (
+      <video
+        src={src}
+        controls
+        autoPlay
+        playsInline
+        className="max-h-[72vh] max-w-full rounded-2xl shadow-2xl border border-[#6c5ce7]/30 bg-black"
+        onContextMenu={e => e.preventDefault()}
+      >
+        <source src={src} type="video/mp4" />
+        Votre navigateur ne supporte pas ce format vidéo.
+      </video>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={item.title}
+      className="max-h-[72vh] max-w-full rounded-2xl object-contain shadow-2xl border border-[#6c5ce7]/30 select-none bg-black/30"
+      onContextMenu={e => e.preventDefault()}
+      onError={(e) => {
+        if (item.storagePath) {
+          obtenirSignedUrl(item.storagePath).then(s => {
+            if (s && s !== src) setSrc(s);
+          }).catch(() => {});
+        } else {
+          (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1518199266791-5375a83190b7?w=800&auto=format&fit=crop&q=80';
+        }
+      }}
+    />
+  );
+};
 
 export const VaultModal: React.FC<VaultModalProps> = ({
   isOpen,
@@ -99,31 +216,48 @@ export const VaultModal: React.FC<VaultModalProps> = ({
     );
   }, [messages]);
 
+  // Helper to identify if an item was added by the current user vs partner
+  const isItemAddedByMe = (item: VaultItem) => {
+    if (!item.addedBy) return true;
+    if (item.addedBy === currentUser.id) return true;
+    if (partnerUser?.id && item.addedBy === partnerUser.id) return false;
+    if (item.addedByName && currentUser.name && item.addedByName.trim().toLowerCase() === currentUser.name.trim().toLowerCase()) return true;
+    if (item.addedByName && partnerUser?.name && item.addedByName.trim().toLowerCase() === partnerUser.name.trim().toLowerCase()) return false;
+    return item.addedBy === currentUser.id;
+  };
+
   // Helper to ensure media is permanent across sessions & devices
-  const persistMedia = async (file: File): Promise<{ mediaUrl: string; thumbnailUrl?: string }> => {
+  const persistMedia = async (file: File): Promise<{ mediaUrl: string; thumbnailUrl?: string; storagePath?: string }> => {
     const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv|avi|flv|wmv|3gp|ts)$/i.test(file.name);
     const fileExt = file.name.split('.').pop() || (isVideo ? 'mp4' : 'jpg');
     const itemId = `vault_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-    // If Supabase Storage is configured and online
+    // 1. If Supabase Storage is configured and online
     if (isSupabaseConfigured() && coupleId) {
       try {
         const storagePath = `${coupleId}/vault/${itemId}.${fileExt}`;
+        const contentType = file.type || (isVideo ? 'video/mp4' : 'image/jpeg');
         const { data, error } = await supabase.storage
           .from('messages-media')
           .upload(storagePath, file, {
             cacheControl: '3600',
             upsert: true,
-            contentType: file.type || (isVideo ? 'video/mp4' : 'image/jpeg')
+            contentType
           });
 
         if (!error && data?.path) {
+          const signedUrl = await obtenirSignedUrl(data.path);
           const { data: pubData } = supabase.storage
             .from('messages-media')
             .getPublicUrl(data.path);
-          if (pubData?.publicUrl) {
-            return { mediaUrl: pubData.publicUrl };
-          }
+          const effectiveUrl = signedUrl || pubData?.publicUrl || '';
+          return {
+            mediaUrl: effectiveUrl,
+            thumbnailUrl: effectiveUrl,
+            storagePath: data.path
+          };
+        } else if (error) {
+          console.warn('[VaultModal] Supabase Storage upload error:', error);
         }
       } catch (uploadErr) {
         console.warn('[VaultModal] Supabase upload fallback to local data URL:', uploadErr);
@@ -145,7 +279,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
       const reader = new FileReader();
       reader.onload = () => {
         if (typeof reader.result === 'string') {
-          resolve({ mediaUrl: reader.result });
+          resolve({ mediaUrl: reader.result, thumbnailUrl: reader.result });
         } else {
           resolve({ mediaUrl: URL.createObjectURL(file) });
         }
@@ -165,10 +299,11 @@ export const VaultModal: React.FC<VaultModalProps> = ({
       return false;
     }
     // 2. Author Filter
-    if (authorFilter === 'me' && item.addedBy !== currentUser.id) {
+    const addedByMe = isItemAddedByMe(item);
+    if (authorFilter === 'me' && !addedByMe) {
       return false;
     }
-    if (authorFilter === 'partner' && item.addedBy === currentUser.id) {
+    if (authorFilter === 'partner' && addedByMe) {
       return false;
     }
     // 3. Search Query
@@ -233,29 +368,18 @@ export const VaultModal: React.FC<VaultModalProps> = ({
         const isVideo = item.type === 'video';
         let persistentUrl = item.previewUrl;
         let persistentThumbnail = item.thumbnailUrl;
+        let persistentStoragePath: string | undefined = undefined;
 
         if (item.file) {
-          if (isVideo) {
-            if (!persistentThumbnail) {
-              try {
-                const meta = await extractVideoMetadata(item.file);
-                persistentThumbnail = meta.thumbnailUrl;
-              } catch (_) {}
-            }
-            const res = await persistMedia(item.file);
+          const res = await persistMedia(item.file);
+          if (res.mediaUrl && !res.mediaUrl.startsWith('blob:')) {
             persistentUrl = res.mediaUrl;
-          } else {
+            persistentThumbnail = res.thumbnailUrl || persistentThumbnail;
+            persistentStoragePath = res.storagePath;
+          } else if (!isVideo) {
             const compressed = await compressImageFile(item.file);
             persistentUrl = compressed || item.previewUrl;
             persistentThumbnail = compressed || item.thumbnailUrl;
-            if (isSupabaseConfigured() && coupleId) {
-              try {
-                const res = await persistMedia(item.file);
-                if (res.mediaUrl && !res.mediaUrl.startsWith('blob:')) {
-                  persistentUrl = res.mediaUrl;
-                }
-              } catch (_) {}
-            }
           }
         }
 
@@ -265,6 +389,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
           mediaType: isVideo ? 'video' : 'photo',
           mediaUrl: persistentUrl,
           thumbnailUrl: persistentThumbnail || undefined,
+          storagePath: persistentStoragePath,
           duration: item.duration,
           category: newCategory,
           addedBy: currentUser.id,
@@ -295,6 +420,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
     try {
       let finalMediaUrl = newMediaUrl;
       let finalThumbnail = newThumbnailUrl;
+      let finalStoragePath: string | undefined = undefined;
 
       if (selectedFileForVault) {
         const isVideo = selectedFileForVault.type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv|avi|flv|wmv|3gp|ts)$/i.test(selectedFileForVault.name);
@@ -307,17 +433,18 @@ export const VaultModal: React.FC<VaultModalProps> = ({
           }
           const res = await persistMedia(selectedFileForVault);
           finalMediaUrl = res.mediaUrl;
+          finalStoragePath = res.storagePath;
+          if (res.thumbnailUrl) finalThumbnail = res.thumbnailUrl;
         } else {
-          const compressed = await compressImageFile(selectedFileForVault);
-          finalMediaUrl = compressed || finalMediaUrl;
-          finalThumbnail = compressed || finalThumbnail;
-          if (isSupabaseConfigured() && coupleId) {
-            try {
-              const res = await persistMedia(selectedFileForVault);
-              if (res.mediaUrl && !res.mediaUrl.startsWith('blob:')) {
-                finalMediaUrl = res.mediaUrl;
-              }
-            } catch (_) {}
+          const res = await persistMedia(selectedFileForVault);
+          if (res.mediaUrl && !res.mediaUrl.startsWith('blob:')) {
+            finalMediaUrl = res.mediaUrl;
+            finalStoragePath = res.storagePath;
+            if (res.thumbnailUrl) finalThumbnail = res.thumbnailUrl;
+          } else {
+            const compressed = await compressImageFile(selectedFileForVault);
+            finalMediaUrl = compressed || finalMediaUrl;
+            finalThumbnail = compressed || finalThumbnail;
           }
         }
       }
@@ -328,6 +455,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
         mediaType: newMediaType,
         mediaUrl: finalMediaUrl,
         thumbnailUrl: finalThumbnail || undefined,
+        storagePath: finalStoragePath,
         duration: newDuration || undefined,
         category: newCategory,
         addedBy: currentUser.id,
@@ -363,7 +491,10 @@ export const VaultModal: React.FC<VaultModalProps> = ({
     handleAddItemCallback?.({
       title: msg.fileName || `Photo du chat (${new Date(msg.timestamp).toLocaleDateString('fr-FR')})`,
       type: msg.type === 'video' ? 'video' : 'photo',
+      mediaType: msg.type === 'video' ? 'video' : 'photo',
       mediaUrl: mediaSrc,
+      storagePath: msg.storagePath || undefined,
+      thumbnailUrl: (msg as any).thumbnailUrl || mediaSrc,
       category: newCategory,
       addedBy: currentUser.id,
       addedByName: currentUser.name,
@@ -428,7 +559,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                     Coffre-Fort Partagé
                   </span>
                   <span className="text-xs text-[#a29bfe] bg-[#1b1435] px-2.5 py-1 rounded-full border border-[#2d2254]">
-                    {activeViewingItem.addedBy === currentUser.id 
+                    {isItemAddedByMe(activeViewingItem)
                       ? 'Ajouté par Vous' 
                       : `Ajouté par ${activeViewingItem.addedByName || partnerName}`}
                   </span>
@@ -458,35 +589,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
 
           {/* Viewer Media */}
           <div className="flex-1 flex flex-col items-center justify-center relative p-2 my-auto">
-            {(() => {
-              const isVideo = activeViewingItem.type === 'video' || activeViewingItem.mediaType === 'video' || /\.(mp4|webm|mov|m4v|mkv|avi|flv|wmv|3gp|ts|ogv)$/i.test(activeViewingItem.mediaUrl || '') || (activeViewingItem.mediaUrl || '').startsWith('data:video');
-              if (isVideo) {
-                return (
-                  <video
-                    src={activeViewingItem.mediaUrl}
-                    controls
-                    autoPlay
-                    playsInline
-                    className="max-h-[72vh] max-w-full rounded-2xl shadow-2xl border border-[#6c5ce7]/30 bg-black"
-                    onContextMenu={e => e.preventDefault()}
-                  >
-                    <source src={activeViewingItem.mediaUrl} type="video/mp4" />
-                    Votre navigateur ne supporte pas ce format vidéo.
-                  </video>
-                );
-              }
-              return (
-                <img
-                  src={activeViewingItem.mediaUrl}
-                  alt={activeViewingItem.title}
-                  className="max-h-[72vh] max-w-full rounded-2xl object-contain shadow-2xl border border-[#6c5ce7]/30 select-none bg-black/30"
-                  onContextMenu={e => e.preventDefault()}
-                  onError={(e) => {
-                    (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1518199266791-5375a83190b7?w=800&auto=format&fit=crop&q=80';
-                  }}
-                />
-              );
-            })()}
+            <VaultViewerMedia item={activeViewingItem} />
             {activeViewingItem.caption && (
               <p className="mt-3 text-center text-xs sm:text-sm font-medium text-[#f1f2f6] max-w-lg bg-[#1b1435]/90 px-4 py-2.5 rounded-xl border border-[#372863] shadow-lg">
                 {activeViewingItem.caption}
@@ -646,7 +749,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                   : 'text-[#a29bfe] hover:text-white'
               }`}
             >
-              Par Vous ({vaultItems.filter(i => i.addedBy === currentUser.id).length})
+              Par Vous ({vaultItems.filter(i => isItemAddedByMe(i)).length})
             </button>
             <button
               onClick={() => setAuthorFilter('partner')}
@@ -656,7 +759,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                   : 'text-[#a29bfe] hover:text-white'
               }`}
             >
-              Par {partnerName} ({vaultItems.filter(i => i.addedBy !== currentUser.id).length})
+              Par {partnerName} ({vaultItems.filter(i => !isItemAddedByMe(i)).length})
             </button>
           </div>
 
@@ -861,7 +964,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {filteredItems.map(item => {
                 const isBurned = item.isViewOnce && item.isViewed;
-                const isMe = item.addedBy === currentUser.id;
+                const isMe = isItemAddedByMe(item);
                 const adderDisplayName = isMe ? 'Vous' : (item.addedByName || partnerName);
 
                 return (
@@ -881,42 +984,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                       </div>
                     ) : (
                       <>
-                        {(() => {
-                          const isVideo = item.type === 'video' || item.mediaType === 'video' || /\.(mp4|webm|mov|m4v|mkv|avi|flv|wmv|3gp|ts)$/i.test(item.mediaUrl || '') || (item.mediaUrl || '').startsWith('data:video');
-                          if (isVideo) {
-                            if (item.thumbnailUrl) {
-                              return (
-                                <img
-                                  src={item.thumbnailUrl}
-                                  alt={item.title}
-                                  className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                                  onError={(e) => {
-                                    (e.target as HTMLElement).style.display = 'none';
-                                  }}
-                                />
-                              );
-                            }
-                            return (
-                              <video
-                                src={item.mediaUrl}
-                                muted
-                                playsInline
-                                preload="metadata"
-                                className="absolute inset-0 w-full h-full object-cover pointer-events-none opacity-85"
-                              />
-                            );
-                          }
-                          return (
-                            <img
-                              src={item.mediaUrl}
-                              alt={item.title}
-                              className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                              onError={(e) => {
-                                (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1518199266791-5375a83190b7?w=500&auto=format&fit=crop&q=80';
-                              }}
-                            />
-                          );
-                        })()}
+                        <VaultMediaThumbnail item={item} />
                         <div className="absolute inset-0 bg-gradient-to-t from-[#130f26] via-[#130f26]/30 to-transparent pointer-events-none" />
 
                         {/* Video Play Overlay */}
