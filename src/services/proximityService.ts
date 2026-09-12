@@ -5,11 +5,12 @@ import { localP2PService } from './localP2PService';
 import { offlineStorageService } from './offlineStorageService';
 
 export interface ProximityMessagePayload {
-  type: 'chat_message' | 'chat_reaction' | 'typing' | 'signaling' | 'call_event' | 'game_event' | 'delete_message';
+  type: 'chat_message' | 'chat_reaction' | 'reaction_update' | 'typing' | 'signaling' | 'call_event' | 'game_event' | 'delete_message';
   senderId: string;
   coupleId: string;
   message?: Message;
   reaction?: { messageId: string; emoji: string; userId: string };
+  reactionData?: { messageId: string; reactions: Record<string, string> };
   isTyping?: boolean;
   signaling?: SignalingPayload;
   gameData?: any;

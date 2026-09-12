@@ -105,7 +105,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [supabaseKey, setSupabaseKey] = useState(settings.supabaseConfig?.anonKey || '');
 
   // PIN code change
-  const [pinCode, setPinCode] = useState(settings.securityPin || '1234');
+  const [pinCode, setPinCode] = useState(settings.securityPin || '2026');
 
   // Notifications state
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(() => 

@@ -1535,6 +1535,11 @@ export default function App() {
             )
           );
         }
+      } else if (payload.type === 'reaction_update' && payload.reactionData) {
+        const { messageId, reactions } = payload.reactionData;
+        setMessages(prev =>
+          prev.map(m => (m.id === messageId ? { ...m, reactions } : m))
+        );
       } else if (payload.type === 'signaling' && payload.signaling) {
         callService.handleDirectSignal(payload.signaling);
       }
@@ -1750,6 +1755,16 @@ export default function App() {
     setMessages(prev =>
       prev.map(m => (m.id === msgId ? { ...m, ...updates } : m))
     );
+    if (updates.reactions) {
+      try {
+        proximityService.broadcastPayload({
+          type: 'reaction_update',
+          reactionData: { messageId: msgId, reactions: updates.reactions }
+        });
+      } catch (err) {
+        console.warn('[App] reaction_update broadcast err:', err);
+      }
+    }
   };
 
   const handleDeleteMessage = async (msgId: string, forEveryone: boolean) => {

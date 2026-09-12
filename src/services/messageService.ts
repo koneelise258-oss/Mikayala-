@@ -881,7 +881,7 @@ export async function updateMessageReactions(
     try {
       await supabase
         .from('messages')
-        .update({ reactions: JSON.stringify(reactions) })
+        .update({ reactions: reactions || {} })
         .eq('id', messageId);
     } catch (err) {
       console.warn('[messageService] updateMessageReactions error:', err);

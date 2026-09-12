@@ -169,6 +169,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [activeReactionMsgId, setActiveReactionMsgId] = useState<string | null>(null);
   const [activeContextMenuMsgId, setActiveContextMenuMsgId] = useState<string | null>(null);
   const [emojiPickerMsgId, setEmojiPickerMsgId] = useState<string | null>(null);
+  const [deleteConfirmMsgId, setDeleteConfirmMsgId] = useState<string | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [searchInChat, setSearchInChat] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState('');
@@ -401,7 +402,15 @@ export const ChatView: React.FC<ChatViewProps> = ({
       coupleId,
       (incomingMessage: any) => {
         setRealMessages(prev => {
-          if (incomingMessage && incomingMessage.eventType === 'status_update') {
+          if (!incomingMessage || !incomingMessage.id) return prev;
+
+          // Si le message a été supprimé pour l'utilisateur actuel
+          const activeUid = currentAuthUserId || currentUser.id;
+          if (incomingMessage.isDeletedForMe || (incomingMessage.deletedForUsers && incomingMessage.deletedForUsers.includes(activeUid))) {
+            return prev.filter(m => m.id !== incomingMessage.id);
+          }
+
+          if (incomingMessage.eventType === 'status_update') {
             const status = incomingMessage.status;
             const updatedTime = incomingMessage.readAt || incomingMessage.deliveredAt || new Date().toISOString();
             return prev.map(m => {
@@ -426,19 +435,39 @@ export const ChatView: React.FC<ChatViewProps> = ({
           }
 
           const existingIdx = prev.findIndex(m => m.id === incomingMessage.id);
+          const isDelForEveryone = Boolean(
+            incomingMessage.isDeletedForEveryone ||
+            incomingMessage.deletedForEveryone ||
+            incomingMessage.deleted_for_everyone
+          );
+
           if (existingIdx >= 0) {
-            // Update existing message (ex: delivered_at / read_at mis à jour par Realtime UPDATE)
             const existing = prev[existingIdx];
+            if (isDelForEveryone) {
+              const updated = [...prev];
+              updated[existingIdx] = {
+                ...existing,
+                ...incomingMessage,
+                isDeletedForEveryone: true,
+                deletedForEveryone: true,
+                deleted_for_everyone: true,
+                deletedAt: incomingMessage.deletedAt || new Date().toISOString(),
+                content: 'Ce message a été supprimé',
+                mediaUrl: undefined,
+                storagePath: undefined
+              };
+              return updated;
+            }
+
             const merged: Message = {
               ...existing,
               ...incomingMessage,
-              // Ne jamais perdre les métadonnées média et contenu
+              reactions: incomingMessage.reactions !== undefined ? incomingMessage.reactions : existing.reactions,
               storagePath: incomingMessage.storagePath || existing.storagePath,
               mediaUrl: incomingMessage.mediaUrl || existing.mediaUrl,
               content: incomingMessage.content || existing.content,
               senderId: incomingMessage.senderId || existing.senderId,
               type: incomingMessage.type || existing.type,
-              // Fusionner deliveredAt et readAt sans écraser une valeur valide par null
               deliveredAt: incomingMessage.deliveredAt || existing.deliveredAt,
               readAt: incomingMessage.readAt || existing.readAt,
               status: (incomingMessage.readAt || incomingMessage.status === 'read' || existing.readAt || existing.status === 'read')
@@ -473,7 +502,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
         }
       },
       (deletedId) => {
-        // Handled via App.tsx global state
+        if (deletedId) {
+          setRealMessages(prev => prev.filter(m => m.id !== deletedId));
+        }
       },
       (realtimeError: Error) => {
         // Only show error if it's not a transient connection error being retried
@@ -490,6 +521,40 @@ export const ChatView: React.FC<ChatViewProps> = ({
       unsubscribe();
     };
   }, [pairingState?.coupleId, currentAuthUserId, isChatActive, isPhotoPreviewOpen, isDirectCameraOpen]);
+
+  // Synchroniser les mises à jour de parentMessages (ex: suppressions optimistes, réactions) dans realMessages
+  useEffect(() => {
+    if (!parentMessages || parentMessages.length === 0) return;
+    setRealMessages(prev => {
+      if (prev.length === 0) return prev;
+      let hasChange = false;
+      const updated = prev.map(m => {
+        const parentMatch = parentMessages.find(pm => pm.id === m.id);
+        if (!parentMatch) return m;
+
+        const isParentDel = Boolean(parentMatch.isDeletedForEveryone || parentMatch.deletedForEveryone || parentMatch.deleted_for_everyone);
+        const isCurrentDel = Boolean(m.isDeletedForEveryone || m.deletedForEveryone || m.deleted_for_everyone);
+        const reactionsDiffer = JSON.stringify(parentMatch.reactions || {}) !== JSON.stringify(m.reactions || {});
+
+        if (isParentDel !== isCurrentDel || reactionsDiffer) {
+          hasChange = true;
+          return {
+            ...m,
+            ...parentMatch,
+            isDeletedForEveryone: isParentDel,
+            deletedForEveryone: isParentDel,
+            deleted_for_everyone: isParentDel,
+            content: isParentDel ? 'Ce message a été supprimé' : (parentMatch.content || m.content),
+            mediaUrl: isParentDel ? undefined : (parentMatch.mediaUrl ?? m.mediaUrl),
+            storagePath: isParentDel ? undefined : (parentMatch.storagePath ?? m.storagePath),
+            reactions: parentMatch.reactions || m.reactions
+          };
+        }
+        return m;
+      });
+      return hasChange ? updated : prev;
+    });
+  }, [parentMessages]);
 
   // Mark partner messages as read ONLY when the discussion is genuinely active, visible, and focused
   useEffect(() => {
@@ -827,6 +892,16 @@ export const ChatView: React.FC<ChatViewProps> = ({
     setEmojiPickerMsgId(null);
   };
 
+  const checkIsMyMessage = (msg?: Message | null) => {
+    if (!msg) return false;
+    const myId = currentUser.id;
+    const authId = currentAuthUserId;
+    if (msg.senderId === myId) return true;
+    if (authId && msg.senderId === authId) return true;
+    if (msg.senderId && partnerUser?.id && msg.senderId === partnerUser.id) return false;
+    return true;
+  };
+
   const handleDeleteMessageInternal = (msgId: string, forEveryone: boolean) => {
     // 1. Optimistic immediate update of realMessages in ChatView
     if (forEveryone) {
@@ -845,6 +920,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }
     // 2. Call parent handler
     onDeleteMessage(msgId, forEveryone);
+    // 3. Close all related modals and menus
+    setDeleteConfirmMsgId(null);
+    setActiveContextMenuMsgId(null);
+    setActiveReactionMsgId(null);
   };
 
   const handleVotePoll = (msgId: string, optionId: string) => {
@@ -1469,9 +1548,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 className={`message-item-container flex flex-col group ${isMe ? 'items-end' : 'items-start'} relative my-0.5`}
               >
                 {/* Floating Reaction Bar */}
-                {activeReactionMsgId === msg.id && (
+                {activeReactionMsgId === msg.id && !msg.isDeletedForEveryone && (
                   <div className="reaction-bar-container absolute -top-11 z-40 bg-[#171b26]/95 backdrop-blur-xl border border-white/10 rounded-full px-2.5 py-1 shadow-2xl flex items-center gap-1.5 animate-in zoom-in-95 duration-100">
-                    {['❤️', '🔥', '😘', '🥺', '✨', '😂', '😍'].map(emoji => (
+                    {['❤️', '🔥', '😘', '🥺', '✨', '😂', '😍', '👍'].map(emoji => (
                       <button
                         key={emoji}
                         onClick={(e) => {
@@ -1495,6 +1574,19 @@ export const ChatView: React.FC<ChatViewProps> = ({
                     >
                       <Plus size={16} />
                     </button>
+                    <div className="w-px h-4 bg-white/20 mx-0.5" />
+                    {/* Direct Delete Button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteConfirmMsgId(msg.id);
+                        setActiveReactionMsgId(null);
+                      }}
+                      className="p-1 text-[#ff7675] hover:scale-125 rounded-full transition-transform cursor-pointer hover:bg-[#ff7675]/20"
+                      title="Supprimer ce message"
+                    >
+                      <Trash2 size={15} />
+                    </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1505,6 +1597,32 @@ export const ChatView: React.FC<ChatViewProps> = ({
                       title="Plus d'actions"
                     >
                       <MoreVertical size={14} />
+                    </button>
+                  </div>
+                )}
+
+                {/* Quick Action Trigger Buttons on Hover */}
+                {!msg.isDeletedForEveryone && (
+                  <div className={`opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute top-1/2 -translate-y-1/2 ${isMe ? '-left-16' : '-right-16'} hidden sm:flex items-center gap-1 z-20`}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveReactionMsgId(activeReactionMsgId === msg.id ? null : msg.id);
+                      }}
+                      className="p-1.5 rounded-full bg-[#1b1435]/90 hover:bg-[#281e4b] border border-[#2d2254] text-[#a29bfe] hover:text-[#fd79a8] shadow-md transition-all hover:scale-110 cursor-pointer"
+                      title="Réagir avec un émoji"
+                    >
+                      <Smile size={14} />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteConfirmMsgId(msg.id);
+                      }}
+                      className="p-1.5 rounded-full bg-[#1b1435]/90 hover:bg-[#ff7675]/20 border border-[#2d2254] text-[#a29bfe] hover:text-[#ff7675] shadow-md transition-all hover:scale-110 cursor-pointer"
+                      title="Supprimer ce message"
+                    >
+                      <Trash2 size={14} />
                     </button>
                   </div>
                 )}
@@ -2837,36 +2955,75 @@ export const ChatView: React.FC<ChatViewProps> = ({
               <button 
                 onClick={() => {
                   if (activeContextMenuMsgId) {
-                    handleDeleteMessageInternal(activeContextMenuMsgId, false);
+                    setDeleteConfirmMsgId(activeContextMenuMsgId);
                     setActiveContextMenuMsgId(null);
                   }
                 }}
-                className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-[#ff7675]/20 text-sm text-[#ff7675] transition-colors text-left"
+                className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-[#ff7675]/20 text-sm text-[#ff7675] transition-colors text-left cursor-pointer"
               >
                 <Trash2 size={18} />
                 <div className="flex flex-col">
-                  <span className="font-semibold">Supprimer pour moi</span>
-                  <span className="text-[10px] text-[#ff7675]/70">Masquer sur cet appareil uniquement</span>
+                  <span className="font-semibold">Supprimer le message</span>
+                  <span className="text-[10px] text-[#ff7675]/70">Supprimer pour vous ou pour tout le monde</span>
                 </div>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-              {filteredMessages.find(m => m.id === activeContextMenuMsgId)?.senderId === (currentAuthUserId || currentUser.id) && (
-                <button 
-                  onClick={() => {
-                    if (activeContextMenuMsgId) {
-                      handleDeleteMessageInternal(activeContextMenuMsgId, true);
-                      setActiveContextMenuMsgId(null);
-                    }
-                  }}
-                  className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-[#ff7675]/25 text-sm text-[#ff7675] font-bold transition-colors text-left"
-                >
-                  <Trash2 size={18} />
-                  <div className="flex flex-col">
-                    <span className="font-bold">Supprimer pour tout le monde</span>
-                    <span className="text-[10px] text-[#ff7675]/70 font-normal">Effacer pour les deux appareils</span>
-                  </div>
-                </button>
-              )}
+      {/* Dedicated Message Delete Confirmation Modal */}
+      {deleteConfirmMsgId && (
+        <div 
+          onClick={() => setDeleteConfirmMsgId(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm bg-[#1b1435] border border-[#2d2254] rounded-3xl p-6 shadow-2xl relative text-center animate-in zoom-in-95 duration-150"
+          >
+            <div className="w-14 h-14 rounded-2xl bg-[#ff7675]/15 border border-[#ff7675]/30 flex items-center justify-center mx-auto mb-3 shadow-[0_0_20px_rgba(255,118,117,0.2)]">
+              <Trash2 size={26} className="text-[#ff7675]" />
+            </div>
+
+            <h3 className="text-base font-bold text-white mb-1.5">
+              Supprimer le message ?
+            </h3>
+            <p className="text-xs text-[#a29bfe] mb-5 leading-relaxed px-2">
+              Choisissez comment vous souhaitez supprimer ce message dans votre conversation.
+            </p>
+
+            <div className="space-y-2.5">
+              {/* Si l'utilisateur est l'auteur du message, proposer Supprimer pour tout le monde */}
+              {(() => {
+                const target = activeMessages.find(m => m.id === deleteConfirmMsgId);
+                const isMyMsg = checkIsMyMessage(target);
+                if (!isMyMsg) return null;
+
+                return (
+                  <button
+                    onClick={() => handleDeleteMessageInternal(deleteConfirmMsgId, true)}
+                    className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-[#ff7675] to-[#d63031] text-white font-bold text-sm shadow-md hover:brightness-110 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Trash2 size={16} />
+                    <span>Supprimer pour tout le monde</span>
+                  </button>
+                );
+              })()}
+
+              <button
+                onClick={() => handleDeleteMessageInternal(deleteConfirmMsgId, false)}
+                className="w-full py-3 px-4 rounded-2xl bg-[#281e4b] hover:bg-[#34275f] text-white font-medium text-sm border border-[#3f316e] active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <span>Supprimer pour moi</span>
+              </button>
+
+              <button
+                onClick={() => setDeleteConfirmMsgId(null)}
+                className="w-full py-2.5 text-xs text-[#a29bfe] hover:text-white transition-colors cursor-pointer"
+              >
+                Annuler
+              </button>
             </div>
           </div>
         </div>

@@ -61,6 +61,23 @@ CREATE POLICY "Allow couple members to update messages"
   USING (true)
   WITH CHECK (true);
 
+-- 4b. FONCTION RPC POUR SUPPRESSION INDIVIDUELLE ("Supprimer pour moi")
+CREATE OR REPLACE FUNCTION public.delete_message_for_me(p_message_id TEXT, p_user_id TEXT)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  UPDATE public.messages
+  SET deleted_for_users = array_append(
+    COALESCE(deleted_for_users, ARRAY[]::TEXT[]),
+    p_user_id
+  )
+  WHERE id = p_message_id
+    AND NOT (p_user_id = ANY(COALESCE(deleted_for_users, ARRAY[]::TEXT[])));
+END;
+$$;
+
 -- 5. PUBLICATION TEMPS RÉEL SUPABASE REALTIME
 DO $$
 BEGIN
