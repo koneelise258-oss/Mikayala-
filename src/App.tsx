@@ -64,7 +64,9 @@ import {
   sendMessage,
   getLocalDeletedForEveryoneIds,
   getLocalDeletedForMeIds,
-  getLocalEditedMessages
+  getLocalEditedMessages,
+  toggleMessageStarred,
+  toggleMessagePinned
 } from './services/messageService';
 import { 
   formatLastSeen,
@@ -1808,13 +1810,33 @@ export default function App() {
 
   const handleUpdateMessage = (msgId: string, updates: Partial<Message>) => {
     setMessages(prev =>
-      prev.map(m => (m.id === msgId ? { ...m, ...updates } : m))
+      prev.map(m => {
+        if (m.id === msgId) {
+          return { ...m, ...updates };
+        }
+        if (updates.isPinned === true) {
+          return { ...m, isPinned: false };
+        }
+        return m;
+      })
     );
     const coupleId = pairingState?.coupleId || getStoredPairingState().coupleId;
 
     if (updates.content && updates.isEdited) {
       editMessageContent(msgId, updates.content, coupleId).catch(err => {
         console.warn('[App] editMessageContent error:', err);
+      });
+    }
+
+    if (updates.isStarred !== undefined) {
+      toggleMessageStarred(msgId, updates.isStarred, coupleId).catch(err => {
+        console.warn('[App] toggleMessageStarred error:', err);
+      });
+    }
+
+    if (updates.isPinned !== undefined) {
+      toggleMessagePinned(msgId, updates.isPinned, coupleId).catch(err => {
+        console.warn('[App] toggleMessagePinned error:', err);
       });
     }
 
@@ -2350,7 +2372,7 @@ export default function App() {
           <div className="flex-1 flex flex-col h-full relative overflow-hidden">
           {isChatOpen ? (
             /* Active Chat View on Mobile */
-            <div className="flex-1 flex flex-col h-full bg-[#130f26] relative overflow-hidden">
+            <div className="flex-1 flex flex-col h-full bg-[#130f26] relative overflow-hidden animate-in fade-in slide-in-from-right-2 duration-150">
               <ChatView
                 currentUser={currentUser}
                 partnerUser={partnerUser}
@@ -2464,7 +2486,7 @@ export default function App() {
                     missedCallsCount={calls.filter(c => c.status === 'missed' && (c.receiverId === currentUser.id || !c.receiverId) && c.timestamp > lastSeenCallsTimestamp).length}
                   />
 
-                  <div className="flex-1 overflow-y-auto relative">
+                  <div key={activeTab} className="flex-1 overflow-y-auto relative animate-in fade-in-50 duration-150">
                     {activeTab === 'discussions' ? (
                       <ChatList
                         currentUser={currentUser}

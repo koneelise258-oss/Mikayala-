@@ -6,11 +6,14 @@ import {
   Play, Pause, X, ChevronDown, Sparkles, Plus, Compass, Heart, Lock,
   Dices, HeartHandshake, Flame, Volume2, Ticket, EyeOff, Zap, Award, Gift,
   Globe, MessageSquare, Radio, Bluetooth, Wifi, ArrowDownToLine, AlertCircle, Loader2,
-  Image as ImageIcon, Camera, PhoneMissed, VideoOff, Palette
+  Image as ImageIcon, Camera, PhoneMissed, VideoOff, Palette,
+  Copy, Share2, ShieldCheck, Shield, Bookmark, Clock, UserCheck
 } from 'lucide-react';
 import { audioRecorder } from '../services/audioRecorder';
 import { videoRecorder } from '../services/videoRecorder';
-import { User, Message, ChatSettings, PollData, EventData, LocationData, CallType, CoupleCoupon, NetworkState, UserProfile, AppThemeConfig, ScratchCardData } from '../types';
+import { User, Message, ChatSettings, PollData, EventData, LocationData, CallType, CoupleCoupon, NetworkState, UserProfile, AppThemeConfig, ScratchCardData, VaultItem } from '../types';
+import { getStoredVault, saveVault } from '../utils/storage';
+import { vaultService } from '../services/vaultService';
 import { formatTime, formatDateDivider, formatDuration, renderFormattedText } from '../utils/formatters';
 import { soundEffects } from '../utils/audio';
 import { triggerHaptic } from '../utils/security';
@@ -172,6 +175,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [isThemeDrawerOpen, setIsThemeDrawerOpen] = useState(false);
   const [activeReactionMsgId, setActiveReactionMsgId] = useState<string | null>(null);
   const [activeContextMenuMsgId, setActiveContextMenuMsgId] = useState<string | null>(null);
+  const [messageDetailsMsgId, setMessageDetailsMsgId] = useState<string | null>(null);
   const [emojiPickerMsgId, setEmojiPickerMsgId] = useState<string | null>(null);
   const [deleteConfirmMsgId, setDeleteConfirmMsgId] = useState<string | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1025,7 +1029,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }
 
     if (swipingMsgId === msg.id) {
-      if (swipeOffset >= 45) {
+      if (swipeOffset >= 38) {
         triggerHaptic([25, 20, 25]);
         soundEffects.playPop();
         setReplyingTo(msg);
@@ -1039,6 +1043,93 @@ export const ChatView: React.FC<ChatViewProps> = ({
       setHasTriggeredSwipeHaptic(false);
     }
     touchStartPosRef.current = null;
+  };
+
+  const handleToggleStar = (msg: Message) => {
+    const newStarred = !msg.isStarred;
+    onUpdateMessage(msg.id, { isStarred: newStarred });
+    setRealMessages(prev => prev.map(m => m.id === msg.id ? { ...m, isStarred: newStarred, is_starred: newStarred } : m));
+    triggerHaptic(25);
+    soundEffects.playPop();
+    setComingSoonToast(newStarred ? "Ajouté aux messages favoris ⭐" : "Retiré des messages favoris");
+    setTimeout(() => setComingSoonToast(null), 2500);
+    setActiveContextMenuMsgId(null);
+  };
+
+  const handleTogglePin = (msg: Message) => {
+    const newPinned = !msg.isPinned;
+    onUpdateMessage(msg.id, { isPinned: newPinned });
+    setRealMessages(prev => prev.map(m => {
+      if (m.id === msg.id) return { ...m, isPinned: newPinned, is_pinned: newPinned };
+      if (newPinned) return { ...m, isPinned: false, is_pinned: false };
+      return m;
+    }));
+    triggerHaptic(25);
+    soundEffects.playPop();
+    setComingSoonToast(newPinned ? "Message épinglé en haut de la conversation 📌" : "Message désépinglé");
+    setTimeout(() => setComingSoonToast(null), 2500);
+    setActiveContextMenuMsgId(null);
+  };
+
+  const handleCopyMessageText = (msg: Message) => {
+    const textToCopy = msg.content || (msg.fileName ? msg.fileName : '') || '';
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(textToCopy).catch(() => {});
+    }
+    triggerHaptic(30);
+    soundEffects.playPop();
+    setComingSoonToast("Texte copié dans le presse-papier ✨");
+    setTimeout(() => setComingSoonToast(null), 2500);
+    setActiveContextMenuMsgId(null);
+  };
+
+  const handleSaveToVault = (msg: Message) => {
+    const itemType = msg.type === 'video' ? 'video' : msg.type === 'audio' ? 'audio' : msg.type === 'image' ? 'photo' : 'note';
+    const newVaultItem: VaultItem = {
+      id: `vault-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      type: itemType,
+      mediaUrl: msg.mediaUrl || '',
+      thumbnailUrl: msg.mediaUrl,
+      caption: msg.content && !msg.content.startsWith('http') ? msg.content : (itemType === 'photo' ? 'Photo intime' : itemType === 'video' ? 'Vidéo secrète' : 'Souvenir intime'),
+      dateAdded: Date.now(),
+      createdAt: Date.now(),
+      isFavorite: false,
+      authorId: msg.senderId || currentUser.id
+    };
+    try {
+      const existing = getStoredVault();
+      saveVault([newVaultItem, ...existing]);
+      vaultService.saveVaultItem(coupleId, newVaultItem).catch(() => {});
+    } catch {}
+    triggerHaptic([30, 40, 30]);
+    soundEffects.playSent();
+    setComingSoonToast("Sauvegardé dans votre coffre-fort secret 🔒");
+    setTimeout(() => setComingSoonToast(null), 2500);
+    setActiveContextMenuMsgId(null);
+  };
+
+  const handleShareMessage = async (msg: Message) => {
+    const shareText = msg.content || 'Message intime partagé';
+    if (typeof navigator !== 'undefined' && (navigator as any).share) {
+      try {
+        await (navigator as any).share({
+          title: 'Message partagé',
+          text: shareText,
+          url: msg.mediaUrl || undefined
+        });
+      } catch {}
+    } else if (navigator.clipboard) {
+      navigator.clipboard.writeText(msg.mediaUrl || shareText).catch(() => {});
+      setComingSoonToast("Contenu copié pour le partage 🚀");
+      setTimeout(() => setComingSoonToast(null), 2500);
+    }
+    triggerHaptic(25);
+    setActiveContextMenuMsgId(null);
+  };
+
+  const handleOpenMessageDetails = (msg: Message) => {
+    setMessageDetailsMsgId(msg.id);
+    setActiveContextMenuMsgId(null);
   };
 
   const handleDeleteMessageInternal = (msgId: string, forEveryone: boolean) => {
@@ -3088,108 +3179,392 @@ export const ChatView: React.FC<ChatViewProps> = ({
       />
 
       {/* Message Actions Context Menu Overlay */}
-      {activeContextMenuMsgId && (
-        <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
-          onClick={() => setActiveContextMenuMsgId(null)}
-        >
+      {activeContextMenuMsgId && (() => {
+        const targetMsg = filteredMessages.find(m => m.id === activeContextMenuMsgId) ||
+          activeMessages.find(m => m.id === activeContextMenuMsgId) ||
+          realMessages.find(m => m.id === activeContextMenuMsgId);
+        
+        if (!targetMsg) return null;
+
+        const isMyMsg = checkIsMyMessage(targetMsg);
+        const canEdit = isMyMsg && (!targetMsg.type || targetMsg.type === 'text') && !targetMsg.isDeletedForEveryone;
+        const hasTextToCopy = Boolean(targetMsg.content || targetMsg.fileName || targetMsg.caption);
+        const canSaveToVault = !targetMsg.isDeletedForEveryone && (targetMsg.mediaUrl || targetMsg.type === 'image' || targetMsg.type === 'video' || targetMsg.type === 'audio' || targetMsg.content);
+
+        return (
           <div 
-            className="w-full max-w-xs bg-[#1b1435] border border-[#2d2254] rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-200"
+            onClick={() => setActiveContextMenuMsgId(null)}
           >
-            <div className="p-4 border-b border-[#2d2254] flex items-center justify-between">
-              <span className="text-xs font-bold text-[#a29bfe] uppercase tracking-wider">Options du message</span>
-              <button onClick={() => setActiveContextMenuMsgId(null)} className="text-[#a29bfe] hover:text-white p-1 rounded-lg hover:bg-white/5">
-                <X size={18} />
-              </button>
-            </div>
-            
-            <div className="p-2 space-y-1">
-              <button 
-                onClick={() => {
-                  if (activeContextMenuMsgId) {
-                    setEmojiPickerMsgId(activeContextMenuMsgId);
-                    setActiveContextMenuMsgId(null);
-                  }
-                }}
-                className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-white/5 text-sm text-[#fd79a8] font-medium transition-colors text-left cursor-pointer"
-              >
-                <Smile size={18} className="text-[#fd79a8]" />
-                <div className="flex flex-col">
-                  <span className="font-bold">Réagir au message</span>
-                  <span className="text-[10px] text-[#a29bfe]/70 font-normal">Émojis couple & clavier système</span>
+            <div 
+              className="w-full max-w-sm bg-[#1b1435] border border-[#2d2254] rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="p-3.5 px-4 border-b border-[#2d2254] flex items-center justify-between bg-[#15102a]">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-white uppercase tracking-wider">Options du message</span>
+                  {targetMsg.isStarred && (
+                    <span className="bg-[#ffeaa7]/20 text-[#ffeaa7] text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Star size={10} className="fill-[#ffeaa7]" /> Favori
+                    </span>
+                  )}
+                  {targetMsg.isPinned && (
+                    <span className="bg-[#00b894]/20 text-[#00b894] text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Pin size={10} className="rotate-45" /> Épinglé
+                    </span>
+                  )}
                 </div>
-              </button>
+                <button 
+                  onClick={() => setActiveContextMenuMsgId(null)} 
+                  className="text-[#a29bfe] hover:text-white p-1 rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
 
-              <button 
-                onClick={() => {
-                  const msg = filteredMessages.find(m => m.id === activeContextMenuMsgId);
-                  if (msg) setReplyingTo(msg);
-                  setActiveContextMenuMsgId(null);
-                }}
-                className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-white/5 text-sm text-white transition-colors text-left cursor-pointer"
-              >
-                <CornerUpLeft size={18} className="text-[#00b894]" />
-                <span>Répondre</span>
-              </button>
-
-              {(() => {
-                const targetMsg = filteredMessages.find(m => m.id === activeContextMenuMsgId);
-                const isMyMsg = checkIsMyMessage(targetMsg);
-                const canEdit = isMyMsg && (!targetMsg?.type || targetMsg?.type === 'text') && !targetMsg?.isDeletedForEveryone;
-                if (!canEdit) return null;
-                return (
-                  <button 
+              {/* Quick Reactions Bar */}
+              {!targetMsg.isDeletedForEveryone && (
+                <div className="p-3 bg-[#171131] border-b border-[#2d2254] flex items-center justify-between gap-1 overflow-x-auto">
+                  {['❤️', '🔥', '😘', '🥺', '✨', '😂', '😍', '👍'].map(emoji => (
+                    <button
+                      key={emoji}
+                      onClick={() => {
+                        handleToggleReaction(targetMsg.id, emoji);
+                        setActiveContextMenuMsgId(null);
+                      }}
+                      className="text-xl hover:scale-130 active:scale-95 transition-transform p-1.5 rounded-full hover:bg-white/10 cursor-pointer"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                  <button
                     onClick={() => {
-                      if (targetMsg) {
-                        setEditingMessage(targetMsg);
-                        setInputText(targetMsg.content);
-                        setReplyingTo(null);
-                      }
+                      setEmojiPickerMsgId(targetMsg.id);
                       setActiveContextMenuMsgId(null);
                     }}
-                    className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-white/5 text-sm text-[#74b9ff] transition-colors text-left cursor-pointer"
+                    className="p-2 text-[#fd79a8] hover:scale-120 rounded-full hover:bg-white/10 transition-transform cursor-pointer shrink-0"
+                    title="Tous les émojis"
                   >
-                    <Edit3 size={18} />
-                    <div className="flex flex-col">
-                      <span className="font-semibold">Modifier le message</span>
-                      <span className="text-[10px] text-[#74b9ff]/70">Corriger ou ajuster le texte</span>
+                    <Plus size={18} />
+                  </button>
+                </div>
+              )}
+              
+              {/* Actions List */}
+              <div className="p-2 overflow-y-auto space-y-1">
+                {/* 1. Répondre */}
+                <button 
+                  onClick={() => {
+                    setReplyingTo(targetMsg);
+                    setEditingMessage(null);
+                    setActiveContextMenuMsgId(null);
+                    setTimeout(() => textInputRef.current?.focus(), 60);
+                  }}
+                  className="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-white/5 text-sm text-white transition-colors text-left cursor-pointer"
+                >
+                  <div className="w-8 h-8 rounded-xl bg-[#00b894]/20 flex items-center justify-center shrink-0">
+                    <CornerUpLeft size={16} className="text-[#00b894]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-semibold block">Répondre</span>
+                    <span className="text-[10px] text-[#a29bfe]/70">Citer ce message dans votre réponse</span>
+                  </div>
+                </button>
+
+                {/* 2. Copier le texte */}
+                {hasTextToCopy && (
+                  <button 
+                    onClick={() => handleCopyMessageText(targetMsg)}
+                    className="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-white/5 text-sm text-white transition-colors text-left cursor-pointer"
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-[#74b9ff]/20 flex items-center justify-center shrink-0">
+                      <Copy size={16} className="text-[#74b9ff]" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="font-semibold block">Copier le texte</span>
+                      <span className="text-[10px] text-[#a29bfe]/70">Copier dans le presse-papier</span>
                     </div>
                   </button>
-                );
-              })()}
-              
-              <button 
-                onClick={() => {
-                  setActiveContextMenuMsgId(null);
-                }}
-                className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-white/5 text-sm text-white transition-colors text-left"
-              >
-                <Star size={18} className="text-[#ffeaa7]" />
-                <span>Marquer d'une étoile</span>
-              </button>
+                )}
 
-              <div className="h-px bg-[#2d2254] my-1 mx-2" />
-              
-              <button 
-                onClick={() => {
-                  if (activeContextMenuMsgId) {
-                    setDeleteConfirmMsgId(activeContextMenuMsgId);
+                {/* 3. Modifier le message (auteur uniquement) */}
+                {canEdit && (
+                  <button 
+                    onClick={() => {
+                      setEditingMessage(targetMsg);
+                      setInputText(targetMsg.content);
+                      setReplyingTo(null);
+                      setActiveContextMenuMsgId(null);
+                      setTimeout(() => textInputRef.current?.focus(), 60);
+                    }}
+                    className="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-white/5 text-sm text-[#74b9ff] transition-colors text-left cursor-pointer"
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-[#74b9ff]/20 flex items-center justify-center shrink-0">
+                      <Edit3 size={16} className="text-[#74b9ff]" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="font-semibold block text-white">Modifier le message</span>
+                      <span className="text-[10px] text-[#74b9ff]/80">Corriger ou ajuster le texte</span>
+                    </div>
+                  </button>
+                )}
+
+                {/* 4. Marquer / Retirer des favoris */}
+                <button 
+                  onClick={() => handleToggleStar(targetMsg)}
+                  className="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-white/5 text-sm text-white transition-colors text-left cursor-pointer"
+                >
+                  <div className="w-8 h-8 rounded-xl bg-[#ffeaa7]/20 flex items-center justify-center shrink-0">
+                    <Star size={16} className={`text-[#ffeaa7] ${targetMsg.isStarred ? 'fill-[#ffeaa7]' : ''}`} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-semibold block">
+                      {targetMsg.isStarred ? "Retirer des favoris" : "Marquer d'une étoile (Favori)"}
+                    </span>
+                    <span className="text-[10px] text-[#a29bfe]/70">Retrouver ce message dans vos favoris</span>
+                  </div>
+                </button>
+
+                {/* 5. Épingler / Désépingler */}
+                <button 
+                  onClick={() => handleTogglePin(targetMsg)}
+                  className="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-white/5 text-sm text-white transition-colors text-left cursor-pointer"
+                >
+                  <div className="w-8 h-8 rounded-xl bg-[#00b894]/20 flex items-center justify-center shrink-0">
+                    <Pin size={16} className={`text-[#00b894] ${targetMsg.isPinned ? 'rotate-45' : ''}`} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-semibold block">
+                      {targetMsg.isPinned ? "Désépingler le message" : "Épingler en haut de la conversation"}
+                    </span>
+                    <span className="text-[10px] text-[#a29bfe]/70">Afficher en bannière permanente</span>
+                  </div>
+                </button>
+
+                {/* 6. Sauvegarder dans le coffre-fort secret */}
+                {canSaveToVault && (
+                  <button 
+                    onClick={() => handleSaveToVault(targetMsg)}
+                    className="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-white/5 text-sm text-white transition-colors text-left cursor-pointer"
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-[#e056fd]/20 flex items-center justify-center shrink-0">
+                      <Lock size={16} className="text-[#e056fd]" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="font-semibold block">Sauvegarder dans le coffre-fort</span>
+                      <span className="text-[10px] text-[#e056fd]/80">Protéger dans votre espace ultra-secret</span>
+                    </div>
+                  </button>
+                )}
+
+                {/* 7. Transférer / Partager */}
+                <button 
+                  onClick={() => handleShareMessage(targetMsg)}
+                  className="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-white/5 text-sm text-white transition-colors text-left cursor-pointer"
+                >
+                  <div className="w-8 h-8 rounded-xl bg-[#a29bfe]/20 flex items-center justify-center shrink-0">
+                    <Share2 size={16} className="text-[#a29bfe]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-semibold block">Transférer / Partager</span>
+                    <span className="text-[10px] text-[#a29bfe]/70">Partager le texte ou média</span>
+                  </div>
+                </button>
+
+                {/* 8. Informations du message */}
+                <button 
+                  onClick={() => handleOpenMessageDetails(targetMsg)}
+                  className="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-white/5 text-sm text-white transition-colors text-left cursor-pointer"
+                >
+                  <div className="w-8 h-8 rounded-xl bg-[#81ecec]/20 flex items-center justify-center shrink-0">
+                    <Info size={16} className="text-[#81ecec]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-semibold block">Infos du message</span>
+                    <span className="text-[10px] text-[#a29bfe]/70">Horodatages, statut de lecture & chiffrement</span>
+                  </div>
+                </button>
+
+                <div className="h-px bg-[#2d2254] my-1 mx-2" />
+                
+                {/* 9. Supprimer le message */}
+                <button 
+                  onClick={() => {
+                    setDeleteConfirmMsgId(targetMsg.id);
                     setActiveContextMenuMsgId(null);
-                  }
-                }}
-                className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-[#ff7675]/20 text-sm text-[#ff7675] transition-colors text-left cursor-pointer"
-              >
-                <Trash2 size={18} />
-                <div className="flex flex-col">
-                  <span className="font-semibold">Supprimer le message</span>
-                  <span className="text-[10px] text-[#ff7675]/70">Supprimer pour vous ou pour tout le monde</span>
-                </div>
-              </button>
+                  }}
+                  className="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-[#ff7675]/20 text-sm text-[#ff7675] transition-colors text-left cursor-pointer"
+                >
+                  <div className="w-8 h-8 rounded-xl bg-[#ff7675]/20 flex items-center justify-center shrink-0">
+                    <Trash2 size={16} className="text-[#ff7675]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-semibold block">Supprimer le message</span>
+                    <span className="text-[10px] text-[#ff7675]/70">Supprimer pour vous ou pour tout le monde</span>
+                  </div>
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {/* Message Info & Details Modal */}
+      {messageDetailsMsgId && (() => {
+        const targetMsg = filteredMessages.find(m => m.id === messageDetailsMsgId) ||
+          activeMessages.find(m => m.id === messageDetailsMsgId) ||
+          realMessages.find(m => m.id === messageDetailsMsgId);
+        
+        if (!targetMsg) return null;
+        const isMyMsg = checkIsMyMessage(targetMsg);
+
+        const formatFullDate = (ts: number | string | undefined | null) => {
+          if (!ts) return 'Non disponible';
+          const d = typeof ts === 'number' ? new Date(ts) : new Date(ts);
+          if (isNaN(d.getTime())) return 'Non disponible';
+          return d.toLocaleDateString('fr-FR', {
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          });
+        };
+
+        const isRead = Boolean(targetMsg.readAt || targetMsg.status === 'read');
+        const isDelivered = Boolean(targetMsg.deliveredAt || isRead || targetMsg.status === 'delivered');
+
+        return (
+          <div 
+            onClick={() => setMessageDetailsMsgId(null)}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+          >
+            <div 
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-sm bg-[#1b1435] border border-[#2d2254] rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col"
+            >
+              {/* Header */}
+              <div className="p-4 border-b border-[#2d2254] flex items-center justify-between bg-[#15102a]">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-[#81ecec]/20 flex items-center justify-center">
+                    <Info size={15} className="text-[#81ecec]" />
+                  </div>
+                  <h3 className="text-sm font-bold text-white">Détails du message</h3>
+                </div>
+                <button 
+                  onClick={() => setMessageDetailsMsgId(null)} 
+                  className="text-[#a29bfe] hover:text-white p-1 rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-4 space-y-4 text-xs overflow-y-auto max-h-[75vh]">
+                {/* Message Preview */}
+                <div className="p-3 rounded-2xl bg-[#130f26] border border-[#2d2254] text-white">
+                  <span className="text-[10px] font-bold text-[#a29bfe] block mb-1">Contenu :</span>
+                  <p className="leading-relaxed line-clamp-3 text-sm">
+                    {targetMsg.isDeletedForEveryone ? 'Ce message a été supprimé' : (targetMsg.content || targetMsg.fileName || `[Média ${targetMsg.type}]`)}
+                  </p>
+                </div>
+
+                {/* Status List */}
+                <div className="space-y-3 bg-[#15102a] p-3.5 rounded-2xl border border-[#2d2254]/60">
+                  {/* Lu */}
+                  <div className="flex items-start gap-3">
+                    <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 ${isRead ? 'bg-[#74b9ff]/20 text-[#74b9ff]' : 'bg-white/5 text-[#a29bfe]/40'}`}>
+                      <CheckCheck size={16} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-white">Lu</span>
+                        <span className={`text-[10px] ${isRead ? 'text-[#74b9ff] font-semibold' : 'text-[#a29bfe]/50'}`}>
+                          {isRead ? 'Confirmé' : 'En attente'}
+                        </span>
+                      </div>
+                      <p className="text-[#a29bfe] text-[11px] mt-0.5">
+                        {isRead ? (targetMsg.readAt ? formatFullDate(targetMsg.readAt) : 'Lu par votre partenaire') : 'Non encore ouvert'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="h-px bg-[#2d2254]/60" />
+
+                  {/* Distribué */}
+                  <div className="flex items-start gap-3">
+                    <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 ${isDelivered ? 'bg-[#55efc4]/20 text-[#55efc4]' : 'bg-white/5 text-[#a29bfe]/40'}`}>
+                      <CheckCheck size={16} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-white">Distribué</span>
+                        <span className={`text-[10px] ${isDelivered ? 'text-[#55efc4] font-semibold' : 'text-[#a29bfe]/50'}`}>
+                          {isDelivered ? 'Délivré' : 'En transit'}
+                        </span>
+                      </div>
+                      <p className="text-[#a29bfe] text-[11px] mt-0.5">
+                        {targetMsg.deliveredAt ? formatFullDate(targetMsg.deliveredAt) : (isDelivered ? 'Reçu sur l’appareil' : 'En cours de distribution')}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="h-px bg-[#2d2254]/60" />
+
+                  {/* Envoyé */}
+                  <div className="flex items-start gap-3">
+                    <div className="w-7 h-7 rounded-xl bg-white/10 text-white flex items-center justify-center shrink-0">
+                      <Check size={16} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-white">Envoyé</span>
+                        <span className="text-[10px] text-white/70 font-semibold">Envoyé</span>
+                      </div>
+                      <p className="text-[#a29bfe] text-[11px] mt-0.5">
+                        {formatFullDate(targetMsg.timestamp)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Additional Info Cards */}
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div className="p-2.5 rounded-2xl bg-[#130f26] border border-[#2d2254] flex items-center gap-2">
+                    <UserCheck size={15} className="text-[#a29bfe]" />
+                    <div className="truncate">
+                      <span className="text-[9px] text-[#a29bfe]/70 block">Auteur</span>
+                      <span className="font-bold text-white truncate block">
+                        {isMyMsg ? 'Vous' : (partnerNickname || partnerProfile?.name || partnerUser.name)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 rounded-2xl bg-[#130f26] border border-[#2d2254] flex items-center gap-2">
+                    <ShieldCheck size={15} className="text-[#00b894]" />
+                    <div className="truncate">
+                      <span className="text-[9px] text-[#a29bfe]/70 block">Sécurité</span>
+                      <span className="font-bold text-[#00b894] truncate block">Chiffré E2E</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-3 border-t border-[#2d2254] bg-[#15102a]">
+                <button
+                  onClick={() => setMessageDetailsMsgId(null)}
+                  className="w-full py-2.5 rounded-2xl bg-[#281e4b] hover:bg-[#34275f] text-white font-medium text-xs transition-colors cursor-pointer"
+                >
+                  Fermer
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Dedicated Message Delete Confirmation Modal */}
       {deleteConfirmMsgId && (

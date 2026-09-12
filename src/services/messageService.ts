@@ -1070,6 +1070,109 @@ export async function editMessageContent(
   }
 }
 
+/**
+ * Active ou désactive le statut favori (étoile) d'un message
+ */
+export async function toggleMessageStarred(
+  messageId: string,
+  isStarred: boolean,
+  coupleId?: string
+): Promise<void> {
+  const targetCoupleId = coupleId || getStoredPairingState().coupleId;
+
+  // 1. Mise à jour optimiste du cache local
+  if (targetCoupleId) {
+    try {
+      const cachedStr = localStorage.getItem(`mikayala_cached_messages_${targetCoupleId}`);
+      if (cachedStr) {
+        const list: Message[] = JSON.parse(cachedStr);
+        const updated = list.map(m => m.id === messageId ? { ...m, isStarred, is_starred: isStarred } : m);
+        saveMessagesToCache(targetCoupleId, updated);
+      }
+    } catch {}
+  }
+
+  // 2. Diffusion broadcast instantanée vers le partenaire
+  if (targetCoupleId) {
+    broadcastMessageToCouple(targetCoupleId, 'update-message', {
+      id: messageId,
+      isStarred,
+      is_starred: isStarred
+    });
+  }
+
+  // 3. Persistance dans la base Supabase
+  if (isSupabaseConfigured()) {
+    try {
+      await supabase
+        .from('messages')
+        .update({ is_starred: isStarred })
+        .eq('id', messageId);
+    } catch (err) {
+      console.warn('[messageService] toggleMessageStarred Supabase err:', err);
+    }
+  }
+}
+
+/**
+ * Épingle ou désépingle un message en haut de la conversation
+ */
+export async function toggleMessagePinned(
+  messageId: string,
+  isPinned: boolean,
+  coupleId?: string
+): Promise<void> {
+  const targetCoupleId = coupleId || getStoredPairingState().coupleId;
+
+  // 1. Mise à jour optimiste du cache local (désépingle les autres si isPinned === true)
+  if (targetCoupleId) {
+    try {
+      const cachedStr = localStorage.getItem(`mikayala_cached_messages_${targetCoupleId}`);
+      if (cachedStr) {
+        const list: Message[] = JSON.parse(cachedStr);
+        const updated = list.map(m => {
+          if (m.id === messageId) {
+            return { ...m, isPinned, is_pinned: isPinned };
+          }
+          if (isPinned) {
+            // Un seul message épinglé à la fois
+            return { ...m, isPinned: false, is_pinned: false };
+          }
+          return m;
+        });
+        saveMessagesToCache(targetCoupleId, updated);
+      }
+    } catch {}
+  }
+
+  // 2. Diffusion broadcast instantanée vers le partenaire
+  if (targetCoupleId) {
+    broadcastMessageToCouple(targetCoupleId, 'update-message', {
+      id: messageId,
+      isPinned,
+      is_pinned: isPinned
+    });
+  }
+
+  // 3. Persistance dans la base Supabase
+  if (isSupabaseConfigured()) {
+    try {
+      if (isPinned && targetCoupleId) {
+        await supabase
+          .from('messages')
+          .update({ is_pinned: false })
+          .eq('couple_id', targetCoupleId);
+      }
+      await supabase
+        .from('messages')
+        .update({ is_pinned: isPinned })
+        .eq('id', messageId);
+    } catch (err) {
+      console.warn('[messageService] toggleMessagePinned Supabase err:', err);
+    }
+  }
+}
+
 // Alias exact demandé dans l'énoncé
 export const s_abonnerAuxMessages = sAbonnerAuxMessages;
 
