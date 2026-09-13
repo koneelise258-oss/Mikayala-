@@ -395,7 +395,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
         if (Array.isArray(fetched) && fetched.length > 0) {
           setRealMessages(fetched);
         } else {
-          setRealMessages(prev => prev.length > 0 ? prev : fetched);
+          setRealMessages(prev => prev.length > 0 ? prev : (parentMessages && parentMessages.length > 0 ? parentMessages : fetched));
         }
         setChatError(null);
         // À l'ouverture de la discussion sur chaque téléphone, marquer comme livrés (✓✓ gris)
@@ -567,7 +567,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   useEffect(() => {
     if (!parentMessages || parentMessages.length === 0) return;
     setRealMessages(prev => {
-      if (prev.length === 0) return prev;
+      if (prev.length === 0) return parentMessages;
       let hasChange = false;
       const updated = prev.map(m => {
         const parentMatch = parentMessages.find(pm => pm.id === m.id);
@@ -639,7 +639,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
     };
   }, [pairingState?.coupleId, isChatActive, isPhotoPreviewOpen, isDirectCameraOpen, currentAuthUserId]);
 
-  const rawActiveMessages = (pairingState?.isPaired && pairingState?.coupleId) ? realMessages : parentMessages;
+  const rawActiveMessages = (realMessages && realMessages.length > 0) ? realMessages : (parentMessages || []);
   const activeUserId = currentAuthUserId || currentUser.id;
 
   const activeMessages = useMemo(() => {
